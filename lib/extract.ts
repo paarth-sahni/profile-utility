@@ -78,6 +78,7 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
     schemaName: "resume_analysis",
     reasoningEffort: "low",
     maxTokens: 3000,
+    temperature: 0,
     signal,
   });
   const analysisParsed = resumeAnalysisSchema.safeParse(parseJson(analysisRaw));
