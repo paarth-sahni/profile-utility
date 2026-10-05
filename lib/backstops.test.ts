@@ -12,6 +12,10 @@ import {
   hasProseLines,
   MISSING_DESCRIPTION_REASON,
   flagPronounOverview,
+  applyProfileHeader,
+  parseProfileHeader,
+  HEADER_NOT_RECOGNISED_REASON,
+  HEADER_TAKEN_REASON,
   flagSidebarExtras,
   NOT_IN_SIDEBAR_REASON,
   flagUnfoundValues,
@@ -291,4 +295,61 @@ test("backstop 3d: only InfoBeans profiles on the internal template whose source
 test("applyBackstops passes the document type through to the sidebar check", () => {
   const { flags } = applyBackstops("internal", { tools: ["Playwright"], projects: [] }, [], SIDEBAR_SOURCE, "infobeans_internal_profile");
   assert.ok(flags.some((f) => f.path === "tools.0" && f.reason === NOT_IN_SIDEBAR_REASON));
+});
+
+/* ---------- 3e. header block of an existing InfoBeans profile ---------- */
+
+const header = (...lines: string[]) => `A PROUD MEMBER OF\nMaya Fernandez\n${lines.join("\n")}\nOverview\nEngineer with experience in mobile apps.\n`;
+const INFOBEANS = "infobeans_internal_profile";
+
+test("backstop 3e: a 3-line header is read as job title, experience line, specialization", () => {
+  const src = header("Lead Data Engineer", "9+ Years of Industry Experience", "Data Platforms");
+  assert.deepEqual(parseProfileHeader(src, "Maya Fernandez"), ["Lead Data Engineer", "9+ Years of Industry Experience", "Data Platforms"]);
+  assert.deepEqual(parseProfileHeader(src, "maya  fernandez"), ["Lead Data Engineer", "9+ Years of Industry Experience", "Data Platforms"], "name match ignores case/spacing");
+});
+
+test("backstop 3e: model values that differ are replaced and flagged; matching ones are left alone", () => {
+  const src = header("Lead Data Engineer", "Fresher (4 months of internship experience)", "Quality CoE");
+  const data = { name: "Maya Fernandez", jobTitle: "Lead Data Engineer", experienceSummary: "0+ Years of Industry Experience", specialization: "Test Automation" };
+  const flags = applyProfileHeader(data, [], src, INFOBEANS);
+  assert.equal(data.jobTitle, "Lead Data Engineer");
+  assert.equal(data.experienceSummary, "Fresher (4 months of internship experience)");
+  assert.equal(data.specialization, "Quality CoE");
+  assert.deepEqual(flags.map((f) => f.path).sort(), ["experienceSummary", "specialization"], "no flag for the unchanged job title");
+  assert.ok(flags.every((f) => f.reason === HEADER_TAKEN_REASON));
+});
+
+test("backstop 3e: a specialization longer than 5 words is not used", () => {
+  const src = header("Architect", "15+ Years of Industry Experience", "Enterprise integration and cloud migration programmes");
+  const data = { name: "Maya Fernandez", jobTitle: "Architect", experienceSummary: "15+ Years of Industry Experience", specialization: "Cloud Migration" };
+  const flags = applyProfileHeader(data, [], src, INFOBEANS);
+  assert.equal(data.specialization, "Cloud Migration");
+  assert.deepEqual(flags, []);
+});
+
+test("backstop 3e: a 2-line or 4-line header is not recognised; model values stay and a flag is added", () => {
+  for (const lines of [["Lead Data Engineer", "9+ Years of Industry Experience"], ["Lead", "9+ Years", "Data Platforms", "Extra line"]]) {
+    const data = { name: "Maya Fernandez", jobTitle: "Model Title", experienceSummary: "Model Exp", specialization: "Model Spec" };
+    const flags = applyProfileHeader(data, [], header(...lines), INFOBEANS);
+    assert.deepEqual(data, { name: "Maya Fernandez", jobTitle: "Model Title", experienceSummary: "Model Exp", specialization: "Model Spec" });
+    assert.deepEqual(flags, [{ path: "", reason: HEADER_NOT_RECOGNISED_REASON }], lines.length + " lines");
+  }
+});
+
+test("backstop 3e: unknown name or missing Overview heading is not recognised; other documents are untouched", () => {
+  const src = header("Lead", "9+ Years", "Data");
+  const data = { name: "Someone Else", jobTitle: "x", experienceSummary: "y", specialization: "z" };
+  assert.equal(applyProfileHeader(data, [], src, INFOBEANS)[0].reason, HEADER_NOT_RECOGNISED_REASON);
+  assert.equal(parseProfileHeader("Maya Fernandez\nLead\n9+ Years\nData\nNo section heading", "Maya Fernandez"), null);
+  assert.deepEqual(applyProfileHeader({ name: "Maya Fernandez", jobTitle: "x" }, [], src, "standard_resume"), []);
+  assert.deepEqual(applyProfileHeader({ name: "Maya Fernandez", jobTitle: "x" }, [], src, undefined), []);
+});
+
+test("applyBackstops runs the header step for InfoBeans profiles only", () => {
+  const src = header("Lead Data Engineer", "9+ Years of Industry Experience", "Data Platforms");
+  const input = { name: "Maya Fernandez", jobTitle: "Title", experienceSummary: "Exp", specialization: "Spec", projects: [] };
+  const a = applyBackstops("internal", input, [], src, "infobeans_external_profile");
+  assert.equal((a.data as typeof input).specialization, "Data Platforms");
+  const b = applyBackstops("internal", input, [], src, "standard_resume");
+  assert.equal((b.data as typeof input).specialization, "Spec");
 });

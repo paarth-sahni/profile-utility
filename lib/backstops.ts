@@ -7,6 +7,7 @@
  *   3b. teamSize / duration / education year values that are not in the source text -> flag
  *   3c. empty project description although the source has text for that project -> flag
  *   3d. existing InfoBeans profile: sidebar items not found in the source's sidebar -> flag
+ *   3e. existing InfoBeans profile: job title / experience line / specialization read from the header
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -249,6 +250,64 @@ export function flagSidebarExtras(
   return out;
 }
 
+export const HEADER_TAKEN_REASON = "taken from profile header";
+export const HEADER_NOT_RECOGNISED_REASON = "header not recognised — please check job title, experience and specialization";
+
+/** Boilerplate the template prints in the header area; not part of the three header lines. */
+const HEADER_BOILERPLATE = /^a proud member of$/i;
+
+const wordCountOf = (v: string): number => v.trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * Reads the header block of an existing InfoBeans profile: the lines between the candidate's name
+ * and the first "Overview" heading. Returns the lines (job title, experience line, specialization)
+ * only when there are exactly three; otherwise null.
+ */
+export function parseProfileHeader(sourceText: string, name: string): [string, string, string] | null {
+  const lines = sourceText.split("\n").map((l) => l.trim());
+  const nameKey = squash(name);
+  if (!nameKey) return null;
+  const nameAt = lines.findIndex((l) => l && squash(l) === nameKey);
+  if (nameAt === -1) return null;
+  const overviewAt = lines.findIndex((l, i) => i > nameAt && /^overview$/i.test(l));
+  if (overviewAt === -1) return null;
+  const block = lines.slice(nameAt + 1, overviewAt).filter((l) => l && !HEADER_BOILERPLATE.test(l));
+  return block.length === 3 ? [block[0], block[1], block[2]] : null;
+}
+
+/**
+ * 3e. For an existing InfoBeans profile, takes jobTitle, experienceSummary and specialization
+ * straight from the source header (deterministic; the model sometimes rewrites them). A value
+ * that differs from the model's is flagged; a header of any other shape leaves the model's values
+ * and is flagged. The specialization is only used when it has 5 words or fewer. Mutates `data`.
+ */
+export function applyProfileHeader(
+  data: unknown,
+  flags: ReviewFlag[],
+  sourceText: string,
+  documentType: string | undefined,
+): ReviewFlag[] {
+  if (!documentType?.startsWith("infobeans_") || !isRecord(data)) return flags;
+  const out = [...flags];
+  const header = parseProfileHeader(sourceText, str(data.name));
+  if (!header) {
+    if (!hasFlag(out, "", HEADER_NOT_RECOGNISED_REASON)) out.push({ path: "", reason: HEADER_NOT_RECOGNISED_REASON });
+    return out;
+  }
+  const fields: [string, string][] = [
+    ["jobTitle", header[0]],
+    ["experienceSummary", header[1]],
+    ["specialization", header[2]],
+  ];
+  for (const [key, value] of fields) {
+    if (key === "specialization" && wordCountOf(value) > 5) continue;
+    if (canon(str(data[key])) === canon(value)) continue;
+    data[key] = value;
+    if (!hasFlag(out, key, HEADER_TAKEN_REASON)) out.push({ path: key, reason: HEADER_TAKEN_REASON });
+  }
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -264,6 +323,7 @@ export function applyBackstops(
   next = flagUnfoundValues(copy, next, sourceText);
   next = flagMissingDescriptions(templateId, copy, next, sourceText);
   next = flagSidebarExtras(templateId, copy, next, sourceText, documentType);
+  next = applyProfileHeader(copy, next, sourceText, documentType);
   return { data: copy, flags: next };
 }
 
