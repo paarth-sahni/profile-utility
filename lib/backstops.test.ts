@@ -9,7 +9,11 @@ import {
   fillEmptyResponsibilities,
   flagBannedWords,
   flagPronounOverview,
+  flagUnfoundValues,
   reconcileFlagPaths,
+  teamSizeInSource,
+  valueInSource,
+  VALUE_NOT_FOUND_REASON,
 } from "./backstops";
 import { normalizeToShape } from "./normalize";
 import type { ReviewFlag } from "./extract.types";
@@ -95,7 +99,8 @@ test("applyBackstops: clones the input, normalised output then passes the respon
   assert.deepEqual((original.projects[0].responsibilities as unknown[]).length, 0, "input is not mutated");
   const normalized = normalizeToShape("internal", data);
   assert.equal(normalized.projects[0].responsibilities.length, 1);
-  assert.deepEqual(flags.map((f) => f.path).sort(), ["overview", "projects.0.responsibilities"]);
+  // the throwaway source text "source" contains neither the duration nor the team size, so those are flagged too
+  assert.deepEqual(flags.map((f) => f.path).sort(), ["overview", "projects.0.duration", "projects.0.responsibilities", "projects.0.teamSize"]);
 });
 
 /* ---------- 4. flag paths ---------- */
@@ -133,4 +138,49 @@ test("backstop 4: duplicate flags collapse", () => {
     { path: "name", reason: "x" },
   ]);
   assert.equal(flags.length, 1);
+});
+
+/* ---------- 3b. values not found in the source ---------- */
+
+const SOURCE = `Project 3 - Feb 2025 - June 2025
+Team Size
+5-6
+Role
+Layer 3 Backend Developer
+Education 2019 B.Tech`;
+
+test("backstop 3b: the page-number case — team size '3' (from 'Layer 3') is flagged when the label says 5-6", () => {
+  const data = { projects: [{ teamSize: "3", duration: "Feb 2025 - June 2025" }], education: [{ year: "2019" }] };
+  const flags = flagUnfoundValues(data, [], SOURCE);
+  assert.deepEqual(flags, [{ path: "projects.0.teamSize", reason: VALUE_NOT_FOUND_REASON }]);
+});
+
+test("backstop 3b: values that are in the source are not flagged (ranges, dash variants, reformatted months)", () => {
+  assert.ok(teamSizeInSource("5-6", SOURCE));
+  assert.ok(teamSizeInSource("5 – 6", SOURCE), "en dash and spaces are equivalent");
+  const data = { projects: [{ teamSize: "5-6", duration: "Feb 2025 - Jun 2025" }], education: [{ year: "2019" }] };
+  assert.deepEqual(flagUnfoundValues(data, [], SOURCE), []);
+});
+
+test("backstop 3b: missing duration, education year and experience duration are flagged with their paths", () => {
+  const data = {
+    projects: [{ teamSize: "", duration: "Jan 2010 - Dec 2010" }],
+    experience: [{ duration: "2001 - 2003" }],
+    education: [{ year: "1999" }],
+  };
+  const paths = flagUnfoundValues(data, [], SOURCE).map((f) => f.path).sort();
+  assert.deepEqual(paths, ["education.0.year", "experience.0.duration", "projects.0.duration"]);
+});
+
+test("backstop 3b: digits must match on boundaries; empty values and existing flags are left alone", () => {
+  assert.equal(valueInSource("3", "joined in 2023"), false, "'3' is not inside '2023'");
+  assert.equal(valueInSource("2023", "joined in 2023"), true);
+  assert.equal(teamSizeInSource("4", "we were a team of 4 people"), true, "no label in the source: plain match");
+  const existing = [{ path: "education.0.year", reason: VALUE_NOT_FOUND_REASON }];
+  assert.equal(flagUnfoundValues({ education: [{ year: "1999" }] }, existing, SOURCE).length, 1, "no duplicate flag");
+});
+
+test("applyBackstops includes the not-found check", () => {
+  const { flags } = applyBackstops("internal", { projects: [internalProject({ teamSize: "3", responsibilities: ["x"] })] }, [], SOURCE);
+  assert.ok(flags.some((f) => f.path === "projects.0.teamSize" && f.reason === VALUE_NOT_FOUND_REASON));
 });

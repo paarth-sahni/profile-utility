@@ -74,17 +74,16 @@ function pageNumberPages(pages: string[], edge: "first" | "last"): Set<number> {
   return out;
 }
 
-/** Drops page markers, page numbers, and short lines repeated on most pages. */
+/** A field label such as "Team Size" or "Role"; the line after it is that field's value, never a page number. */
+const FIELD_LABEL = /^(team\s*size|role|duration|project\s*link|year|tools\s*&\s*technologies|rating)\s*:?$/i;
+
+/**
+ * Drops explicit page markers and bare page numbers. Short lines that repeat across pages are NOT
+ * dropped here: field labels ("Team Size", "Role") repeat on every project and must survive —
+ * running headers/footers are removed by position in removeHeaderFooterItems(). A number or
+ * range ("5-6") directly after a field label is always kept.
+ */
 export function stripRepeatedLines(pages: string[]): string[] {
-  const counts = new Map<string, number>();
-  if (pages.length >= 3) {
-    for (const page of pages) {
-      for (const line of new Set(page.split("\n").map((l) => l.trim()))) {
-        if (line && line.length < 80) counts.set(line, (counts.get(line) ?? 0) + 1);
-      }
-    }
-  }
-  const threshold = Math.ceil(pages.length * 0.6);
   const firstEdge = pageNumberPages(pages, "first");
   const lastEdge = pageNumberPages(pages, "last");
   return pages.map((page, p) => {
@@ -95,11 +94,40 @@ export function stripRepeatedLines(pages: string[]): string[] {
       .filter((l, i) => {
         const t = l.trim();
         if (PAGE_MARKER.test(t)) return false;
-        if (BARE_NUMBER.test(t) && ((i === firstIdx && firstEdge.has(p)) || (i === lastIdx && lastEdge.has(p)))) return false;
-        return pages.length < 3 || (counts.get(t) ?? 0) < threshold;
+        if (!BARE_NUMBER.test(t)) return true; // ranges like "5-6" are never page numbers
+        const prev = lines.slice(0, i).reverse().find((x) => x.trim())?.trim() ?? "";
+        if (FIELD_LABEL.test(prev)) return true;
+        return !((i === firstIdx && firstEdge.has(p)) || (i === lastIdx && lastEdge.has(p)));
       })
       .join("\n");
   });
+}
+
+/** Page-number-like text: "3", "Page 3", "3 of 10", "3 / 10". */
+const PAGE_NUMBER_TEXT = /^(page\s*)?\d{1,3}(\s*(of|\/)\s*\d+)?$/i;
+const FOOTER_BAND = 0.06; // bottom 6% of the page
+const HEADER_BAND = 0.03; // top 3% of the page
+
+/**
+ * Removes running headers/footers by position: page numbers in the footer/header band, and band
+ * text that repeats on most pages. Content inside the page body is never touched.
+ */
+export function removeHeaderFooterItems(pages: PdfTextItem[][], pageHeights: number[]): PdfTextItem[][] {
+  const inBand = (it: PdfTextItem, h: number) => it.y < h * FOOTER_BAND || it.y > h * (1 - HEADER_BAND);
+  const counts = new Map<string, number>();
+  pages.forEach((items, p) => {
+    for (const t of new Set(items.filter((it) => inBand(it, pageHeights[p])).map((it) => it.str.trim()))) {
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+  });
+  const repeatMin = Math.max(2, Math.ceil(pages.length * 0.6));
+  return pages.map((items, p) =>
+    items.filter((it) => {
+      if (!inBand(it, pageHeights[p])) return true;
+      const t = it.str.trim();
+      return !PAGE_NUMBER_TEXT.test(t) && !((counts.get(t) ?? 0) >= repeatMin);
+    }),
+  );
 }
 
 /** Collapses whitespace, repairs hyphenated line breaks and trims blank runs. */
@@ -170,20 +198,28 @@ export function splitColumns(items: PdfTextItem[], pageWidth: number): { main: P
  */
 async function pdfPages(buf: Buffer): Promise<{ pages: string[]; sidebar: string }> {
   const pdf = await getDocumentProxy(new Uint8Array(buf));
-  const main: string[] = [];
-  const sidebar: string[] = [];
+  const rawPages: PdfTextItem[][] = [];
+  const widths: number[] = [];
+  const heights: number[] = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     const page = await pdf.getPage(n);
-    const width = page.getViewport({ scale: 1 }).width;
+    const viewport = page.getViewport({ scale: 1 });
+    widths.push(viewport.width);
+    heights.push(viewport.height);
     const content = await page.getTextContent();
     const items: PdfTextItem[] = [];
     for (const it of content.items) {
       if ("str" in it && it.str.trim()) items.push({ str: it.str, x: it.transform[4], y: it.transform[5], width: it.width });
     }
-    const split = splitColumns(items, width);
+    rawPages.push(items);
+  }
+  const main: string[] = [];
+  const sidebar: string[] = [];
+  removeHeaderFooterItems(rawPages, heights).forEach((items, p) => {
+    const split = splitColumns(items, widths[p]);
     main.push(itemsToLines(split.main).join("\n"));
     if (split.sidebar.length > 0) sidebar.push(itemsToLines(split.sidebar).join("\n"));
-  }
+  });
   return { pages: main, sidebar: sidebar.join("\n") };
 }
 

@@ -4,6 +4,7 @@
  *   1. empty responsibilities on a project with a role -> one bullet built from the role
  *   2. overview that starts with "The candidate" / a pronoun -> flag (never rewritten)
  *   3. banned marketing words that are not in the source text -> flag the field path
+ *   3b. teamSize / duration / education year values that are not in the source text -> flag
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -73,6 +74,74 @@ export function flagBannedWords(data: unknown, flags: ReviewFlag[], sourceText: 
   return out;
 }
 
+export const VALUE_NOT_FOUND_REASON = "value not found in source, please check";
+
+/** Lower-cases and unifies dashes/spaces so "5 – 6" and "5-6" compare equal. */
+const canon = (v: string): string =>
+  v
+    .toLowerCase()
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Is `value` supported by the source? Exact (normalised) match with digit boundaries, so "3" does not
+ * match inside "2023". Durations may be re-formatted by the model ("June" -> "Jun"), so for them it
+ * is enough that every number in the value (years, days) appears in the source.
+ */
+export function valueInSource(value: string, sourceText: string, lenientNumbers = false): boolean {
+  const v = canon(value);
+  const src = canon(sourceText);
+  if (!v) return true;
+  const digitSafe = (x: string) => new RegExp(`(^|[^\\d])${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\d])`).test(src);
+  if (digitSafe(v)) return true;
+  if (!lenientNumbers) return false;
+  const numbers = v.match(/\d+/g);
+  return !!numbers && numbers.every((n) => digitSafe(n));
+}
+
+/**
+ * Team size is supported if it appears right after a "Team Size" label in the source. When the
+ * source has no such label at all, any digit-bounded occurrence of the value is accepted. This
+ * catches a model that picks up a stray "3" (page number, "Layer 3") instead of the real "5-6".
+ */
+export function teamSizeInSource(value: string, sourceText: string): boolean {
+  const src = canon(sourceText);
+  if (!/team size/.test(src)) return valueInSource(value, sourceText);
+  const v = canon(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`team size\\s*[:\\-]?\\s*${v}($|[^\\d])`).test(src);
+}
+
+/** 3b. Flags teamSize, duration and education year values that don't appear in the source text. */
+export function flagUnfoundValues(data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (!isRecord(data)) return flags;
+  const out = [...flags];
+  const check = (
+    obj: unknown,
+    path: string,
+    key: string,
+    lenient: boolean,
+    found: (v: string, src: string) => boolean = (v, src) => valueInSource(v, src, lenient),
+  ) => {
+    if (!isRecord(obj)) return;
+    const value = str(obj[key]);
+    if (!value || found(value, sourceText)) return;
+    const fieldPath = `${path}.${key}`;
+    if (!hasFlag(out, fieldPath, VALUE_NOT_FOUND_REASON)) out.push({ path: fieldPath, reason: VALUE_NOT_FOUND_REASON });
+  };
+  const each = (list: unknown, name: string, fn: (item: unknown, path: string) => void) => {
+    if (Array.isArray(list)) list.forEach((item, i) => fn(item, `${name}.${i}`));
+  };
+  each(data.projects, "projects", (p, path) => {
+    check(p, path, "teamSize", false, teamSizeInSource);
+    check(p, path, "duration", true);
+  });
+  each(data.experience, "experience", (e, path) => check(e, path, "duration", true));
+  each(data.education, "education", (e, path) => check(e, path, "year", false));
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -84,6 +153,7 @@ export function applyBackstops(
   let next = fillEmptyResponsibilities(templateId, copy, flags);
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
+  next = flagUnfoundValues(copy, next, sourceText);
   return { data: copy, flags: next };
 }
 

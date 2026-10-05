@@ -6,7 +6,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { buildResumePdf, type PdfAssets } from "./pdf";
-import { extractResumeText, splitColumns, stripRepeatedLines, type PdfTextItem } from "./extractText";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { extractResumeText, removeHeaderFooterItems, splitColumns, stripRepeatedLines, type PdfTextItem } from "./extractText";
 import type { ExternalResume, InternalResume } from "./schemas";
 
 const assets: PdfAssets = {
@@ -87,4 +88,67 @@ test("stripRepeatedLines: a lone number starting a page is kept; a numbered foot
   assert.ok(kept[1].startsWith("3"), "team size at the top of a page must survive");
   const dropped = stripRepeatedLines(["Intro text\n1", "More text\n2", "Last text\n3"]);
   assert.deepEqual(dropped.map((p) => p.trim()), ["Intro text", "More text", "Last text"]);
+});
+
+/* ---------- regression: team size range lost on a multi-page InfoBeans profile ---------- */
+
+/** Builds the internal PDF and stamps a bare page number in the footer of every page, like Google Docs does. */
+async function withFooterNumbers(resume: InternalResume): Promise<{ bytes: Uint8Array; pages: number }> {
+  const doc = await PDFDocument.load(await buildResumePdf("internal", resume, assets));
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.getPages().forEach((page, i) => page.drawText(String(i + 1), { x: 511, y: 21, size: 9, font }));
+  return { bytes: await doc.save(), pages: doc.getPageCount() };
+}
+
+test("field labels repeated on every project survive, ranges stay attached, footer numbers are gone", async () => {
+  const base = internal(6);
+  const sizes = ["7-8", "4", "5-6", "9", "5-6"];
+  const resume: InternalResume = {
+    ...base,
+    projects: sizes.map((teamSize, i) => ({
+      ...base.projects[0],
+      title: `Project ${i}`,
+      teamSize,
+      role: i === 2 ? "Layer 3 Backend Developer" : "Backend Developer",
+      description: overview.repeat(2),
+    })),
+  };
+  const { bytes, pages } = await withFooterNumbers(resume);
+  assert.ok(pages >= 3, `expected a 3+ page PDF, got ${pages}`);
+  const { text } = await extractResumeText(Buffer.from(bytes));
+  const lines = text.split("\n").map((l) => l.trim());
+
+  const labelAt = lines.flatMap((l, i) => (l === "Team Size" ? [i] : []));
+  assert.equal(labelAt.length, sizes.length, "every project keeps its Team Size label");
+  assert.deepEqual(labelAt.map((i) => lines[i + 1]), sizes, "each label is followed by its own value, incl. ranges");
+  assert.equal(lines.filter((l) => l === "Role").length, sizes.length, "Role labels survive too");
+  for (const n of ["1", "2", "3"]) assert.ok(!lines.includes(n), `footer page number ${n} must not leak into the text`);
+});
+
+test("stripRepeatedLines keeps repeated field labels and anything directly after a label", () => {
+  const page = (v: string) => `Project\nTeam Size\n${v}\nRole`;
+  const out = stripRepeatedLines([page("7-8"), page("2"), page("3")]);
+  out.forEach((p) => assert.ok(p.includes("Team Size") && p.includes("Role")));
+  assert.ok(out[1].includes("\n2\n"), "a lone number after a label is the value, not a page number");
+  // even when the values would otherwise look like a 1,2,3 page-number run at the page start
+  const run = stripRepeatedLines(["Team Size\n1", "Team Size\n2", "Team Size\n3"]);
+  assert.deepEqual(run, ["Team Size\n1", "Team Size\n2", "Team Size\n3"]);
+});
+
+test("a range 'N-M' is never a page number", () => {
+  const out = stripRepeatedLines(["intro\n5-6", "5-6\nmore", "x\n7-8"]);
+  assert.deepEqual(out, ["intro\n5-6", "5-6\nmore", "x\n7-8"]);
+});
+
+test("removeHeaderFooterItems: drops footer numbers and repeated band text, keeps body numbers", () => {
+  const body = (str: string, y: number): PdfTextItem => ({ str, x: 51, y, width: 10 });
+  const pages = [1, 2, 3].map((n) => [
+    body("Team Size", 600),
+    body("5-6", 585),
+    body("3", 570), // a body value that looks like a page number
+    body(String(n), 21), // footer page number
+    body("InfoBeans Confidential", 15), // repeated footer
+  ]);
+  const cleaned = removeHeaderFooterItems(pages, [792, 792, 792]);
+  cleaned.forEach((items) => assert.deepEqual(items.map((i) => i.str), ["Team Size", "5-6", "3"]));
 });
