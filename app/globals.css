@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* ── InfoBeans brand system ──────────────────────────────────────────────
+   Signature "WOW" red #ea1b3d, charcoal ink #373742, near-black, clean white.
+   Mirrors the branding in the official InfoBeans resume templates. */
+@theme {
+  --color-brand-50: #fdecef;
+  --color-brand-100: #fbd2d9;
+  --color-brand-200: #f6a6b4;
+  --color-brand-300: #f17890;
+  --color-brand-400: #ef4768;
+  --color-brand-500: #ea1b3d; /* signature InfoBeans red */
+  --color-brand-600: #cc1535;
+  --color-brand-700: #a8102b;
+  --color-brand-800: #820c21;
+  --color-brand-900: #5d0817;
+
+  --color-ink: #373742; /* charcoal body/text */
+  --color-ink-light: #676775; /* medium gray — secondary text (compass.creatingwow.in) */
+  --color-ink-dark: #1c1c22; /* headers / dark sections */
+
+  --color-hairline: #e6e6ed; /* light gray — borders */
+  --color-cream: #fff9ed; /* light cream — brand surface */
+  --color-peach: #ffd0d8;
+  --color-warm: #fff3d4;
+  --color-brand-dark: #aa142d; /* dark red */
+  --color-brand-deep: #7c2235; /* deep red */
+
+  --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --background: #fff9ed; /* light cream — brand page background (compass.creatingwow.in) */
+  --foreground: #373742;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* subtle entrance used on page sections */
+@keyframes brand-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: brand-fade-up 0.35s ease-out both;
+}
