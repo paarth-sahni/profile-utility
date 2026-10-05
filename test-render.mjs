@@ -10,7 +10,7 @@ const external = {
   overview: "Seasoned engineer with broad platform experience.",
   education: [
     { year: "2015", qualification: "M.Tech (CS), IIT Delhi" },
-    { year: "2012", qualification: "B.E. (IT), RGPV Bhopal" },
+    { year: "2012", qualification: "B.E. (IT), Riverside University" },
   ],
   skills: "AWS, Terraform, Go",
   tools: "JIRA, GIT",
@@ -33,7 +33,7 @@ const internal = {
   overview: "Seasoned engineer with broad platform experience.",
   education: [
     { year: "2015", qualification: "M.Tech (CS), IIT Delhi" },
-    { year: "2012", qualification: "B.E. (IT), RGPV Bhopal" },
+    { year: "2012", qualification: "B.E. (IT), Riverside University" },
   ],
   projects: [
     { number: 1, duration: "Jan 2023 - Dec 2023", title: "Payments Platform", toolsAndTechnologies: "Go, Postgres, K8s", teamSize: "6", role: "Tech Lead", projectLink: "NDA", description: "Built a payments platform.", responsibilities: ["Led design.", "Shipped v1."] },

@@ -36,40 +36,34 @@ const CORE_RULES = `You are converting a resume into the InfoBeans {PROFILE} pro
 
 TRUTHFULNESS (highest priority)
 - Use only facts present in the resume. Never invent employers, clients, projects, dates, certifications, metrics, team sizes or links.
-- You MAY improve wording: fix grammar, use strong past-tense action verbs, remove filler, make bullets parallel and concise.
-  You may NOT add claims, outcomes or numbers that are not in the source.
+- Keep facts exactly as stated: the same tools, channels, platforms, numbers and wording (e.g. "via REST and gRPC" stays "via REST and gRPC"). You MAY fix grammar, remove filler and make bullets parallel and concise, but you may NOT add claims or outcomes. Do not add adjectives or evaluative phrases that are not in the source ("seamless", "robust", "successfully", "efficiently", "scalable", "demonstrated", "proven", "strong", "skilled", "track record"), including in the overview. Do not generalise, upgrade or soften what was stated.
 - If information for a field or list does not exist in the resume, use "" for text and [] for lists. Never write "N/A" or placeholders.
 - Every value you had to estimate or infer (not stated outright) must be listed in reviewFlags with its dot path (e.g. "projects.0.duration", "skills.2.rating") and a short reason. Paths index the arrays in YOUR OUTPUT (after any re-ordering), not the order in the source.
 
 WRITING STANDARD
-- Overview: 3-5 sentences, third person. NEVER start with "The candidate" or any pronoun (he, she, they, his, her); start with the role or profile, e.g. "Computer Science graduate specializing in…" or "ServiceNow developer with…". Restate only facts found in the resume (experience, core expertise, domains, achievements). No evaluative phrases such as "demonstrated ability", "proven track record" or "strong skills".
-- Bullets: one sentence each, start with a past-tense verb (present tense only for the current role), 10-25 words, no trailing period inconsistency, no first person.
+- Overview: 3-5 sentences, third person, restating only facts found in the resume (experience, core expertise, domains, achievements). Start with the role or profile (e.g. "Computer Science graduate specializing in…", "Cloud engineer with…"); never with "The candidate" or any pronoun.
 - Never use gendered pronouns (he, she, his, her) or guess gender from a name; write without pronouns.
-- Keep facts exactly as stated: the same tools, channels, platforms and wording (e.g. "via CLI and MCP" stays "via CLI and MCP"). Do not add adjectives or claims that are not in the source ("seamless", "robust", "successfully", "efficiently", "scalable", "demonstrated", "proven", "strong", "skilled"), including in the overview. Do not generalise, upgrade or soften what was stated.
+- Bullets: one sentence each, start with a past-tense verb (present tense only for the current role), 10-25 words, no trailing period inconsistency, no first person.
 - Keep technology names in their official casing (JavaScript, ReactJS, Node.js, AWS, ServiceNow, PostgreSQL).
 - Deduplicate skills/tools case-insensitively. Skills = capabilities/languages/frameworks/methodologies; tools = software products used to do the work (JIRA, Git, Postman, Jenkins).
 
 DERIVED FIELDS
-- experienceSummary: when the candidate has 1 or more years of full-time professional experience, exactly "<N>+ Years of Industry Experience".
-  N = whole years from the earliest full-time professional role to today ({TODAY}), merging overlapping periods, excluding internships,
-  training and education, rounded down. Add a reviewFlag (path "experienceSummary") explaining the calculation.
-  If full-time experience is UNDER 1 year, NEVER output "0+ Years of Industry Experience". Instead:
-  - For an existing InfoBeans profile, keep its experience line exactly as written (e.g. "4th Year B.Tech (AI) Student", "Fresher (5 months of internship experience)").
-  - Otherwise output "Fresher", or "Fresher (<N> months of internship experience)" when internships are stated in the resume.
-  Flag it (path "experienceSummary") with the reason.
-- specialization: the candidate's core specialization in at most 5 words (e.g. "ServiceNow ITSM", "Java Full Stack Development"). For an existing InfoBeans profile, keep the header's specialization line exactly as written when it is 5 words or fewer (e.g. "AI CoE").
+- experienceSummary: with 1 or more years of full-time professional experience, exactly "<N>+ Years of Industry Experience". N = whole years from the earliest full-time professional role to today ({TODAY}), merging overlapping periods, excluding internships, training and education, rounded down.
+  Under 1 year, NEVER output "0+ Years of Industry Experience". For an existing InfoBeans profile keep its experience line exactly as written (e.g. "Final Year MBA Student", "Fresher (3 months of internship experience)"). Otherwise output "Fresher", or "Fresher (<N> months of internship experience)" when internships are stated.
+  Always add a reviewFlag (path "experienceSummary") with the reason (for 1+ years, explain the calculation).
+- specialization: the candidate's core specialization in at most 5 words (e.g. "Cloud Infrastructure & DevOps", "Java Full Stack Development"). For an existing InfoBeans profile, keep the header's specialization line exactly as written when it is 5 words or fewer (e.g. "Quality Engineering").
 - education: exactly one entry, the highest qualification. Ignore 10th/12th (school-level) education whenever a degree or diploma exists; use school-level education only if nothing higher is stated. Keep extra facts on the education line (e.g. CGPA, percentage, honours) inside the "qualification" text. If none is stated, return [] and flag it (path "education").
 - Order projects and experience most recent first.
 
 FIELD HANDLING
-- Project dates: if a project has no stated duration, keep "duration" as "" and add a reviewFlag (path "projects.<index>.duration"). Never invent dates and never borrow employer dates for an existing InfoBeans profile.
+- Project dates: if a project has no stated duration, keep "duration" as "" and add a reviewFlag (path "projects.<index>.duration"). Never invent dates, and never borrow employer dates unless an adaptation below explicitly allows it.
 - Content in the wrong field: if a field clearly contains content that belongs in another field (e.g. "Tools & Technologies" holding a sentence of description), move it where it belongs when that is obvious. Otherwise keep it and add a reviewFlag with the reason "looks like a description, not tools" (or the equivalent for that field).
-- Team size: keep ranges exactly as written (e.g. "7-8", "5-6"). Do not collapse them to one number.
+- Team size: keep ranges exactly as written (e.g. "2-3", "10-12"). Do not collapse them to one number.
 - Project text — never invent actions and never move content:
   * Keep each project's content in that project. Never move content between projects, and never move content from the overview or any other section into a project.
   * DESCRIPTION comes from the project's own text in the resume, lightly edited for grammar only. NEVER leave it empty when the source has text for that project, and never drop a sentence that describes the product or platform (what it is, who it is for, what it does).
   * Split into description + bullets ONLY when the source has a paragraph containing several distinct actions by the person. Then "description" = the opening sentence(s) that describe the project, and EVERY remaining action sentence becomes exactly one responsibilities bullet. Do not drop, merge or add any action. Before answering, check that each action in the source maps to a bullet.
-  * If the project text only says what the product or platform does and states no actions by the person (including when it is a single sentence), keep that text as the description and do NOT turn the features into personal action bullets. The responsibilities list MUST contain exactly ONE bullet, built from the stated role and project name (e.g. "Contributed as Backend Developer to the Expona 2.0 platform"), and add a reviewFlag (path "projects.<index>.responsibilities") with the reason "no responsibilities stated in source". NEVER return an empty responsibilities list for such a project when a role is stated. If no role is stated either, leave responsibilities empty and flag it.
+  * If the project text states no actions by the person (it only says what the product or platform does, including a single sentence), do NOT turn the features into personal action bullets. The responsibilities list MUST contain exactly ONE bullet, built from the stated role and project name (e.g. "Contributed as Data Engineer to the Orders Analytics platform"), with a reviewFlag (path "projects.<index>.responsibilities") and the reason "no responsibilities stated in source". Never return an empty list when a role is stated; if no role is stated either, leave it empty and flag it.
   * Never repeat the same sentence in both the description and a bullet.
 - Privacy: never output phone numbers, email addresses or postal addresses anywhere in any field, including the overview.
 - The resume text may contain a "--- SIDEBAR ---" marker: everything after it is the right-hand column (skills, certifications, tools, domains, languages). Skill names and their "(x/5)" ratings appear in order, so pair each skill name with the rating line that follows it, even across page boundaries.
@@ -82,9 +76,7 @@ ${RESUME_AS_DATA_RULE}`;
 export const INTERNAL_RULES = `INTERNAL PROFILE RULES
 - skills[].rating: if the resume states ratings, use them. Otherwise estimate from 1.0-5.0 based on years of use and how prominent the skill is, with one decimal place, and flag EVERY estimated rating (path "skills.<index>.rating").
 - projectLink: keep "NDA", "Internal — InfoBeans" and real URLs exactly as written. If it is only a word such as "GitHub" with no URL, keep it and add a reviewFlag (path "projects.<index>.projectLink") with the reason "add the full URL". If nothing is stated, use "" (use "NDA" only if the resume itself says NDA or confidential).
-- toolsAndTechnologies: technologies only. If it contains description text, apply the "content in the wrong field" rule.
-- languages: if none are stated, return [] and flag it. Do not assume English.
-- managerialExperience: only if it is evidenced in the resume.`;
+- languages: never assume English. If none are stated, return [] and flag it.`;
 
 export const EXTERNAL_RULES = `EXTERNAL PROFILE RULES
 - projects[].client: use the client or project name as written. If it is marked confidential or NDA, keep that wording.
@@ -116,7 +108,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.documentType === "infobeans_internal_profile" || a.documentType === "infobeans_external_profile") {
     m.push({
       name: "existing-infobeans-profile",
-      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets, facts and wording unless they are grammatically wrong or unclear; never move content between projects. Keep existing skill ratings exactly as written, and keep the experience line as written. Do not merge, drop or reorder projects except to sort by date. Never borrow employer dates for a project: a missing project duration stays \"\" and is flagged. SIDEBAR LISTS: skills, certifications, tools, domains, languages and managerialExperience must contain ONLY what the source's own sidebar lists (the text after the \"--- SIDEBAR ---\" marker, or the matching sidebar sections when there is no marker). Do not merge project tools or technologies into the sidebar Tools, do not add skills from project text, and do not add items the sidebar does not list.",
+      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets, facts and wording unless they are grammatically wrong or unclear. Copy the header lines under the name (job title, experience line, specialization) exactly as written; a specialization line of 5 words or fewer is used as is. Keep existing skill ratings exactly as written. Do not merge, drop or reorder projects except to sort by date. SIDEBAR LISTS: skills, certifications, tools, domains, languages and managerialExperience must contain ONLY what the source's own sidebar lists (the text after the \"--- SIDEBAR ---\" marker, or the matching sidebar sections when there is no marker). Do not merge project tools or technologies into the sidebar Tools, do not add skills from project text, and do not add items the sidebar does not list.",
     });
   } else {
     m.push({
@@ -127,7 +119,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.projectsLayout === "embedded_in_jobs") {
     m.push({
       name: "projects-embedded-in-jobs",
-      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry. If a project has no dates of its own and clearly spans one employer engagement, you may use that employer's dates; otherwise leave the duration empty. Flag every such case in reviewFlags.",
+      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry. If a project has no dates of its own and clearly spans one employer engagement, you may use that employer's dates (never for an existing InfoBeans profile); otherwise leave the duration empty. Flag every such case in reviewFlags.",
     });
   } else if (a.projectsLayout === "none") {
     m.push({
@@ -138,7 +130,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.seniority === "fresher" || a.seniority === "junior") {
     m.push({
       name: "early-career",
-      text: "Academic, internship and personal projects may be included as projects; label role accordingly (e.g. 'Intern', 'Academic Project'). Keep the overview focused on skills and project work rather than leadership. If full-time experience is under 1 year, follow the experienceSummary fresher rule.",
+      text: "Academic, internship and personal projects may be included as projects; label role accordingly (e.g. 'Intern', 'Academic Project'). Keep the overview focused on skills and project work rather than leadership.",
     });
   } else if (a.seniority === "senior" || a.seniority === "leadership") {
     m.push({
@@ -173,64 +165,67 @@ export function describePromptPlan(analysis: ResumeAnalysis): string[] {
   return selectModules(analysis).map((m) => m.name);
 }
 
+const DESC_COMMENT =
+  "The project's own text, lightly edited for grammar (see the project text rules); never empty if the source has text";
+
 const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
-  "name": string,                  // Candidate full name, e.g. "Amit Dave"
-  "jobTitle": string,              // Current/target designation, e.g. "Senior Project Lead"
-  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "17+ Years of Industry Experience"; freshers: see the experienceSummary rule
-  "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "ServiceNow ITSM"
+  "name": string,                  // Candidate full name, e.g. "Jordan Lee"
+  "jobTitle": string,              // Current/target designation, e.g. "Senior QA Engineer"
+  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "12+ Years of Industry Experience"; freshers: see the experienceSummary rule
+  "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "Cloud Infrastructure & DevOps"
   "overview": string,              // 3-5 sentence professional summary paragraph
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
-    { "year": string,              // Completion year, e.g. "2008"
-      "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (IT), RGPV Bhopal"
+    { "year": string,              // Completion year, e.g. "2016"
+      "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (Computer Science), Riverside University"
   ],
-  "skills": [string],              // Flat list of skills, e.g. ["JavaScript", "ReactJS", "Team Management"]
-  "tools": [string],               // Tools/software the candidate uses, e.g. ["JIRA", "GIT", "SVN"]
-  "certifications": [string],      // Professional certifications stated in the resume, e.g. ["ServiceNow CSA"]; [] if none
+  "skills": [string],              // Flat list of skills, e.g. ["TypeScript", "GraphQL", "Team Leadership"]
+  "tools": [string],               // Tools/software the candidate uses, e.g. ["Jenkins", "Postman", "Git"]
+  "certifications": [string],      // Professional certifications stated in the resume, e.g. ["AWS Solutions Architect – Associate"]; [] if none
   "projects": [                    // One entry per project (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"; "" if not stated (flag it)
-      "client": string,            // Client/project name, e.g. "Bharti Airtel, Africa"
-      "teamSize": string,          // e.g. "5" or a range "7-8" exactly as written; "" if not stated
-      "role": string,              // Candidate's role on the project, e.g. "Developer and Tester"
-      "description": string,       // The project's own text from the resume, lightly edited for grammar; never empty if the source has text. If the source is one paragraph of several actions: only the opening sentence(s) describing the project go here, the actions go in responsibilities
+    { "duration": string,          // Project period, e.g. "Feb 2021 - Aug 2021"; "" if not stated (flag it)
+      "client": string,            // Client/project name, e.g. "Northwind Retail, UK"
+      "teamSize": string,          // e.g. "5" or a range "2-3" exactly as written; "" if not stated
+      "role": string,              // Candidate's role on the project, e.g. "Backend Developer"
+      "description": string,       // ${DESC_COMMENT}
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
     }
   ],
   "experience": [                  // One entry per employer, most recent first
-    { "company": string,           // e.g. "Accenture"
-      "position": string,          // e.g. "ServiceNow Developer"
+    { "company": string,           // e.g. "Contoso Software"
+      "position": string,          // e.g. "Quality Engineer"
       "duration": string,          // e.g. "2023 - Present"
       "highlights": [string]       // Achievement bullet points, each a single sentence; [] if none are given
     }
   ],
   "reviewFlags": [                 // Every inferred/estimated value; [] if none
     { "path": string,              // dot path, e.g. "projects.0.duration"
-      "reason": string }           // short reason, e.g. "Project dates not given; used employer dates"
+      "reason": string }           // short reason, e.g. "Project dates not stated"
   ]
 }`;
 
 const EXTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Amit Dave","jobTitle":"Senior Project Lead","experienceSummary":"3+ Years of Industry Experience","specialization":"ServiceNow ITSM","overview":"ServiceNow professional with 3+ years of experience specializing in ITSM. Skilled in development, configuration and customization of ServiceNow modules. Experienced in workflow automation and cross-functional collaboration.","education":[{"year":"2008","qualification":"Bachelor of Engineering (IT), RGPV Bhopal"}],"skills":["JavaScript","WordPress","MySQL","ReactJS","Team Management"],"tools":["JIRA","SVN","GIT"],"certifications":["ServiceNow CSA"],"projects":[{"duration":"Jan 2021 - Dec 2021","client":"Bharti Airtel, Africa","teamSize":"5","role":"Developer and Tester","description":"Client project covering report mapping and report generation with Crystal Reports, with end-to-end testing based on customized use cases.","responsibilities":["Worked on report mapping and report generation using Crystal Reports.","Designed and executed test cases for customized client requirements.","Performed end-to-end application testing and validation."]}],"experience":[{"company":"Accenture","position":"ServiceNow Developer","duration":"2023 - Present","highlights":["Configured and customized ITSM, HRSD, and ITBM modules to improve workflow efficiency by 40%.","Developed business rules, client scripts, and UI policies to enhance performance."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2021) to today"}]}`;
+{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Cloud platform engineer with 9+ years of experience in infrastructure automation and CI/CD. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 - Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"2019 - Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
 
 const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
-  "name": string,                  // Candidate full name, e.g. "Amit Dave"
-  "jobTitle": string,              // Current/target designation, e.g. "Senior Project Lead"
-  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "17+ Years of Industry Experience"; freshers: see the experienceSummary rule
-  "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "ServiceNow ITSM"
+  "name": string,                  // Candidate full name, e.g. "Jordan Lee"
+  "jobTitle": string,              // Current/target designation, e.g. "Senior QA Engineer"
+  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "12+ Years of Industry Experience"; freshers: see the experienceSummary rule
+  "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "Cloud Infrastructure & DevOps"
   "overview": string,              // 3-5 sentence professional summary paragraph
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
-    { "year": string,              // Completion year, e.g. "2008"
-      "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (IT), RGPV Bhopal"
+    { "year": string,              // Completion year, e.g. "2016"
+      "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (Computer Science), Riverside University"
   ],
   "projects": [                    // One entry per project, most recent first (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"; "" if not stated (flag it)
-      "title": string,             // Project title, e.g. "National College Admissions Consulting site"
-      "toolsAndTechnologies": [string], // Technologies stated for the project, e.g. ["Node", "HTML", "MySQL", "React"]; [] if none stated
-      "teamSize": string,          // e.g. "3" or a range "5-6" exactly as written; "" if not stated
+    { "duration": string,          // Project period, e.g. "Feb 2021 - Aug 2021"; "" if not stated (flag it)
+      "title": string,             // Project title, e.g. "Customer loyalty portal"
+      "toolsAndTechnologies": [string], // Technologies stated for the project, e.g. ["Node", "HTML", "PostgreSQL", "React"]; [] if none stated
+      "teamSize": string,          // e.g. "3" or a range "2-3" exactly as written; "" if not stated
       "role": string,              // e.g. "Project Lead"
       "projectLink": string,       // "NDA", "Internal — InfoBeans" or a URL exactly as written; otherwise ""
-      "description": string,       // The project's own text from the resume, lightly edited for grammar; never empty if the source has text. If the source is one paragraph of several actions: only the opening sentence(s) describing the project go here, the actions go in responsibilities
+      "description": string,       // ${DESC_COMMENT}
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
     }
   ],
@@ -238,8 +233,8 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
     { "name": string,              // e.g. "ReactJS"
       "rating": string }           // Rating out of 5 as a plain number string, e.g. "3.8" (rendered as "(3.8/5)")
   ],
-  "certifications": [string],      // Certifications stated in the resume, e.g. ["ServiceNow ITSM"]; [] if none
-  "tools": [string],               // e.g. ["JIRA", "SVN", "GIT"]
+  "certifications": [string],      // Certifications stated in the resume, e.g. ["Scrum Master (PSM I)"]; [] if none
+  "tools": [string],               // e.g. ["Jenkins", "Postman", "Git"]
   "managerialExperience": [string],// Managerial capabilities evidenced in the resume, e.g. ["Project Management", "Team Building"]; [] if none
   "domains": [string],             // Business domains worked in, e.g. ["Healthcare", "E-commerce"]
   "languages": [string],           // Spoken languages stated in the resume, e.g. ["English", "Hindi"]; [] if none
@@ -250,7 +245,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const INTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Amit Dave","jobTitle":"Senior Project Lead","experienceSummary":"3+ Years of Industry Experience","specialization":"ServiceNow ITSM","overview":"ServiceNow professional with 3+ years of industry experience specializing in ITSM. Skilled in development, configuration, customization and implementation of ITSM modules.","education":[{"year":"2008","qualification":"Bachelor of Engineering (IT), RGPV Bhopal"}],"projects":[{"duration":"Feb 2020 - June 2020","title":"National College Admissions Consulting site","toolsAndTechnologies":["Node","HTML","MySQL","CSS","React","PayPal"],"teamSize":"3","role":"Project Lead","projectLink":"","description":"Web-based college admissions consulting platform that connects students with experienced former admissions officers for application reviews and guidance.","responsibilities":["Led end-to-end development of a college admissions consulting platform.","Developed frontend and backend modules using React, Node.js, and MySQL.","Integrated PayPal payment gateway for secure online transactions."]}],"skills":[{"name":"Java script","rating":"3.5"},{"name":"ReactJS","rating":"3.8"}],"certifications":["ServiceNow ITSM"],"tools":["JIRA","SVN","GIT"],"managerialExperience":["Project Management","Team Building"],"domains":["Healthcare","E-commerce"],"languages":["English","Hindi"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
+{"name":"Daniel Ortiz","jobTitle":"Mobile Application Developer","experienceSummary":"4+ Years of Industry Experience","specialization":"Mobile App Development","overview":"Mobile developer with 4+ years of experience building Android and cross-platform apps for retail and logistics clients. Experienced in offline-first design and payment integrations.","education":[{"year":"2020","qualification":"Bachelor of Technology (Electronics), Lakeshore University"}],"projects":[{"duration":"Aug 2022 - Mar 2023","title":"Store Associate Companion App","toolsAndTechnologies":["Kotlin","Room","Firebase","Jetpack Compose"],"teamSize":"6","role":"Android Developer","projectLink":"NDA","description":"Mobile app that gives retail store associates stock lookup, order tracking and task lists on the shop floor.","responsibilities":["Built the stock lookup and order tracking screens with Jetpack Compose.","Implemented offline caching with Room so the app works without connectivity.","Integrated Firebase push notifications for task assignments."]}],"skills":[{"name":"Kotlin","rating":"4"},{"name":"Android SDK","rating":"4.2"}],"certifications":["Google Associate Android Developer"],"tools":["Android Studio","Git","JIRA"],"managerialExperience":[],"domains":["Retail","Logistics"],"languages":["English","Spanish"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
 
 /** Description of the JSON shape for the template (also useful on its own in tests). */
 export const schemaDescription = (id: TemplateId): string => (id === "external" ? EXTERNAL_SCHEMA : INTERNAL_SCHEMA);

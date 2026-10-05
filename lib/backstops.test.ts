@@ -25,7 +25,7 @@ import type { ReviewFlag } from "./extract.types";
 
 const internalProject = (over: Record<string, unknown> = {}) => ({
   duration: "Jan 2025 - Jun 2025",
-  title: "Expona 2.0",
+  title: "Orders Analytics",
   toolsAndTechnologies: ["Python"],
   teamSize: "4",
   role: "Backend Developer",
@@ -40,14 +40,14 @@ const internalProject = (over: Record<string, unknown> = {}) => ({
 test("backstop 1: empty responsibilities + role -> role bullet and flag (internal uses title)", () => {
   const data = { projects: [internalProject()] };
   const flags = fillEmptyResponsibilities("internal", data, []);
-  assert.deepEqual(data.projects[0].responsibilities, ["Contributed as Backend Developer to Expona 2.0"]);
+  assert.deepEqual(data.projects[0].responsibilities, ["Contributed as Backend Developer to Orders Analytics"]);
   assert.deepEqual(flags, [{ path: "projects.0.responsibilities", reason: NO_RESPONSIBILITIES_REASON }]);
 });
 
 test("backstop 1: external projects use the client name", () => {
-  const data = { projects: [{ client: "Airtel", role: "Tester", responsibilities: ["", "  "] }] };
+  const data = { projects: [{ client: "Northwind", role: "Tester", responsibilities: ["", "  "] }] };
   fillEmptyResponsibilities("external", data, []);
-  assert.deepEqual(data.projects[0].responsibilities, ["Contributed as Tester to Airtel"]);
+  assert.deepEqual(data.projects[0].responsibilities, ["Contributed as Tester to Northwind"]);
 });
 
 test("backstop 1: leaves existing bullets, roleless projects and existing flags alone", () => {
@@ -151,10 +151,10 @@ const SOURCE = `Project 3 - Feb 2025 - June 2025
 Team Size
 5-6
 Role
-Layer 3 Backend Developer
+Tier 3 Backend Developer
 Education 2019 B.Tech`;
 
-test("backstop 3b: the page-number case — team size '3' (from 'Layer 3') is flagged when the label says 5-6", () => {
+test("backstop 3b: a stray digit — team size '3' (from 'Tier 3') is flagged when the label says 5-6", () => {
   const data = { projects: [{ teamSize: "3", duration: "Feb 2025 - June 2025" }], education: [{ year: "2019" }] };
   const flags = flagUnfoundValues(data, [], SOURCE);
   assert.deepEqual(flags, [{ path: "projects.0.teamSize", reason: VALUE_NOT_FOUND_REASON }]);
@@ -193,7 +193,7 @@ test("applyBackstops includes the not-found check", () => {
 /* ---------- 3c. empty description although the source has text ---------- */
 
 const PROJECT_SOURCE = `Project 1 - Jan 2025 - Jun 2025
-Expona 2.0
+Orders Analytics
 Tools & Technologies
 Python, FastAPI, PostgreSQL, Docker, Firebase, Azure,
 Playwright, Neo4j, Pinecone, Git, Jira, Swagger
@@ -203,7 +203,7 @@ Role
 Backend Developer
 Project Link
 Internal — InfoBeans
-Expona 2.0 is an enterprise platform that lets teams manage experiments and share dashboards.
+Orders Analytics is an enterprise platform that lets teams track orders and share dashboards.
 Project 2 - Jul 2025 - Dec 2025
 Doc Assistant
 Tools & Technologies
@@ -232,8 +232,8 @@ test("backstop 3c: non-empty descriptions, unknown projects and duplicate flags 
 });
 
 test("backstop 3c: external projects are matched by client name; wrapped names still match", () => {
-  const src = "Project 1\nBharti\nAirtel, Africa\nRole\nTester\nWorked on report mapping and testing for the telecom client.";
-  const data = { projects: [{ client: "Bharti Airtel, Africa", role: "Tester", description: "" }] };
+  const src = "Project 1\nNorthwind\nTelecom, Africa\nRole\nTester\nWorked on report mapping and testing for the telecom client.";
+  const data = { projects: [{ client: "Northwind Telecom, Africa", role: "Tester", description: "" }] };
   assert.equal(flagMissingDescriptions("external", data, [], src).length, 1);
 });
 
@@ -245,7 +245,7 @@ test("hasProseLines: labels, their values, tool lists and headings are not prose
 
 /* ---------- 3d. sidebar items must come from the source sidebar ---------- */
 
-const SIDEBAR_SOURCE = `Project 1 - Expona 2.0
+const SIDEBAR_SOURCE = `Project 1 - Orders Analytics
 Tools & Technologies
 Python, FastAPI, Playwright, Neo4j, Pinecone
 

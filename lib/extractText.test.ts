@@ -25,7 +25,7 @@ const internal = (skillCount: number): InternalResume => ({
   experienceSummary: "8+ Years of Industry Experience",
   specialization: "Cloud Platforms",
   overview,
-  education: [{ year: "2012", qualification: "B.E. (IT), RGPV Bhopal" }],
+  education: [{ year: "2012", qualification: "B.E. (IT), Riverside University" }],
   projects: Array.from({ length: 3 }, (_, i) => ({
     duration: "Jan 2022 - Dec 2022",
     title: `Project ${i}`,
@@ -66,7 +66,7 @@ test("single-column external profile has no sidebar section", async () => {
     experienceSummary: "8+ Years of Industry Experience",
     specialization: "Cloud Platforms",
     overview,
-    education: [{ year: "2012", qualification: "B.E. (IT), RGPV Bhopal" }],
+    education: [{ year: "2012", qualification: "B.E. (IT), Riverside University" }],
     skills: ["AWS", "Go"],
     tools: ["JIRA"],
     certifications: ["CKA"],
@@ -109,7 +109,7 @@ test("field labels repeated on every project survive, ranges stay attached, foot
       ...base.projects[0],
       title: `Project ${i}`,
       teamSize,
-      role: i === 2 ? "Layer 3 Backend Developer" : "Backend Developer",
+      role: i === 2 ? "Tier 3 Backend Developer" : "Backend Developer",
       description: overview.repeat(2),
     })),
   };

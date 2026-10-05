@@ -106,7 +106,7 @@ export function valueInSource(value: string, sourceText: string, lenientNumbers 
 /**
  * Team size is supported if it appears right after a "Team Size" label in the source. When the
  * source has no such label at all, any digit-bounded occurrence of the value is accepted. This
- * catches a model that picks up a stray "3" (page number, "Layer 3") instead of the real "5-6".
+ * catches a model that picks up a stray "3" (page number, "Tier 3") instead of the real "5-6".
  */
 export function teamSizeInSource(value: string, sourceText: string): boolean {
   const src = canon(sourceText);
