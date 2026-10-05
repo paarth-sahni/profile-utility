@@ -52,12 +52,30 @@ export function htmlToText(html: string): string {
 
 /** Explicit page markers: "Page 2", "Page 2 of 5", "2 of 5", "2 / 5". */
 const PAGE_MARKER = /^(page\s*\d+(\s*(of|\/)\s*\d+)?|\d+\s*(of|\/)\s*\d+)$/i;
-/** A bare 1-3 digit number — only a page number when it is the first/last line of a multi-page document's page. */
+/** A bare 1-3 digit number. */
 const BARE_NUMBER = /^\d{1,3}$/;
 
-/** Drops page markers, bare page numbers at page edges, and short lines repeated on most pages. */
-function stripRepeatedLines(pages: string[]): string[] {
-  const multi = pages.length > 1;
+/**
+ * Indexes of pages whose first (or last) line is a bare number that is part of a consecutive run
+ * across neighbouring pages (3, 4, 5…) — that is a page number. A lone number such as a team size
+ * or a year that happens to start a page is NOT a page number and is kept.
+ */
+function pageNumberPages(pages: string[], edge: "first" | "last"): Set<number> {
+  const nums = pages.map((page) => {
+    const lines = page.split("\n").filter((l) => l.trim());
+    const t = (edge === "first" ? lines[0] : lines[lines.length - 1])?.trim() ?? "";
+    return BARE_NUMBER.test(t) ? Number(t) : null;
+  });
+  const out = new Set<number>();
+  nums.forEach((n, i) => {
+    if (n === null) return;
+    if (nums[i + 1] === n + 1 || nums[i - 1] === n - 1) out.add(i);
+  });
+  return out;
+}
+
+/** Drops page markers, page numbers, and short lines repeated on most pages. */
+export function stripRepeatedLines(pages: string[]): string[] {
   const counts = new Map<string, number>();
   if (pages.length >= 3) {
     for (const page of pages) {
@@ -67,14 +85,17 @@ function stripRepeatedLines(pages: string[]): string[] {
     }
   }
   const threshold = Math.ceil(pages.length * 0.6);
-  return pages.map((page) => {
+  const firstEdge = pageNumberPages(pages, "first");
+  const lastEdge = pageNumberPages(pages, "last");
+  return pages.map((page, p) => {
     const lines = page.split("\n");
-    const last = lines.length - 1;
+    const firstIdx = lines.findIndex((l) => l.trim());
+    const lastIdx = lines.length - 1 - [...lines].reverse().findIndex((l) => l.trim());
     return lines
       .filter((l, i) => {
         const t = l.trim();
         if (PAGE_MARKER.test(t)) return false;
-        if (multi && BARE_NUMBER.test(t) && (i === 0 || i === last)) return false;
+        if (BARE_NUMBER.test(t) && ((i === firstIdx && firstEdge.has(p)) || (i === lastIdx && lastEdge.has(p)))) return false;
         return pages.length < 3 || (counts.get(t) ?? 0) < threshold;
       })
       .join("\n");

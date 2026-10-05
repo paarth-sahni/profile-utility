@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { buildResumePdf, type PdfAssets } from "./pdf";
-import { extractResumeText, splitColumns, type PdfTextItem } from "./extractText";
+import { extractResumeText, splitColumns, stripRepeatedLines, type PdfTextItem } from "./extractText";
 import type { ExternalResume, InternalResume } from "./schemas";
 
 const assets: PdfAssets = {
@@ -80,4 +80,11 @@ test("single-column external profile has no sidebar section", async () => {
 test("splitColumns: single column of wide words is not split", () => {
   const items: PdfTextItem[] = Array.from({ length: 40 }, (_, i) => ({ str: "word", x: 72 + (i % 10) * 45, y: 700 - i * 3, width: 40 }));
   assert.equal(splitColumns(items, 612).sidebar.length, 0);
+});
+
+test("stripRepeatedLines: a lone number starting a page is kept; a numbered footer run is dropped", () => {
+  const kept = stripRepeatedLines(["Project\nTeam Size", "3\nRole"]);
+  assert.ok(kept[1].startsWith("3"), "team size at the top of a page must survive");
+  const dropped = stripRepeatedLines(["Intro text\n1", "More text\n2", "Last text\n3"]);
+  assert.deepEqual(dropped.map((p) => p.trim()), ["Intro text", "More text", "Last text"]);
 });
