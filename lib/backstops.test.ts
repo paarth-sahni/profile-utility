@@ -15,6 +15,7 @@ import {
   applyProfileHeader,
   parseProfileHeader,
   HEADER_NOT_RECOGNISED_REASON,
+  HEADER_SPECIALIZATION_LONG_REASON,
   HEADER_TAKEN_REASON,
   flagSidebarExtras,
   NOT_IN_SIDEBAR_REASON,
@@ -319,12 +320,34 @@ test("backstop 3e: model values that differ are replaced and flagged; matching o
   assert.ok(flags.every((f) => f.reason === HEADER_TAKEN_REASON));
 });
 
-test("backstop 3e: a specialization longer than 5 words is not used", () => {
+test("backstop 3e: a header specialization over 5 words keeps the model's value and is flagged", () => {
   const src = header("Architect", "15+ Years of Industry Experience", "Enterprise integration and cloud migration programmes");
   const data = { name: "Maya Fernandez", jobTitle: "Architect", experienceSummary: "15+ Years of Industry Experience", specialization: "Cloud Migration" };
   const flags = applyProfileHeader(data, [], src, INFOBEANS);
   assert.equal(data.specialization, "Cloud Migration");
-  assert.deepEqual(flags, []);
+  assert.deepEqual(flags, [{ path: "specialization", reason: HEADER_SPECIALIZATION_LONG_REASON }]);
+  assert.equal(HEADER_SPECIALIZATION_LONG_REASON, "header specialization is over 5 words; shortened, please check");
+  // exactly 5 words is still used
+  const five = applyProfileHeader({ ...data }, [], header("Architect", "15+ Years of Industry Experience", "Cloud and data platform strategy"), INFOBEANS);
+  assert.deepEqual(five.map((f) => f.reason), [HEADER_TAKEN_REASON]);
+});
+
+test("backstop 3e: '<N>+ years of industry experience' is normalised in any case; other lines are kept as written", () => {
+  for (const line of ["9+ years of industry experience", "9+ YEARS OF INDUSTRY EXPERIENCE", "9+ Years Of Industry Experience", "9+  years of Industry Experience"]) {
+    const data = { name: "Maya Fernandez", jobTitle: "Lead", experienceSummary: "9+ Years of Industry Experience", specialization: "Data" };
+    const flags = applyProfileHeader(data, [], header("Lead", line, "Data"), INFOBEANS);
+    assert.equal(data.experienceSummary, "9+ Years of Industry Experience", line);
+    assert.deepEqual(flags, [], "already equal to the normalised line, so nothing to flag: " + line);
+  }
+  for (const line of ["Fresher (4 months of internship experience)", "Final Year MBA Student", "12 years in industry", "9+ years of industry experience in cloud"]) {
+    const data = { name: "Maya Fernandez", jobTitle: "Lead", experienceSummary: "model value", specialization: "Data" };
+    applyProfileHeader(data, [], header("Lead", line, "Data"), INFOBEANS);
+    assert.equal(data.experienceSummary, line, "kept exactly as written");
+  }
+  const lower = { name: "Maya Fernandez", jobTitle: "Lead", experienceSummary: "model value", specialization: "Data" };
+  const flags = applyProfileHeader(lower, [], header("Lead", "3+ years of industry experience", "Data"), INFOBEANS);
+  assert.equal(lower.experienceSummary, "3+ Years of Industry Experience");
+  assert.deepEqual(flags, [{ path: "experienceSummary", reason: HEADER_TAKEN_REASON }]);
 });
 
 test("backstop 3e: a 2-line or 4-line header is not recognised; model values stay and a flag is added", () => {

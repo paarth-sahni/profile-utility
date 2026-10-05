@@ -251,6 +251,7 @@ export function flagSidebarExtras(
 }
 
 export const HEADER_TAKEN_REASON = "taken from profile header";
+export const HEADER_SPECIALIZATION_LONG_REASON = "header specialization is over 5 words; shortened, please check";
 export const HEADER_NOT_RECOGNISED_REASON = "header not recognised — please check job title, experience and specialization";
 
 /** Boilerplate the template prints in the header area; not part of the three header lines. */
@@ -279,7 +280,9 @@ export function parseProfileHeader(sourceText: string, name: string): [string, s
  * 3e. For an existing InfoBeans profile, takes jobTitle, experienceSummary and specialization
  * straight from the source header (deterministic; the model sometimes rewrites them). A value
  * that differs from the model's is flagged; a header of any other shape leaves the model's values
- * and is flagged. The specialization is only used when it has 5 words or fewer. Mutates `data`.
+ * and is flagged. The specialization is only used when it has 5 words or fewer (otherwise the
+ * model's value stays and is flagged). A "<N>+ years of industry experience" line is normalised to
+ * "<N>+ Years of Industry Experience"; every other line is copied as written. Mutates `data`.
  */
 export function applyProfileHeader(
   data: unknown,
@@ -294,13 +297,19 @@ export function applyProfileHeader(
     if (!hasFlag(out, "", HEADER_NOT_RECOGNISED_REASON)) out.push({ path: "", reason: HEADER_NOT_RECOGNISED_REASON });
     return out;
   }
+  // "9+ years of industry experience" in any case -> the standard "9+ Years of Industry Experience"; other lines are kept as written
+  const experience = header[1].replace(/^(\d+)\+\s*years of industry experience$/i, "$1+ Years of Industry Experience");
   const fields: [string, string][] = [
     ["jobTitle", header[0]],
-    ["experienceSummary", header[1]],
+    ["experienceSummary", experience],
     ["specialization", header[2]],
   ];
   for (const [key, value] of fields) {
-    if (key === "specialization" && wordCountOf(value) > 5) continue;
+    if (key === "specialization" && wordCountOf(value) > 5) {
+      // too long for the profile: keep the model's (shortened) value and ask the user to check it
+      if (!hasFlag(out, key, HEADER_SPECIALIZATION_LONG_REASON)) out.push({ path: key, reason: HEADER_SPECIALIZATION_LONG_REASON });
+      continue;
+    }
     if (canon(str(data[key])) === canon(value)) continue;
     data[key] = value;
     if (!hasFlag(out, key, HEADER_TAKEN_REASON)) out.push({ path: key, reason: HEADER_TAKEN_REASON });
