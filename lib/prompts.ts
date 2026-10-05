@@ -116,7 +116,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.documentType === "infobeans_internal_profile" || a.documentType === "infobeans_external_profile") {
     m.push({
       name: "existing-infobeans-profile",
-      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets, facts and wording unless they are grammatically wrong or unclear; never move content between projects. Keep existing skill ratings exactly as written, and keep the experience line as written. Do not merge, drop or reorder projects except to sort by date. Never borrow employer dates for a project: a missing project duration stays \"\" and is flagged.",
+      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets, facts and wording unless they are grammatically wrong or unclear; never move content between projects. Keep existing skill ratings exactly as written, and keep the experience line as written. Do not merge, drop or reorder projects except to sort by date. Never borrow employer dates for a project: a missing project duration stays \"\" and is flagged. SIDEBAR LISTS: skills, certifications, tools, domains, languages and managerialExperience must contain ONLY what the source's own sidebar lists (the text after the \"--- SIDEBAR ---\" marker, or the matching sidebar sections when there is no marker). Do not merge project tools or technologies into the sidebar Tools, do not add skills from project text, and do not add items the sidebar does not list.",
     });
   } else {
     m.push({

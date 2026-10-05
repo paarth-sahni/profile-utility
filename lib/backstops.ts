@@ -6,6 +6,7 @@
  *   3. banned marketing words that are not in the source text -> flag the field path
  *   3b. teamSize / duration / education year values that are not in the source text -> flag
  *   3c. empty project description although the source has text for that project -> flag
+ *   3d. existing InfoBeans profile: sidebar items not found in the source's sidebar -> flag
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -206,12 +207,55 @@ export function flagMissingDescriptions(templateId: TemplateId, data: unknown, f
   return out;
 }
 
+export const NOT_IN_SIDEBAR_REASON = "not found in the source sidebar";
+const SIDEBAR_MARKER = "--- SIDEBAR ---";
+
+/** Compares ignoring case, spacing and punctuation ("Java script" == "JavaScript"). */
+const squash = (v: string): string => v.toLowerCase().replace(/[^a-z0-9+#]/g, "");
+
+/**
+ * 3d. For an existing InfoBeans profile, the sidebar lists (skills, certifications, tools, domains,
+ * languages, managerialExperience) must hold only what the source sidebar lists — e.g. project tools
+ * must not leak into the sidebar Tools. Flags items missing from the "--- SIDEBAR ---" section.
+ * Does nothing for other documents, for the external template, or when the source has no sidebar.
+ */
+export function flagSidebarExtras(
+  templateId: TemplateId,
+  data: unknown,
+  flags: ReviewFlag[],
+  sourceText: string,
+  documentType: string | undefined,
+): ReviewFlag[] {
+  if (templateId !== "internal" || !documentType?.startsWith("infobeans_") || !isRecord(data)) return flags;
+  const at = sourceText.indexOf(SIDEBAR_MARKER);
+  if (at === -1) return flags;
+  const sidebar = squash(sourceText.slice(at + SIDEBAR_MARKER.length));
+  if (sidebar.length < 20) return flags;
+
+  const out = [...flags];
+  const check = (list: unknown, name: string, pick: (item: unknown) => string, suffix = "") => {
+    if (!Array.isArray(list)) return;
+    list.forEach((item, i) => {
+      const value = pick(item);
+      if (!value || sidebar.includes(squash(value))) return;
+      const path = `${name}.${i}${suffix}`;
+      if (!hasFlag(out, path, NOT_IN_SIDEBAR_REASON)) out.push({ path, reason: NOT_IN_SIDEBAR_REASON });
+    });
+  };
+  check(data.skills, "skills", (item) => (isRecord(item) ? str(item.name) : ""), ".name");
+  for (const name of ["certifications", "tools", "domains", "languages", "managerialExperience"]) {
+    check(data[name], name, (item) => str(item));
+  }
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
   data: unknown,
   flags: ReviewFlag[],
   sourceText: string,
+  documentType?: string,
 ): { data: unknown; flags: ReviewFlag[] } {
   const copy = structuredClone(data);
   let next = fillEmptyResponsibilities(templateId, copy, flags);
@@ -219,6 +263,7 @@ export function applyBackstops(
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);
   next = flagMissingDescriptions(templateId, copy, next, sourceText);
+  next = flagSidebarExtras(templateId, copy, next, sourceText, documentType);
   return { data: copy, flags: next };
 }
 

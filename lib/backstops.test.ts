@@ -12,6 +12,8 @@ import {
   hasProseLines,
   MISSING_DESCRIPTION_REASON,
   flagPronounOverview,
+  flagSidebarExtras,
+  NOT_IN_SIDEBAR_REASON,
   flagUnfoundValues,
   reconcileFlagPaths,
   teamSizeInSource,
@@ -239,4 +241,54 @@ test("hasProseLines: labels, their values, tool lists and headings are not prose
   assert.equal(hasProseLines("Tools & Technologies\nPython, FastAPI, PostgreSQL, Docker, Firebase, Azure, Git\nTeam Size\n4\nRole\nBackend Developer"), false);
   assert.equal(hasProseLines("Project 2 - Jul 2025 - Dec 2025\nRole\nBackend Developer\nProject Link\nNDA"), false);
   assert.equal(hasProseLines("Role\nDev\nIt is an enterprise platform for managing experiments."), true);
+});
+
+/* ---------- 3d. sidebar items must come from the source sidebar ---------- */
+
+const SIDEBAR_SOURCE = `Project 1 - Expona 2.0
+Tools & Technologies
+Python, FastAPI, Playwright, Neo4j, Pinecone
+
+--- SIDEBAR ---
+Skills
+Java script
+(3.5/5)
+MVC(CodeIgniter, Laravel,
+YII, CakePHP)
+(3.5/5)
+Certifications
+ServiceNow CSA
+Tools
+JIRA, SVN, GIT
+Domain
+Healthcare
+Languages
+English, Hindi`;
+
+test("backstop 3d: project tools merged into the sidebar lists are flagged; real sidebar items are not", () => {
+  const data = {
+    skills: [{ name: "JavaScript", rating: "3.5" }, { name: "MVC(CodeIgniter, Laravel, YII, CakePHP)", rating: "3.5" }, { name: "Neo4j", rating: "3" }],
+    certifications: ["ServiceNow CSA"],
+    tools: ["JIRA", "SVN", "GIT", "Playwright"],
+    domains: ["Healthcare"],
+    languages: ["English", "Hindi"],
+    managerialExperience: [],
+  };
+  const flags = flagSidebarExtras("internal", data, [], SIDEBAR_SOURCE, "infobeans_internal_profile");
+  assert.deepEqual(flags.map((f) => f.path).sort(), ["skills.2.name", "tools.3"]);
+  assert.ok(flags.every((f) => f.reason === NOT_IN_SIDEBAR_REASON));
+});
+
+test("backstop 3d: only InfoBeans profiles on the internal template whose source has a sidebar", () => {
+  const data = { tools: ["Playwright"] };
+  assert.deepEqual(flagSidebarExtras("internal", data, [], SIDEBAR_SOURCE, "standard_resume"), []);
+  assert.deepEqual(flagSidebarExtras("internal", data, [], SIDEBAR_SOURCE, undefined), []);
+  assert.deepEqual(flagSidebarExtras("external", data, [], SIDEBAR_SOURCE, "infobeans_external_profile"), []);
+  assert.deepEqual(flagSidebarExtras("internal", data, [], "no sidebar here at all, just text", "infobeans_internal_profile"), []);
+  assert.equal(flagSidebarExtras("internal", data, [], SIDEBAR_SOURCE, "infobeans_internal_profile").length, 1);
+});
+
+test("applyBackstops passes the document type through to the sidebar check", () => {
+  const { flags } = applyBackstops("internal", { tools: ["Playwright"], projects: [] }, [], SIDEBAR_SOURCE, "infobeans_internal_profile");
+  assert.ok(flags.some((f) => f.path === "tools.0" && f.reason === NOT_IN_SIDEBAR_REASON));
 });

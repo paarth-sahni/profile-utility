@@ -130,7 +130,7 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
   // 6. Code backstops (the prompt alone isn't reliable): fill empty responsibilities from the role,
   //    flag pronoun-style overviews and banned words that aren't in the source. Runs before
   //    normalisation so the issues below reflect the fixes.
-  const backstopped = applyBackstops(templateId, data, flags, text);
+  const backstopped = applyBackstops(templateId, data, flags, text, analysis.documentType);
 
   // 7. Always return something the Review form can render, plus whatever is still invalid.
   const normalized = normalizeToShape(templateId, backstopped.data);

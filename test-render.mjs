@@ -60,6 +60,7 @@ const prep = (id, data) => {
     return {
       ...data,
       hasProjects: data.projects.length > 0,
+      hasManagerialExperience: data.managerialExperience.some((m) => String(m).trim() !== ""),
       projects: data.projects.map((p) => ({
         ...p,
         teamSize: hasReal(p.teamSize) ? p.teamSize : "",
@@ -108,10 +109,15 @@ if (/Projects/.test(internalText)) {
   process.exit(1);
 }
 render("external", { ...external, projects: [] }); // must still render (shared Projects/Experience heading)
+
 console.log("empty-projects: internal heading omitted, external OK");
 
 // optional-field omission: a blank / "N/A" optional field must drop its title too, not just the value.
 const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
+
+// empty managerial experience: the heading must be omitted; present: shown with its items
+assert(!/Managerial Experience/.test(render("internal", { ...internal, managerialExperience: [] })), "internal: empty 'Managerial Experience' heading must be omitted");
+assert(/Managerial Experience/.test(render("internal", internal)) && /Team Building/.test(render("internal", internal)), "internal: 'Managerial Experience' + items must show when present");
 
 // external: Tools and Certifications must be two separate sections with their own data
 // (regression: the source's combined "Tools/Certifications" section rendered "undefined").
