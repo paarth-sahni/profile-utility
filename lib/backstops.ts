@@ -5,6 +5,7 @@
  *   2. overview that starts with "The candidate" / a pronoun -> flag (never rewritten)
  *   3. banned marketing words that are not in the source text -> flag the field path
  *   3b. teamSize / duration / education year values that are not in the source text -> flag
+ *   3c. empty project description although the source has text for that project -> flag
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -142,6 +143,69 @@ export function flagUnfoundValues(data: unknown, flags: ReviewFlag[], sourceText
   return out;
 }
 
+export const MISSING_DESCRIPTION_REASON = "description missing, source has text";
+
+/** Field labels in InfoBeans profiles; their values are not prose. "Tools" values can wrap over several lines. */
+const LABEL_LINE = /^(tools\s*&\s*technologies|team\s*size|role|project\s*link|duration)\s*:?$/i;
+const MULTI_LINE_LABEL = /^tools\s*&\s*technologies\s*:?$/i;
+
+/** True if `text` contains at least one line of prose (6+ words) once labels, their values and headings are skipped. */
+export function hasProseLines(text: string): boolean {
+  let skipUntilLabel = false;
+  let skipOne = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (LABEL_LINE.test(line)) {
+      skipUntilLabel = MULTI_LINE_LABEL.test(line);
+      skipOne = !skipUntilLabel;
+      continue;
+    }
+    if (skipOne) {
+      skipOne = false;
+      continue;
+    }
+    if (skipUntilLabel || /^project\s*\d+\b/i.test(line) || line === "--- SIDEBAR ---") continue;
+    if (line.split(/\s+/).length >= 6) return true;
+  }
+  return false;
+}
+
+const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Matches a project name even if the PDF wrapped it over several lines. */
+const nameRegex = (name: string) => new RegExp(name.trim().split(/\s+/).map(escapeRe).join("\\s+"), "i");
+
+/** The slice of the source that belongs to one project: after its name, up to the next project's name. */
+function projectWindow(name: string, otherNames: string[], sourceText: string): string | null {
+  const start = nameRegex(name).exec(sourceText);
+  if (!start) return null;
+  const from = start.index + start[0].length;
+  let end = Math.min(sourceText.length, from + 2500);
+  const sidebar = sourceText.indexOf("--- SIDEBAR ---", from);
+  if (sidebar !== -1) end = Math.min(end, sidebar);
+  for (const other of otherNames) {
+    const m = nameRegex(other).exec(sourceText.slice(from));
+    if (m && from + m.index < end) end = from + m.index;
+  }
+  return sourceText.slice(from, end);
+}
+
+/** 3c. Flags an empty project description when the source has prose for that project. */
+export function flagMissingDescriptions(templateId: TemplateId, data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (!isRecord(data) || !Array.isArray(data.projects)) return flags;
+  const nameKey = templateId === "internal" ? "title" : "client";
+  const names = data.projects.map((p: unknown) => (isRecord(p) ? str(p[nameKey]) : ""));
+  const out = [...flags];
+  data.projects.forEach((p: unknown, i: number) => {
+    if (!isRecord(p) || str(p.description) || !names[i]) return;
+    const window = projectWindow(names[i], names.filter((n, j) => j !== i && n), sourceText);
+    if (!window || !hasProseLines(window)) return;
+    const path = `projects.${i}.description`;
+    if (!hasFlag(out, path, MISSING_DESCRIPTION_REASON)) out.push({ path, reason: MISSING_DESCRIPTION_REASON });
+  });
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -154,6 +218,7 @@ export function applyBackstops(
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);
+  next = flagMissingDescriptions(templateId, copy, next, sourceText);
   return { data: copy, flags: next };
 }
 

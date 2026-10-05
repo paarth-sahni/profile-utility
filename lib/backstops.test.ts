@@ -8,6 +8,9 @@ import {
   applyBackstops,
   fillEmptyResponsibilities,
   flagBannedWords,
+  flagMissingDescriptions,
+  hasProseLines,
+  MISSING_DESCRIPTION_REASON,
   flagPronounOverview,
   flagUnfoundValues,
   reconcileFlagPaths,
@@ -183,4 +186,57 @@ test("backstop 3b: digits must match on boundaries; empty values and existing fl
 test("applyBackstops includes the not-found check", () => {
   const { flags } = applyBackstops("internal", { projects: [internalProject({ teamSize: "3", responsibilities: ["x"] })] }, [], SOURCE);
   assert.ok(flags.some((f) => f.path === "projects.0.teamSize" && f.reason === VALUE_NOT_FOUND_REASON));
+});
+
+/* ---------- 3c. empty description although the source has text ---------- */
+
+const PROJECT_SOURCE = `Project 1 - Jan 2025 - Jun 2025
+Expona 2.0
+Tools & Technologies
+Python, FastAPI, PostgreSQL, Docker, Firebase, Azure,
+Playwright, Neo4j, Pinecone, Git, Jira, Swagger
+Team Size
+4
+Role
+Backend Developer
+Project Link
+Internal — InfoBeans
+Expona 2.0 is an enterprise platform that lets teams manage experiments and share dashboards.
+Project 2 - Jul 2025 - Dec 2025
+Doc Assistant
+Tools & Technologies
+React, Node
+Team Size
+3
+Role
+Full Stack Developer
+Project Link
+NDA
+`;
+
+test("backstop 3c: empty description is flagged when the source has prose for that project", () => {
+  const data = { projects: [internalProject({ description: "" }), internalProject({ title: "Doc Assistant", description: "" })] };
+  const flags = flagMissingDescriptions("internal", data, [], PROJECT_SOURCE);
+  assert.deepEqual(flags, [{ path: "projects.0.description", reason: MISSING_DESCRIPTION_REASON }]);
+});
+
+test("backstop 3c: non-empty descriptions, unknown projects and duplicate flags are left alone", () => {
+  const ok = { projects: [internalProject({ description: "Kept." })] };
+  assert.deepEqual(flagMissingDescriptions("internal", ok, [], PROJECT_SOURCE), []);
+  const unknown = { projects: [internalProject({ title: "Not In Source", description: "" })] };
+  assert.deepEqual(flagMissingDescriptions("internal", unknown, [], PROJECT_SOURCE), []);
+  const existing = [{ path: "projects.0.description", reason: MISSING_DESCRIPTION_REASON }];
+  assert.equal(flagMissingDescriptions("internal", { projects: [internalProject({ description: "" })] }, existing, PROJECT_SOURCE).length, 1);
+});
+
+test("backstop 3c: external projects are matched by client name; wrapped names still match", () => {
+  const src = "Project 1\nBharti\nAirtel, Africa\nRole\nTester\nWorked on report mapping and testing for the telecom client.";
+  const data = { projects: [{ client: "Bharti Airtel, Africa", role: "Tester", description: "" }] };
+  assert.equal(flagMissingDescriptions("external", data, [], src).length, 1);
+});
+
+test("hasProseLines: labels, their values, tool lists and headings are not prose", () => {
+  assert.equal(hasProseLines("Tools & Technologies\nPython, FastAPI, PostgreSQL, Docker, Firebase, Azure, Git\nTeam Size\n4\nRole\nBackend Developer"), false);
+  assert.equal(hasProseLines("Project 2 - Jul 2025 - Dec 2025\nRole\nBackend Developer\nProject Link\nNDA"), false);
+  assert.equal(hasProseLines("Role\nDev\nIt is an enterprise platform for managing experiments."), true);
 });

@@ -67,8 +67,10 @@ FIELD HANDLING
 - Team size: keep ranges exactly as written (e.g. "7-8", "5-6"). Do not collapse them to one number.
 - Project text — never invent actions and never move content:
   * Keep each project's content in that project. Never move content between projects, and never move content from the overview or any other section into a project.
-  * If the project text only says what the product or platform does and states no actions by the person, do NOT turn the features into personal action bullets. The responsibilities list MUST contain exactly ONE bullet, built from the stated role and project name (e.g. "Contributed as Backend Developer to the Expona 2.0 platform") — NEVER return an empty responsibilities list for such a project when a role is stated (the single role bullet is required), and never describe features as the person's work. Add a reviewFlag (path "projects.<index>.responsibilities") with the reason "no responsibilities stated in source". If no role is stated either, leave responsibilities empty and flag it.
-  * When a project is one long paragraph, split it: "description" = what the project is (1-2 sentences, no actions by the person); EVERY action sentence in the source becomes exactly one responsibilities bullet. Do not drop, merge or add any action. Before answering, check that each action in the source maps to a bullet.
+  * DESCRIPTION comes from the project's own text in the resume, lightly edited for grammar only. NEVER leave it empty when the source has text for that project, and never drop a sentence that describes the product or platform (what it is, who it is for, what it does).
+  * Split into description + bullets ONLY when the source has a paragraph containing several distinct actions by the person. Then "description" = the opening sentence(s) that describe the project, and EVERY remaining action sentence becomes exactly one responsibilities bullet. Do not drop, merge or add any action. Before answering, check that each action in the source maps to a bullet.
+  * If the project text only says what the product or platform does and states no actions by the person (including when it is a single sentence), keep that text as the description and do NOT turn the features into personal action bullets. The responsibilities list MUST contain exactly ONE bullet, built from the stated role and project name (e.g. "Contributed as Backend Developer to the Expona 2.0 platform"), and add a reviewFlag (path "projects.<index>.responsibilities") with the reason "no responsibilities stated in source". NEVER return an empty responsibilities list for such a project when a role is stated. If no role is stated either, leave responsibilities empty and flag it.
+  * Never repeat the same sentence in both the description and a bullet.
 - Privacy: never output phone numbers, email addresses or postal addresses anywhere in any field, including the overview.
 - The resume text may contain a "--- SIDEBAR ---" marker: everything after it is the right-hand column (skills, certifications, tools, domains, languages). Skill names and their "(x/5)" ratings appear in order, so pair each skill name with the rating line that follows it, even across page boundaries.
 
@@ -190,7 +192,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
       "client": string,            // Client/project name, e.g. "Bharti Airtel, Africa"
       "teamSize": string,          // e.g. "5" or a range "7-8" exactly as written; "" if not stated
       "role": string,              // Candidate's role on the project, e.g. "Developer and Tester"
-      "description": string,       // What the project is: 1-2 sentences, no actions by the person (actions go in responsibilities)
+      "description": string,       // The project's own text from the resume, lightly edited for grammar; never empty if the source has text. If the source is one paragraph of several actions: only the opening sentence(s) describing the project go here, the actions go in responsibilities
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
     }
   ],
@@ -228,7 +230,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
       "teamSize": string,          // e.g. "3" or a range "5-6" exactly as written; "" if not stated
       "role": string,              // e.g. "Project Lead"
       "projectLink": string,       // "NDA", "Internal — InfoBeans" or a URL exactly as written; otherwise ""
-      "description": string,       // What the project is: 1-2 sentences, no actions by the person (actions go in responsibilities)
+      "description": string,       // The project's own text from the resume, lightly edited for grammar; never empty if the source has text. If the source is one paragraph of several actions: only the opening sentence(s) describing the project go here, the actions go in responsibilities
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
     }
   ],
