@@ -15,6 +15,7 @@ import {
   type ReviewFlag,
 } from "./extract.types";
 import { extractResumeText } from "./extractText";
+import { applyBackstops, reconcileFlagPaths } from "./backstops";
 import { completeJson } from "./llm";
 import { normalizeToShape } from "./normalize";
 import { ANALYZE_PROMPT, RESUME_AS_DATA_RULE, buildExtractionPrompt, describePromptPlan } from "./prompts";
@@ -94,7 +95,7 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
   const profileSchema = schemaFor(templateId);
   const extractSchema = profileSchema.extend({ reviewFlags: z.array(reviewFlagSchema) });
   const call = (model: string, userMessage: string, systemPrompt: string) =>
-    completeJson({ model, system: systemPrompt, user: userMessage, schema: extractSchema, schemaName: "profile", signal });
+    completeJson({ model, system: systemPrompt, user: userMessage, schema: extractSchema, schemaName: "profile", temperature: 0, signal });
 
   let parsed = parseJson(await call(cfg.modelExtract, user, system));
   if (parsed === null) {
@@ -125,13 +126,19 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
     }
   }
 
-  // 6. Always return something the Review form can render, plus whatever is still invalid.
-  const normalized = normalizeToShape(templateId, data);
+  // 6. Code backstops (the prompt alone isn't reliable): fill empty responsibilities from the role,
+  //    flag pronoun-style overviews and banned words that aren't in the source. Runs before
+  //    normalisation so the issues below reflect the fixes.
+  const backstopped = applyBackstops(templateId, data, flags, text);
+
+  // 7. Always return something the Review form can render, plus whatever is still invalid.
+  const normalized = normalizeToShape(templateId, backstopped.data);
   const finalCheck = profileSchema.safeParse(normalized);
   const issues = finalCheck.success ? [] : toIssues(finalCheck.error.issues);
+  // every flag must point at a field that exists in the output
   const reviewFlags: ReviewFlag[] = [
     ...notes.map((reason) => ({ path: "", reason })),
-    ...flags,
+    ...reconcileFlagPaths(normalized, backstopped.flags),
   ];
 
   return { data: normalized, reviewFlags, analysis, promptPlan, issues };

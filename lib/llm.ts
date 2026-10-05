@@ -19,6 +19,8 @@ export interface CompleteJsonArgs {
   signal?: AbortSignal;
   reasoningEffort?: ReasoningEffort;
   maxTokens?: number;
+  /** Sampling temperature (default 0.2). */
+  temperature?: number;
 }
 
 const MAX_RETRY_WAIT_MS = 15_000;
@@ -48,7 +50,7 @@ async function request(args: CompleteJsonArgs, responseFormat: ResponseFormat, s
   const res = await client().chat.completions.create(
     {
       model: args.model,
-      temperature: 0.2,
+      temperature: args.temperature ?? 0.2,
       reasoning_effort: args.reasoningEffort ?? cfg.reasoningEffort,
       max_completion_tokens: args.maxTokens ?? 8000,
       response_format: responseFormat,
