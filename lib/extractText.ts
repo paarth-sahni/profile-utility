@@ -4,7 +4,7 @@
  * Server-only (uses Node Buffer, mammoth and unpdf).
  */
 import mammoth from "mammoth";
-import { extractText as extractPdfPages, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
 import { EXTRACT_ERROR_MESSAGES, ExtractError } from "./extract.types";
 
 export type FileKind = "pdf" | "docx";
@@ -94,12 +94,76 @@ export function normalizeText(raw: string): string {
     .trim();
 }
 
-async function pdfPages(buf: Buffer): Promise<string[]> {
-  // TODO: group text items into columns by x position (main column first, then the sidebar
-  // under a "--- SIDEBAR ---" marker) so two-column InfoBeans internal profiles don't interleave.
+/** A positioned piece of text from a PDF page. */
+export interface PdfTextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+}
+
+const SIDEBAR_MARKER = "--- SIDEBAR ---";
+
+/** Groups items into lines: same baseline (±3pt) = one line, read left to right, top to bottom. */
+function itemsToLines(items: PdfTextItem[]): string[] {
+  const rows: { y: number; items: PdfTextItem[] }[] = [];
+  for (const item of [...items].sort((p, q) => q.y - p.y)) {
+    const row = rows.find((r) => Math.abs(r.y - item.y) <= 3);
+    if (row) row.items.push(item);
+    else rows.push({ y: item.y, items: [item] });
+  }
+  return rows.map((r) =>
+    r.items
+      .sort((p, q) => p.x - q.x)
+      .map((i) => i.str)
+      .join(" ")
+      .trim(),
+  );
+}
+
+/**
+ * Splits one page into main column and right-hand sidebar (the internal profile layout).
+ * A sidebar exists when many items start at one x position in the right half of the page and
+ * (almost) nothing crosses that x. Otherwise the whole page is the main column.
+ */
+export function splitColumns(items: PdfTextItem[], pageWidth: number): { main: PdfTextItem[]; sidebar: PdfTextItem[] } {
+  const none = { main: items, sidebar: [] as PdfTextItem[] };
+  const candidates = items.filter((i) => i.x > pageWidth * 0.5 && i.str.trim());
+  // candidate gutter = most common left edge (within 4pt) in the right half
+  let best: { x: number; count: number } | null = null;
+  for (const c of candidates) {
+    const count = candidates.filter((o) => Math.abs(o.x - c.x) <= 4).length;
+    if (!best || count > best.count || (count === best.count && c.x < best.x)) best = { x: c.x, count };
+  }
+  if (!best || best.count < 5) return none;
+  const gutter = best.x - 2;
+  const crossing = items.filter((i) => i.x < gutter - 2 && i.x + i.width > gutter + 2).length;
+  if (crossing > 2) return none;
+  return { main: items.filter((i) => i.x < gutter), sidebar: items.filter((i) => i.x >= gutter) };
+}
+
+/**
+ * Reads a PDF page by page. Main-column text of every page comes first, then the sidebar text of
+ * all pages joined in order under a marker — so a skill name at the bottom of one page pairs with
+ * its "(3.5/5)" rating at the top of the next.
+ */
+async function pdfPages(buf: Buffer): Promise<{ pages: string[]; sidebar: string }> {
   const pdf = await getDocumentProxy(new Uint8Array(buf));
-  const { text } = await extractPdfPages(pdf, { mergePages: false });
-  return text;
+  const main: string[] = [];
+  const sidebar: string[] = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const width = page.getViewport({ scale: 1 }).width;
+    const content = await page.getTextContent();
+    const items: PdfTextItem[] = [];
+    for (const it of content.items) {
+      if ("str" in it && it.str.trim()) items.push({ str: it.str, x: it.transform[4], y: it.transform[5], width: it.width });
+    }
+    const split = splitColumns(items, width);
+    main.push(itemsToLines(split.main).join("\n"));
+    if (split.sidebar.length > 0) sidebar.push(itemsToLines(split.sidebar).join("\n"));
+  }
+  return { pages: main, sidebar: sidebar.join("\n") };
 }
 
 /** Validates the upload and returns normalised plain text, or throws a friendly ExtractError. */
@@ -107,13 +171,14 @@ export async function extractResumeText(buf: Buffer): Promise<ExtractedText> {
   const kind = detectFileKind(buf);
   const notes: string[] = [];
   let pages: string[];
+  let sidebar = "";
 
   try {
     if (kind === "docx") {
       const { value } = await mammoth.convertToHtml({ buffer: buf });
       pages = [htmlToText(value)];
     } else {
-      pages = await pdfPages(buf);
+      ({ pages, sidebar } = await pdfPages(buf));
     }
   } catch (e) {
     console.error(`[extract] could not parse ${kind}: ${e instanceof Error ? e.name : "unknown error"}`);
@@ -122,6 +187,7 @@ export async function extractResumeText(buf: Buffer): Promise<ExtractedText> {
 
   pages = stripRepeatedLines(pages.map((p) => normalizeText(p)));
   let text = normalizeText(pages.join("\n\n"));
+  if (sidebar.trim()) text = `${text}\n\n${SIDEBAR_MARKER}\n${normalizeText(sidebar)}`;
 
   const perPage = pages.length > 0 ? text.length / pages.length : 0;
   if (text.length < MIN_TOTAL_CHARS || (kind === "pdf" && perPage < MIN_CHARS_PER_PAGE)) {

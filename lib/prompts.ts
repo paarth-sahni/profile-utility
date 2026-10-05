@@ -44,15 +44,29 @@ TRUTHFULNESS (highest priority)
 WRITING STANDARD
 - Overview: 3-5 sentences, third person, no pronouns at the start ("ServiceNow developer with..."), covering experience, core expertise, notable domains or achievements found in the resume.
 - Bullets: one sentence each, start with a past-tense verb (present tense only for the current role), 10-25 words, no trailing period inconsistency, no first person.
+- Never use gendered pronouns (he, she, his, her) or guess gender from a name; write without pronouns or refer to "the candidate".
 - Keep technology names in their official casing (JavaScript, ReactJS, Node.js, AWS, ServiceNow, PostgreSQL).
 - Deduplicate skills/tools case-insensitively. Skills = capabilities/languages/frameworks/methodologies; tools = software products used to do the work (JIRA, Git, Postman, Jenkins).
 
 DERIVED FIELDS
-- experienceSummary: exactly "<N>+ Years of Industry Experience". N = whole years from the earliest full-time professional role to today
-  ({TODAY}), merging overlapping periods, excluding internships, training and education, rounded down. Add a reviewFlag (path "experienceSummary") explaining the calculation.
+- experienceSummary: when the candidate has 1 or more years of full-time professional experience, exactly "<N>+ Years of Industry Experience".
+  N = whole years from the earliest full-time professional role to today ({TODAY}), merging overlapping periods, excluding internships,
+  training and education, rounded down. Add a reviewFlag (path "experienceSummary") explaining the calculation.
+  If full-time experience is UNDER 1 year, NEVER output "0+ Years of Industry Experience". Instead:
+  - For an existing InfoBeans profile, keep its experience line exactly as written (e.g. "4th Year B.Tech (AI) Student", "Fresher (5 months of internship experience)").
+  - Otherwise output "Fresher", or "Fresher (<N> months of internship experience)" when internships are stated in the resume.
+  Flag it (path "experienceSummary") with the reason.
 - specialization: the candidate's core specialization in at most 5 words (e.g. "ServiceNow ITSM", "Java Full Stack Development").
-- education: exactly one entry, the highest qualification. If none is stated, return [] and flag it (path "education").
+- education: exactly one entry, the highest qualification. Ignore 10th/12th (school-level) education whenever a degree or diploma exists; use school-level education only if nothing higher is stated. If none is stated, return [] and flag it (path "education").
 - Order projects and experience most recent first.
+
+FIELD HANDLING
+- Project dates: if a project has no stated duration, keep "duration" as "" and add a reviewFlag (path "projects.<index>.duration"). Never invent dates and never borrow employer dates for an existing InfoBeans profile.
+- Content in the wrong field: if a field clearly contains content that belongs in another field (e.g. "Tools & Technologies" holding a sentence of description), move it where it belongs when that is obvious. Otherwise keep it and add a reviewFlag with the reason "looks like a description, not tools" (or the equivalent for that field).
+- Team size: keep ranges exactly as written (e.g. "7-8", "5-6"). Do not collapse them to one number.
+- Long project text: if a project is a single long paragraph, split it into a 2-3 sentence description plus responsibilities bullets, using only the actions stated. Add no new claims, outcomes or numbers.
+- Privacy: never output phone numbers, email addresses or postal addresses anywhere in any field, including the overview.
+- The resume text may contain a "--- SIDEBAR ---" marker: everything after it is the right-hand column (skills, certifications, tools, domains, languages). Skill names and their "(x/5)" ratings appear in order, so pair each skill name with the rating line that follows it, even across page boundaries.
 
 OUTPUT
 - Output only the JSON object described below, including the "reviewFlags" array ([] if nothing was inferred). All values are strings or arrays as specified — never null or numbers.
@@ -61,7 +75,8 @@ ${RESUME_AS_DATA_RULE}`;
 
 export const INTERNAL_RULES = `INTERNAL PROFILE RULES
 - skills[].rating: if the resume states ratings, use them. Otherwise estimate from 1.0-5.0 based on years of use and how prominent the skill is, with one decimal place, and flag EVERY estimated rating (path "skills.<index>.rating").
-- projectLink: use the URL if one is stated, otherwise "" (use "NDA" only if the resume itself says NDA or confidential).
+- projectLink: keep "NDA", "Internal — InfoBeans" and real URLs exactly as written. If it is only a word such as "GitHub" with no URL, keep it and add a reviewFlag (path "projects.<index>.projectLink") with the reason "add the full URL". If nothing is stated, use "" (use "NDA" only if the resume itself says NDA or confidential).
+- toolsAndTechnologies: technologies only. If it contains description text, apply the "content in the wrong field" rule.
 - languages: if none are stated, return [] and flag it. Do not assume English.
 - managerialExperience: only if it is evidenced in the resume.`;
 
@@ -95,7 +110,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.documentType === "infobeans_internal_profile" || a.documentType === "infobeans_external_profile") {
     m.push({
       name: "existing-infobeans-profile",
-      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets and wording unless they are grammatically wrong or unclear. Keep existing skill ratings exactly as written. Do not merge, drop or reorder projects except to sort by date.",
+      text: "This is an existing InfoBeans profile being refreshed. Map fields one-to-one. Keep the candidate's existing bullets and wording unless they are grammatically wrong or unclear. Keep existing skill ratings exactly as written, and keep the experience line as written. Do not merge, drop or reorder projects except to sort by date. Never borrow employer dates for a project: a missing project duration stays \"\" and is flagged.",
     });
   } else {
     m.push({
@@ -106,7 +121,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.projectsLayout === "embedded_in_jobs") {
     m.push({
       name: "projects-embedded-in-jobs",
-      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry. Use the employer's dates when the project dates are not given, and flag that in reviewFlags.",
+      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry. If a project has no dates of its own and clearly spans one employer engagement, you may use that employer's dates; otherwise leave the duration empty. Flag every such case in reviewFlags.",
     });
   } else if (a.projectsLayout === "none") {
     m.push({
@@ -117,7 +132,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.seniority === "fresher" || a.seniority === "junior") {
     m.push({
       name: "early-career",
-      text: "Academic, internship and personal projects may be included as projects; label role accordingly (e.g. 'Intern', 'Academic Project'). Keep the overview focused on skills and project work rather than leadership.",
+      text: "Academic, internship and personal projects may be included as projects; label role accordingly (e.g. 'Intern', 'Academic Project'). Keep the overview focused on skills and project work rather than leadership. If full-time experience is under 1 year, follow the experienceSummary fresher rule.",
     });
   } else if (a.seniority === "senior" || a.seniority === "leadership") {
     m.push({
@@ -156,7 +171,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
   "name": string,                  // Candidate full name, e.g. "Amit Dave"
   "jobTitle": string,              // Current/target designation, e.g. "Senior Project Lead"
-  "experienceSummary": string,     // STRICT FORMAT "<N>+ Years of Industry Experience", e.g. "17+ Years of Industry Experience"
+  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "17+ Years of Industry Experience"; freshers: see the experienceSummary rule
   "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "ServiceNow ITSM"
   "overview": string,              // 3-5 sentence professional summary paragraph
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
@@ -167,9 +182,9 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "tools": [string],               // Tools/software the candidate uses, e.g. ["JIRA", "GIT", "SVN"]
   "certifications": [string],      // Professional certifications stated in the resume, e.g. ["ServiceNow CSA"]; [] if none
   "projects": [                    // One entry per project (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"
+    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"; "" if not stated (flag it)
       "client": string,            // Client/project name, e.g. "Bharti Airtel, Africa"
-      "teamSize": string,          // e.g. "5"; "" if not stated
+      "teamSize": string,          // e.g. "5" or a range "7-8" exactly as written; "" if not stated
       "role": string,              // Candidate's role on the project, e.g. "Developer and Tester"
       "description": string,       // 2-4 sentence paragraph describing the project and contribution
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
@@ -195,7 +210,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
   "name": string,                  // Candidate full name, e.g. "Amit Dave"
   "jobTitle": string,              // Current/target designation, e.g. "Senior Project Lead"
-  "experienceSummary": string,     // STRICT FORMAT "<N>+ Years of Industry Experience", e.g. "17+ Years of Industry Experience"
+  "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "17+ Years of Industry Experience"; freshers: see the experienceSummary rule
   "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "ServiceNow ITSM"
   "overview": string,              // 3-5 sentence professional summary paragraph
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
@@ -203,12 +218,12 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
       "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (IT), RGPV Bhopal"
   ],
   "projects": [                    // One entry per project, most recent first (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"
+    { "duration": string,          // Project period, e.g. "Feb 2020 - June 2020"; "" if not stated (flag it)
       "title": string,             // Project title, e.g. "National College Admissions Consulting site"
       "toolsAndTechnologies": [string], // Technologies stated for the project, e.g. ["Node", "HTML", "MySQL", "React"]; [] if none stated
-      "teamSize": string,          // e.g. "3"; "" if not stated
+      "teamSize": string,          // e.g. "3" or a range "5-6" exactly as written; "" if not stated
       "role": string,              // e.g. "Project Lead"
-      "projectLink": string,       // URL if stated, otherwise ""
+      "projectLink": string,       // "NDA", "Internal — InfoBeans" or a URL exactly as written; otherwise ""
       "description": string,       // 2-4 sentence paragraph describing the project
       "responsibilities": [string] // Bullet points, each a single past-tense sentence; [] if the resume gives none
     }
