@@ -12,7 +12,7 @@ const lexend = Lexend({
 
 export const metadata: Metadata = {
   title: "Profile Generator — InfoBeans",
-  description: "Generate branded InfoBeans profile documents (DOCX & PDF) from LLM-extracted JSON. Creating WOW!",
+  description: "Generate branded InfoBeans profile documents (DOCX) from an uploaded resume. Creating WOW!",
 };
 
 export default function RootLayout({
