@@ -10,7 +10,8 @@
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
-    "db:types": "supabase gen types typescript --local > lib/database.types.ts"
+    "db:types": "supabase gen types typescript --local > lib/database.types.ts",
+    "db:smoke": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -v ON_ERROR_STOP=1 -f supabase/tests/001_schema_smoke.sql"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
