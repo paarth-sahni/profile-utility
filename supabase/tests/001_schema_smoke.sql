@@ -13,13 +13,13 @@ begin
     raise exception 'FAIL: outside domain accepted';
   exception when insufficient_privilege then null; end;
   begin
-    insert into auth.users (id, email) values (gen_random_uuid(), 'member@example.test');
+    insert into auth.users (id, email) values (gen_random_uuid(), 'smoke@example.test');
     raise exception 'FAIL: example.test accepted while exception is off';
   exception when insufficient_privilege then null; end;
   insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'Tester@InfoBeans.com');
   assert (select count(*) from public.app_users where id = '00000000-0000-0000-0000-0000000000a1') = 1, 'app_users row missing';
   update public.app_settings set value = 'on' where key = 'allow_example_test';
-  insert into auth.users (id, email) values (gen_random_uuid(), 'member@example.test');
+  insert into auth.users (id, email) values (gen_random_uuid(), 'smoke@example.test');
   update public.app_settings set value = 'off' where key = 'allow_example_test';
 end $$;
 

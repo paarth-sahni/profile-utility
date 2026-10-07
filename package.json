@@ -11,6 +11,7 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
+    "test:rls": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -At -v ON_ERROR_STOP=1 -f supabase/tests/002_rls_catalog.sql && tsx --env-file=.env.local --experimental-websocket --test supabase/tests/rls.test.ts",
     "db:smoke": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -v ON_ERROR_STOP=1 -f supabase/tests/001_schema_smoke.sql"
   },
   "dependencies": {
