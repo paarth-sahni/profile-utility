@@ -10,20 +10,20 @@ const assets: PdfAssets = {
 };
 
 const external: ExternalResume = {
-  name: "Amit Dave",
+  name: "Jordan Lee",
   jobTitle: "Senior Project Lead",
   experienceSummary: "3+ years of Industry Experience",
   specialization: "ServiceNow ITSM",
   overview:
     "ServiceNow professional with 3+ years of industry experience specializing in IT Service Management (ITSM). Skilled in ServiceNow development, configuration, customization, and implementation of ITSM modules. Experienced in requirement analysis, workflow automation, incident, problem, change, and service request management. Proficient in collaborating with cross-functional teams to deliver scalable solutions and enhance operational efficiency.",
-  education: [{ year: "2008", qualification: "Bachelor of Engineering (IT), RGPV Bhopal" }],
+  education: [{ year: "2008", qualification: "Bachelor of Engineering (IT), Riverside University" }],
   skills: ["Java script", "WordPress", "MYSQL", "MongoDB", "MVC(CodeIgniter, Laravel, YII, CakePHP)", "HTML5 & CSS", "jQuery & JavaScript", "NodeJS", "ReactJS", "Client Interaction", "Team Management"],
   tools: ["JIRA", "SVN", "GIT"],
   certifications: ["ServiceNow CSA"],
   projects: [
     {
       duration: "Jan 2021 - Dec 2021",
-      client: "Bharti Airtel, Africa",
+      client: "Northwind Telecom, Africa",
       teamSize: "5",
       role: "Developer and Tester",
       description:
@@ -75,7 +75,7 @@ const external: ExternalResume = {
 };
 
 const internal: InternalResume = {
-  name: "Amit Dave",
+  name: "Jordan Lee",
   jobTitle: "Senior Project Lead",
   experienceSummary: "3+ years of Industry Experience",
   specialization: "ServiceNow ITSM",

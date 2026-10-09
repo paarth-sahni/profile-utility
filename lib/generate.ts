@@ -10,7 +10,7 @@ const hasRealValue = (value: string) => !!value.trim() && !isNAValue(value);
 /** Map the validated form data onto the tag names used inside the .docx templates
  *  (arrays of strings become comma-joined text where the template shows inline lists,
  *  and projects get their display number). */
-function prepareData(id: TemplateId, data: ResumeData): Record<string, unknown> {
+export function prepareData(id: TemplateId, data: ResumeData): Record<string, unknown> {
   if (id === "external") {
     const d = data as ExternalResume;
     return {
@@ -33,6 +33,8 @@ function prepareData(id: TemplateId, data: ResumeData): Record<string, unknown> 
     tools: d.tools.join(", "),
     // drives the conditional "Projects" heading in the template (omitted when empty)
     hasProjects: d.projects.length > 0,
+    // drives the conditional "Managerial Experience" heading + list (omitted when nothing real to show)
+    hasManagerialExperience: d.managerialExperience.some((item) => item.trim() !== ""),
     projects: d.projects.map((p, i) => ({
       ...p,
       number: i + 1,
