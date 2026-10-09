@@ -9,6 +9,12 @@ import { extractProfile } from "@/lib/extract";
 import { detectFileKind } from "@/lib/extractText";
 import type { TemplateId } from "@/lib/schemas";
 import { getServerConfig } from "@/lib/serverConfig";
+import { getCurrentUser } from "@/lib/auth";
+import { allowRequest } from "@/lib/rateLimit";
+
+// Each extraction costs LLM quota: cap per signed-in user.
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 10 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +26,7 @@ const STATUS: Record<ExtractErrorCode, number> = {
   LLM_FAILED: 502,
   TIMEOUT: 504,
   RATE_LIMITED: 429,
+  UNAUTHENTICATED: 401,
 };
 
 const fail = (code: ExtractErrorCode, message?: string) =>
@@ -34,6 +41,13 @@ export async function POST(request: Request): Promise<NextResponse<ExtractResult
   let kind = "unknown";
   let size = 0;
   try {
+    // Defence in depth: proxy.ts already blocks signed-out calls, but never rely on that alone.
+    const user = await getCurrentUser();
+    if (!user) throw new ExtractError("UNAUTHENTICATED", EXTRACT_ERROR_MESSAGES.UNAUTHENTICATED);
+    if (!allowRequest(user.id, RATE_LIMIT, RATE_WINDOW_MS)) {
+      throw new ExtractError("RATE_LIMITED", "You've reached the upload limit. Please try again in a few minutes.");
+    }
+
     const cfg = getServerConfig();
     const form = await request.formData();
     const file = form.get("file");

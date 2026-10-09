@@ -56,3 +56,43 @@ visual inspection.
 npm install
 npm run dev
 ```
+
+## Local auth setup (Google sign-in)
+
+Users sign in with their InfoBeans Google account (`@infobeans.com` only). `/internal`, `/external` and
+`POST /api/extract` require a session; `/instructions` and `/style-guide` stay public.
+
+1. Create a Google OAuth client (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID,
+   type *Web application*). Authorized redirect URI: `http://127.0.0.1:54321/auth/v1/callback`.
+2. Put the values in `supabase/.env` (git-ignored; read by the Supabase CLI, not by Next.js):
+   ```
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   ```
+3. Restart the stack: `npm run db:stop && npm run db:start`, then `npm run dev` and open http://localhost:3000.
+
+TODO (cloud): use the cloud Supabase project's Google provider, add its callback URL to the OAuth client,
+and disable email sign-up there.
+
+## Session limit
+
+A sign-in lasts at most **1 hour**. After that the user is signed out and must sign in with Google again.
+This is enforced twice: Supabase `[auth.sessions] timebox = "1h"` (supabase/config.toml; on a hosted project
+set it under Auth -> Sessions, which needs a paid plan) and `proxy.ts`, which checks `last_sign_in_at` on every
+protected request.
+
+## Auth helpers for server code
+
+`lib/auth.ts` (server-only) exposes `getCurrentUser()` -> `{ id, email, role } | null` and `requireUser()`
+(redirects to `/login` when signed out). The role is read from `public.app_users` through the user's own
+session; it is never taken from the JWT or `user_metadata`. Both enforce the `@infobeans.com` domain and the
+1-hour limit. Pure rules (`isAllowedEmail`, `safeNextPath`, `sessionExpired`, ...) live in `lib/authRules.ts`,
+which is safe to import from `proxy.ts`, client components and tests.
+
+## Google Drive scope (for "Open in Google Docs")
+
+The sign-in also requests `https://www.googleapis.com/auth/drive.file` (only files the app creates itself).
+In Google Cloud: enable the **Google Drive API**, and add the scope under *Google Auth Platform -> Data Access*.
+Supabase does not store Google tokens: the Docs feature must read `session.provider_token` in
+`app/auth/callback/route.ts` right after `exchangeCodeForSession` (it lasts about an hour, matching the 1-hour
+session limit). Users who signed in before this change will be asked to approve once more.

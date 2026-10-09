@@ -46,6 +46,9 @@ export async function uploadResume(file: File, templateId: TemplateId, signal?: 
   } catch {
     throw new UploadError("LLM_FAILED", EXTRACT_ERROR_MESSAGES.LLM_FAILED);
   }
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.assign(`${BASE}/login?error=session&next=${encodeURIComponent(window.location.pathname)}`);
+  }
   if (!res.ok) {
     if (isErrorBody(json)) throw new UploadError(json.error.code, json.error.message);
     throw new UploadError("LLM_FAILED", EXTRACT_ERROR_MESSAGES.LLM_FAILED);
