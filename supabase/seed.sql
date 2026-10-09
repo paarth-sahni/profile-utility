@@ -1,10 +1,11 @@
 -- Purpose: LOCAL development seed (runs after migrations on `npm run db:reset`). Fictional data only:
--- four sign-in users (one per role, password `password123`, local use only) and two fictional
--- profiles with two versions each. Never put real people or employees here. Not for cloud projects.
+-- five sign-in users (password `password123`, local use only) and three fictional profiles.
+-- Never put real people or employees here. Not for cloud projects.
 --
--- Users:    member@ / checker@ / manager@ / admin@example.test
--- Profiles: "Alex Sample" (internal, owned by the member) and "Riley Example" (external, owned by the admin,
---           so the member has a profile of "another user" to be denied in the RLS tests).
+-- Users:    member@ / member2@ (two team members), checker@ / manager@ / admin@example.test
+-- Profiles: "Alex Sample" (internal, 2 versions, owned by member), "Jamie Placeholder" (internal, 1 version,
+--           owned by member2) and "Riley Example" (external, 2 versions, owned by the admin). The RLS tests
+--           check member-vs-member isolation (Alex vs Jamie) as well as member-vs-admin (Alex vs Riley).
 -- Everything runs in one transaction: if anything fails, nothing (including the domain exception below)
 -- is left behind.
 begin;
@@ -27,7 +28,8 @@ from (values
   ('00000000-0000-0000-0000-000000000101'::uuid, 'member@example.test',  'Test Member'),
   ('00000000-0000-0000-0000-000000000102'::uuid, 'checker@example.test', 'Test Checker'),
   ('00000000-0000-0000-0000-000000000103'::uuid, 'manager@example.test', 'Test Manager'),
-  ('00000000-0000-0000-0000-000000000104'::uuid, 'admin@example.test',   'Test Admin')
+  ('00000000-0000-0000-0000-000000000104'::uuid, 'admin@example.test',   'Test Admin'),
+  ('00000000-0000-0000-0000-000000000105'::uuid, 'member2@example.test', 'Test Member Two')
 ) as u(id, email, full_name);
 
 insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
@@ -116,6 +118,40 @@ begin
       "languages": ["English", "Hindi"]
     }$json$::jsonb,
     '[{"path": "skills.0.rating", "reason": "rating inferred, please confirm"}]'::jsonb, null, null
+  );
+
+  -- Jamie Placeholder: internal, owner = member2 (a second team member, for member-vs-member isolation tests).
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000105","role":"authenticated"}', true);
+
+  perform public.save_profile_version(
+    null, 'internal', 'base', 'Base', null, 'scratch',
+    $json${
+      "name": "Jamie Placeholder",
+      "jobTitle": "QA Engineer",
+      "experienceSummary": "4+ Years of Industry Experience",
+      "specialization": "Test Automation",
+      "overview": "Fictional engineer used for local development.\nAutomates regression suites.",
+      "education": [{"year": "2019", "qualification": "B.Sc. (Information Systems), Lakeside Institute"}],
+      "projects": [
+        {
+          "duration": "Jun 2021 - Present",
+          "title": "Checkout Regression Suite",
+          "toolsAndTechnologies": ["Playwright", "TypeScript"],
+          "teamSize": "3",
+          "role": "QA Engineer",
+          "projectLink": "",
+          "description": "End-to-end regression tests for a fictional checkout flow.",
+          "responsibilities": ["Wrote end-to-end tests", "Triaged flaky tests"]
+        }
+      ],
+      "skills": [{"name": "Playwright", "rating": "4"}, {"name": "TypeScript", "rating": "3.5"}],
+      "certifications": ["Fictional Testing Foundation"],
+      "tools": ["Git", "Jira"],
+      "managerialExperience": [],
+      "domains": ["E-commerce"],
+      "languages": ["English"]
+    }$json$::jsonb,
+    '[]'::jsonb, null, null
   );
 
   -- Riley Example: external, owner = admin. v1 Base, then v2 edit.

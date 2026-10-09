@@ -15,7 +15,7 @@ type Row = Record<string, unknown>;
 type Result = { data: unknown; error: { message: string; code?: string } | null };
 
 const PASSWORD = "password123";
-const ROLES = ["member", "checker", "manager", "admin"] as const;
+const ROLES = ["member", "member2", "checker", "manager", "admin"] as const;
 type RoleName = (typeof ROLES)[number];
 
 /** Tables keyed by version_id, then the ones keyed through a project / experience row. */
@@ -74,8 +74,10 @@ let userId: Record<RoleName, string>;
 /** Seeded fixtures, read through the admin's own session (admin may read everything). */
 let profileA: string; // internal, owned by member
 let profileB: string; // external, owned by admin
+let profileC: string; // internal, owned by member2
 let versionsA: string[];
 let versionsB: string[];
+let versionsC: string[];
 
 const db = (r: RoleName): SupabaseClient => {
   const client = roleOf.get(r);
@@ -94,13 +96,19 @@ before(async () => {
   const profiles = rows(await db("admin").from("profiles").select("id,owner_id,candidate_name"));
   profileA = String(profiles.find((p) => p.owner_id === userId.member)?.id);
   profileB = String(profiles.find((p) => p.owner_id === userId.admin)?.id);
-  assert.ok(profileA !== "undefined" && profileB !== "undefined", "seed profiles missing: run npm run db:reset");
+  profileC = String(profiles.find((p) => p.owner_id === userId.member2)?.id);
+  assert.ok(
+    profileA !== "undefined" && profileB !== "undefined" && profileC !== "undefined",
+    "seed profiles missing: run npm run db:reset",
+  );
 
   const versions = rows(await db("admin").from("profile_versions").select("id,profile_id"));
   versionsA = ids(versions.filter((v) => v.profile_id === profileA), "id");
   versionsB = ids(versions.filter((v) => v.profile_id === profileB), "id");
+  versionsC = ids(versions.filter((v) => v.profile_id === profileC), "id");
   assert.equal(versionsA.length, 2);
   assert.equal(versionsB.length, 2);
+  assert.equal(versionsC.length, 1);
 });
 
 after(async () => {
@@ -108,44 +116,59 @@ after(async () => {
 });
 
 describe("app_users: each role gets exactly its rows", () => {
-  const expected: Record<RoleName, number> = { member: 1, checker: 1, manager: 4, admin: 4 };
+  const expected: Record<RoleName, number> = { member: 1, member2: 1, checker: 1, manager: 5, admin: 5 };
   for (const r of ROLES) {
     test(`${r} sees ${expected[r]} row(s)`, async () => {
       const res = await db(r).from("app_users").select("id,email,role");
       assert.equal(res.error, null);
       assert.equal(rows(res).length, expected[r]);
-      if (r === "member" || r === "checker") assert.equal(rows(res)[0]?.id, userId[r]);
+      if (r === "member" || r === "member2" || r === "checker") assert.equal(rows(res)[0]?.id, userId[r]);
     });
   }
 });
 
 describe("profiles: each role gets exactly its rows", () => {
-  const expected: Record<RoleName, string[]> = { member: ["A"], checker: ["A", "B"], manager: ["A", "B"], admin: ["A", "B"] };
+  const expected: Record<RoleName, string[]> = {
+    member: ["A"], member2: ["C"], checker: ["A", "B", "C"], manager: ["A", "B", "C"], admin: ["A", "B", "C"],
+  };
+  const idOf = (k: string): string => (k === "A" ? profileA : k === "B" ? profileB : profileC);
   for (const r of ROLES) {
     test(`${r} sees profiles ${expected[r].join("+")}`, async () => {
       const res = await db(r).from("profiles").select("id");
       assert.equal(res.error, null);
       const seen = ids(rows(res), "id").sort();
-      const want = expected[r].map((k) => (k === "A" ? profileA : profileB)).sort();
+      const want = expected[r].map(idOf).sort();
       assert.deepEqual(seen, want);
     });
   }
 
-  test("a member cannot read another user's profile by guessing its id", async () => {
-    const m = db("member");
-    assert.ok(nothingHappened(await m.from("profiles").select("*").eq("id", profileB)));
-    assert.ok(nothingHappened(await m.from("profile_versions").select("*").eq("profile_id", profileB)));
-    for (const v of versionsB) {
-      assert.ok(nothingHappened(await m.from("profile_versions").select("*").eq("id", v)));
-      const rebuilt = await m.rpc("get_profile_version", { p_version_id: v });
-      assert.equal(rebuilt.data, null, "get_profile_version must return nothing for someone else's version");
-    }
-  });
+  // Member-vs-member (A vs C, both directions) and member-vs-admin (B): nothing readable by guessing ids.
+  const foreignTo: Array<{ who: "member" | "member2"; label: string; profile: () => string; versions: () => string[] }> = [
+    { who: "member", label: "member2's profile", profile: () => profileC, versions: () => versionsC },
+    { who: "member", label: "the admin's profile", profile: () => profileB, versions: () => versionsB },
+    { who: "member2", label: "member's profile", profile: () => profileA, versions: () => versionsA },
+    { who: "member2", label: "the admin's profile", profile: () => profileB, versions: () => versionsB },
+  ];
+  for (const f of foreignTo) {
+    test(`${f.who} cannot read ${f.label}, its versions or rebuild them, by guessing ids`, async () => {
+      const m = db(f.who);
+      assert.ok(nothingHappened(await m.from("profiles").select("*").eq("id", f.profile())));
+      assert.ok(nothingHappened(await m.from("profile_versions").select("*").eq("profile_id", f.profile())));
+      for (const v of f.versions()) {
+        assert.ok(nothingHappened(await m.from("profile_versions").select("*").eq("id", v)));
+        const rebuilt = await m.rpc("get_profile_version", { p_version_id: v });
+        assert.equal(rebuilt.data, null, "get_profile_version must return nothing for someone else's version");
+      }
+    });
+  }
 
-  test("a member can rebuild their own version", async () => {
-    const rebuilt = await db("member").rpc("get_profile_version", { p_version_id: versionsA[0] });
-    assert.equal(rebuilt.error, null);
-    assert.equal((rebuilt.data as { data: { name: string } }).data.name, "Alex Sample");
+  test("each member can rebuild their own version", async () => {
+    const cases = [["member", versionsA[0], "Alex Sample"], ["member2", versionsC[0], "Jamie Placeholder"]] as const;
+    for (const [who, version, name] of cases) {
+      const rebuilt = await db(who).rpc("get_profile_version", { p_version_id: version });
+      assert.equal(rebuilt.error, null);
+      assert.equal((rebuilt.data as { data: { name: string } }).data.name, name);
+    }
   });
 });
 
@@ -196,62 +219,76 @@ async function saveAs(r: RoleName, template: "internal" | "external", profile: o
 }
 
 describe("child tables follow their version's access", () => {
+  const MEMBERS = ["member", "member2"] as const;
+  type Member = (typeof MEMBERS)[number];
   const scratchProfiles: string[] = [];
-  /** Version / project / experience keys the member is entitled to (their own profiles), via the admin session. */
-  let ownVersions: string[];
-  let ownProjects: string[];
-  let ownExperience: string[];
+  /** Version / project / experience keys each member is entitled to (their own profiles), via the admin session. */
+  const own: Record<Member, { versions: string[]; projects: string[]; experience: string[] }> = {
+    member: { versions: [], projects: [], experience: [] },
+    member2: { versions: [], projects: [], experience: [] },
+  };
 
   before(async () => {
-    // Foreign rows in EVERY table: an internal profile owned by admin; an external one owned by the member
-    // (B, owned by admin, is the foreign external one). Together with A these cover each child table both ways.
+    // Own AND foreign rows in EVERY child table, for both members: A (member, internal) and C (member2, internal)
+    // cover the internal tables, an external scratch profile per member covers the external ones, and the admin's
+    // B (external) plus an internal scratch profile are foreign to both.
     scratchProfiles.push(await saveAs("admin", "internal", FULL_INTERNAL));
     scratchProfiles.push(await saveAs("member", "external", FULL_EXTERNAL));
+    scratchProfiles.push(await saveAs("member2", "external", FULL_EXTERNAL));
     const admin = db("admin");
-    const mine = ids(rows(await admin.from("profiles").select("id").eq("owner_id", userId.member)), "id");
-    ownVersions = ids(rows(await admin.from("profile_versions").select("id").in("profile_id", mine)), "id");
-    ownProjects = ids(rows(await admin.from("version_projects").select("id").in("version_id", ownVersions)), "id");
-    ownExperience = ids(rows(await admin.from("version_experience").select("id").in("version_id", ownVersions)), "id");
+    for (const m of MEMBERS) {
+      const mine = ids(rows(await admin.from("profiles").select("id").eq("owner_id", userId[m])), "id");
+      own[m].versions = ids(rows(await admin.from("profile_versions").select("id").in("profile_id", mine)), "id");
+      own[m].projects = ids(rows(await admin.from("version_projects").select("id").in("version_id", own[m].versions)), "id");
+      own[m].experience = ids(rows(await admin.from("version_experience").select("id").in("version_id", own[m].versions)), "id");
+    }
   });
   after(async () => {
     for (const id of scratchProfiles) await db("admin").from("profiles").delete().eq("id", id);
   });
 
-  for (const table of VERSION_TABLES) {
-    test(`${table}: member sees exactly their own versions' rows; checker, manager and admin see all`, async () => {
-      const all = rows(await db("admin").from(table).select("version_id"));
-      const foreign = all.filter((r) => !ownVersions.includes(String(r.version_id)));
-      const own = all.filter((r) => ownVersions.includes(String(r.version_id)));
-      assert.ok(foreign.length > 0 && own.length > 0, `fixtures must put own and foreign rows in ${table}`);
-      const mine = rows(await db("member").from(table).select("version_id"));
-      assert.deepEqual(ids(mine, "version_id").sort(), ids(own, "version_id").sort());
-      for (const r of ["checker", "manager"] as const) {
-        assert.equal(rows(await db(r).from(table).select("version_id")).length, all.length);
-      }
+  for (const m of MEMBERS) {
+    const other: Member = m === "member" ? "member2" : "member";
+
+    for (const table of VERSION_TABLES) {
+      test(`${table}: ${m} sees exactly their own versions' rows, none of ${other}'s; checker and manager see all`, async () => {
+        const all = rows(await db("admin").from(table).select("version_id"));
+        const mineExpected = all.filter((r) => own[m].versions.includes(String(r.version_id)));
+        const othersRows = all.filter((r) => own[other].versions.includes(String(r.version_id)));
+        const foreign = all.filter((r) => !own[m].versions.includes(String(r.version_id)));
+        assert.ok(mineExpected.length > 0 && othersRows.length > 0 && foreign.length > 0, `fixtures must put own, ${other}'s and foreign rows in ${table}`);
+        const seen = rows(await db(m).from(table).select("version_id"));
+        assert.deepEqual(ids(seen, "version_id").sort(), ids(mineExpected, "version_id").sort());
+        assert.ok(seen.every((r) => !own[other].versions.includes(String(r.version_id))), `${m} read ${other}'s rows in ${table}`);
+        for (const r of ["checker", "manager"] as const) {
+          assert.equal(rows(await db(r).from(table).select("version_id")).length, all.length);
+        }
+      });
+    }
+
+    for (const table of PROJECT_TABLES) {
+      test(`${table}: ${m} sees exactly their own projects' rows, none of ${other}'s`, async () => {
+        const all = rows(await db("admin").from(table).select("project_id"));
+        const mineExpected = all.filter((r) => own[m].projects.includes(String(r.project_id)));
+        const othersRows = all.filter((r) => own[other].projects.includes(String(r.project_id)));
+        assert.ok(mineExpected.length > 0 && othersRows.length > 0, `fixtures must put own and ${other}'s rows in ${table}`);
+        const seen = rows(await db(m).from(table).select("project_id"));
+        assert.deepEqual(ids(seen, "project_id").sort(), ids(mineExpected, "project_id").sort());
+        assert.ok(seen.every((r) => !own[other].projects.includes(String(r.project_id))), `${m} read ${other}'s rows in ${table}`);
+        assert.equal(rows(await db("manager").from(table).select("project_id")).length, all.length);
+      });
+    }
+
+    test(`${HIGHLIGHT_TABLE}: ${m} sees exactly their own experience rows' highlights, none of ${other}'s`, async () => {
+      const all = rows(await db("admin").from(HIGHLIGHT_TABLE).select("experience_id"));
+      const mineExpected = all.filter((r) => own[m].experience.includes(String(r.experience_id)));
+      const othersRows = all.filter((r) => own[other].experience.includes(String(r.experience_id)));
+      assert.ok(mineExpected.length > 0 && othersRows.length > 0, `fixtures must put own and ${other}'s rows in the highlights table`);
+      const seen = rows(await db(m).from(HIGHLIGHT_TABLE).select("experience_id"));
+      assert.deepEqual(ids(seen, "experience_id").sort(), ids(mineExpected, "experience_id").sort());
+      assert.equal(rows(await db("checker").from(HIGHLIGHT_TABLE).select("experience_id")).length, all.length);
     });
   }
-
-  for (const table of PROJECT_TABLES) {
-    test(`${table}: member sees exactly their own projects' rows`, async () => {
-      const all = rows(await db("admin").from(table).select("project_id"));
-      const foreign = all.filter((r) => !ownProjects.includes(String(r.project_id)));
-      const own = all.filter((r) => ownProjects.includes(String(r.project_id)));
-      assert.ok(foreign.length > 0 && own.length > 0, `fixtures must put own and foreign rows in ${table}`);
-      const mine = rows(await db("member").from(table).select("project_id"));
-      assert.deepEqual(ids(mine, "project_id").sort(), ids(own, "project_id").sort());
-      assert.equal(rows(await db("manager").from(table).select("project_id")).length, all.length);
-    });
-  }
-
-  test(`${HIGHLIGHT_TABLE}: member sees exactly their own experience rows' highlights`, async () => {
-    const all = rows(await db("admin").from(HIGHLIGHT_TABLE).select("experience_id"));
-    const foreign = all.filter((r) => !ownExperience.includes(String(r.experience_id)));
-    const own = all.filter((r) => ownExperience.includes(String(r.experience_id)));
-    assert.ok(foreign.length > 0 && own.length > 0, "fixtures must put own and foreign rows in the highlights table");
-    const mine = rows(await db("member").from(HIGHLIGHT_TABLE).select("experience_id"));
-    assert.deepEqual(ids(mine, "experience_id").sort(), ids(own, "experience_id").sort());
-    assert.equal(rows(await db("checker").from(HIGHLIGHT_TABLE).select("experience_id")).length, all.length);
-  });
 
   test("a member cannot add rows to a saved version, even their own (versions are immutable)", async () => {
     const res = await db("member")
@@ -261,12 +298,12 @@ describe("child tables follow their version's access", () => {
     assert.ok(nothingHappened(res), "a later request must not append to an existing version");
   });
 
-  test("a member cannot add rows to someone else's version", async () => {
-    const res = await db("member")
-      .from("version_skills")
-      .insert({ version_id: versionsB[0], position: 99, name: "Injected", rating: "5" })
-      .select();
-    assert.ok(nothingHappened(res));
+  test("a member cannot add rows to someone else's version (another member's or the admin's)", async () => {
+    const cases = [["member", versionsC[0]], ["member", versionsB[0]], ["member2", versionsA[0]], ["member2", versionsB[0]]] as const;
+    for (const [who, version] of cases) {
+      const res = await db(who).from("version_skills").insert({ version_id: version, position: 99, name: "Injected", rating: "5" }).select();
+      assert.ok(nothingHappened(res), `${who} injected a row into ${version}`);
+    }
   });
 
   test("checker and manager cannot insert child rows at all", async () => {
@@ -280,10 +317,10 @@ describe("child tables follow their version's access", () => {
 describe("nobody can UPDATE or DELETE a version or its rows", () => {
   for (const r of ROLES) {
     test(`${r} cannot update or delete a version`, async () => {
-      for (const v of [versionsA[0], versionsB[0]]) {
+      for (const v of [versionsA[0], versionsB[0], versionsC[0]]) {
         assert.ok(nothingHappened(await db(r).from("profile_versions").update({ label: "Tampered" }).eq("id", v).select()));
       }
-      const check = rows(await db("admin").from("profile_versions").select("id,label").in("id", [...versionsA, ...versionsB]));
+      const check = rows(await db("admin").from("profile_versions").select("id,label").in("id", [...versionsA, ...versionsB, ...versionsC]));
       assert.ok(check.every((v) => v.label !== "Tampered"));
       if (r !== "admin") {
         assert.ok(nothingHappened(await db(r).from("profile_versions").delete().eq("id", versionsA[0]).select()));
@@ -317,12 +354,16 @@ describe("nobody can UPDATE or DELETE a version or its rows", () => {
 });
 
 describe("roles cannot be changed by the person they belong to", () => {
-  test("a member cannot change their own role", async () => {
-    for (const role of ["admin", "manager", "checker"]) {
-      assert.ok(nothingHappened(await db("member").from("app_users").update({ role }).eq("id", userId.member).select()));
+  test("a member cannot change their own or another member's role", async () => {
+    for (const [who, target] of [["member", "member"], ["member2", "member2"], ["member", "member2"], ["member2", "member"]] as const) {
+      for (const role of ["admin", "manager", "checker"]) {
+        assert.ok(nothingHappened(await db(who).from("app_users").update({ role }).eq("id", userId[target]).select()), `${who} changed ${target} to ${role}`);
+      }
     }
-    const fresh = rows(await db("admin").from("app_users").select("role").eq("id", userId.member));
-    assert.equal(fresh[0]?.role, "team_member");
+    for (const m of ["member", "member2"] as const) {
+      const fresh = rows(await db("admin").from("app_users").select("role").eq("id", userId[m]));
+      assert.equal(fresh[0]?.role, "team_member");
+    }
   });
 
   test("a manager and a checker cannot change anyone's role", async () => {
@@ -364,20 +405,30 @@ describe("profiles: who may create and change them", () => {
   });
 
   test("a member cannot create a profile owned by someone else", async () => {
-    const res = await db("member").from("profiles").insert({ owner_id: userId.admin, template: "internal" }).select();
-    assert.ok(nothingHappened(res));
+    for (const owner of [userId.admin, userId.member2]) {
+      const res = await db("member").from("profiles").insert({ owner_id: owner, template: "internal" }).select();
+      assert.ok(nothingHappened(res));
+    }
   });
 
-  test("a member cannot update someone else's profile", async () => {
-    assert.ok(nothingHappened(await db("member").from("profiles").update({ candidate_name: "Tampered" }).eq("id", profileB).select()));
-    assert.ok(nothingHappened(await db("member").from("profiles").delete().eq("id", profileA).select()));
+  test("a member cannot update or delete someone else's profile (another member's or the admin's)", async () => {
+    const cases = [["member", profileC], ["member", profileB], ["member2", profileA], ["member2", profileB]] as const;
+    for (const [who, target] of cases) {
+      assert.ok(nothingHappened(await db(who).from("profiles").update({ candidate_name: "Tampered" }).eq("id", target).select()), `${who} updated ${target}`);
+      assert.ok(nothingHappened(await db(who).from("profiles").delete().eq("id", target).select()), `${who} deleted ${target}`);
+    }
+    const names = rows(await db("admin").from("profiles").select("candidate_name"));
+    assert.ok(names.every((n) => n.candidate_name !== "Tampered"));
   });
 
   test("a member cannot reassign their profile, nor point it at another profile's version", async () => {
     assert.ok(nothingHappened(await db("member").from("profiles").update({ owner_id: userId.admin }).eq("id", profileA).select()));
     assert.ok(nothingHappened(await db("member").from("profiles").update({ template: "external" }).eq("id", profileA).select()));
-    const hijack = await db("member").from("profiles").update({ current_version_id: versionsB[0] }).eq("id", profileA).select();
-    assert.ok(nothingHappened(hijack));
+    for (const v of [versionsB[0], versionsC[0]]) {
+      const hijack = await db("member").from("profiles").update({ current_version_id: v }).eq("id", profileA).select();
+      assert.ok(nothingHappened(hijack));
+    }
+    assert.ok(nothingHappened(await db("member").from("profiles").update({ owner_id: userId.member2 }).eq("id", profileA).select()));
   });
 
   test("a member can archive and restore their own profile", async () => {
@@ -410,11 +461,18 @@ describe("save_profile_version runs as the caller", () => {
       assert.equal(second.error, null);
       assert.equal((second.data as Row[])[0].new_version_no, 2);
       // another member's profile cannot be saved onto, and a manager cannot save at all
-      const intoB = await db("member").rpc("save_profile_version", {
-        p_profile_id: profileB, p_template: "external", p_kind: "base", p_label: "x", p_parent: null,
+      for (const [target, template] of [[profileB, "external"], [profileC, "internal"]] as const) {
+        const intoOther = await db("member").rpc("save_profile_version", {
+          p_profile_id: target, p_template: template, p_kind: "base", p_label: "x", p_parent: null,
+          p_source: "edit", p_profile: { name: "x" }, p_flags: [], p_analysis: null, p_prompt_plan: null,
+        });
+        assert.notEqual(intoOther.error, null, "a member must not save onto someone else's profile");
+      }
+      const intoA = await db("member2").rpc("save_profile_version", {
+        p_profile_id: profileA, p_template: "internal", p_kind: "base", p_label: "x", p_parent: null,
         p_source: "edit", p_profile: { name: "x" }, p_flags: [], p_analysis: null, p_prompt_plan: null,
       });
-      assert.notEqual(intoB.error, null);
+      assert.notEqual(intoA.error, null, "member2 must not save onto member's profile");
       for (const r of ["manager", "checker"] as const) {
         const denied = await db(r).rpc("save_profile_version", {
           p_profile_id: null, p_template: "internal", p_kind: "base", p_label: "x", p_parent: null,
@@ -431,7 +489,7 @@ describe("save_profile_version runs as the caller", () => {
 describe("audit_log", () => {
   test("members and checkers read nothing; manager and admin read; nobody can change or delete a row", async () => {
     // make sure at least one row exists (the seed and the tests above already wrote some)
-    for (const r of ["member", "checker"] as const) assert.ok(nothingHappened(await db(r).from("audit_log").select("*")), `${r} read audit_log`);
+    for (const r of ["member", "member2", "checker"] as const) assert.ok(nothingHappened(await db(r).from("audit_log").select("*")), `${r} read audit_log`);
     for (const r of ["manager", "admin"] as const) assert.ok(rows(await db(r).from("audit_log").select("id")).length > 0, `${r} cannot read audit_log`);
     for (const r of ROLES) {
       assert.ok(nothingHappened(await db(r).from("audit_log").update({ action: "tampered" }).gte("id", 0).select()));
@@ -446,58 +504,102 @@ describe("audit_log", () => {
 });
 
 describe("checker reviews", () => {
-  let reviewOnA: string;
-  let reviewOnB: string;
+  let reviewOnA: string; // by the checker, on member's profile
+  let reviewOnB: string; // by the checker, on the admin's profile
+  let reviewOnC: string; // by the checker, on member2's profile
+  let otherReview: string; // owned by the manager's id (made by admin): a checker's OWN-vs-OTHERS probe
+  let otherItem: string;
+
+  const add = async (r: RoleName, version: string, checkerId: string): Promise<string> => {
+    const res = await db(r).from("checker_reviews").insert({ version_id: version, checker_id: checkerId }).select();
+    assert.equal(res.error, null, `fixture review failed: ${res.error?.message}`);
+    return String(rows(res)[0].id);
+  };
+  const addItem = async (r: RoleName, review: string, path: string): Promise<string> => {
+    const res = await db(r).from("review_items").insert({ review_id: review, path, reason: "check" }).select();
+    assert.equal(res.error, null, `fixture item failed: ${res.error?.message}`);
+    return String(rows(res)[0].id);
+  };
+
   before(async () => {
-    const a = await db("checker").from("checker_reviews").insert({ version_id: versionsA[0], checker_id: userId.checker }).select();
-    const b = await db("checker").from("checker_reviews").insert({ version_id: versionsB[0], checker_id: userId.checker }).select();
-    assert.equal(a.error, null);
-    assert.equal(b.error, null);
-    reviewOnA = String(rows(a)[0].id);
-    reviewOnB = String(rows(b)[0].id);
-    const item = await db("checker").from("review_items").insert({ review_id: reviewOnA, path: "skills.0", reason: "check rating" }).select();
-    assert.equal(item.error, null);
-    assert.equal((await db("checker").from("review_items").insert({ review_id: reviewOnB, path: "name", reason: "check" }).select()).error, null);
+    reviewOnA = await add("checker", versionsA[0], userId.checker);
+    reviewOnB = await add("checker", versionsB[0], userId.checker);
+    reviewOnC = await add("checker", versionsC[0], userId.checker);
+    await addItem("checker", reviewOnA, "skills.0");
+    await addItem("checker", reviewOnB, "name");
+    await addItem("checker", reviewOnC, "skills.1");
+    // Only one checker is seeded, so the admin (all rights) makes a review that belongs to someone else.
+    otherReview = await add("admin", versionsB[1], userId.manager);
+    otherItem = await addItem("admin", otherReview, "overview");
   });
   after(async () => {
-    for (const id of [reviewOnA, reviewOnB]) await db("admin").from("checker_reviews").delete().eq("id", id); // cascades to items
+    for (const id of [reviewOnA, reviewOnB, reviewOnC, otherReview]) {
+      await db("admin").from("checker_reviews").delete().eq("id", id); // cascades to items
+    }
   });
 
   test("a checker cannot create a review under someone else's name; members and managers cannot create reviews", async () => {
     const forged = await db("checker").from("checker_reviews").insert({ version_id: versionsA[0], checker_id: userId.admin }).select();
     assert.ok(nothingHappened(forged));
-    for (const r of ["member", "manager"] as const) {
+    for (const r of ["member", "member2", "manager"] as const) {
       const res = await db(r).from("checker_reviews").insert({ version_id: versionsA[0], checker_id: userId[r] }).select();
       assert.ok(nothingHappened(res), `${r} created a review`);
     }
+    const forgedItem = await db("checker").from("review_items").insert({ review_id: otherReview, path: "x", reason: "x" }).select();
+    assert.ok(nothingHappened(forgedItem), "a checker added an item to someone else's review");
   });
 
-  test("a member reads reviews and items on their own profile only", async () => {
-    const reviews = ids(rows(await db("member").from("checker_reviews").select("id")), "id");
-    assert.deepEqual(reviews, [reviewOnA]);
-    const items = rows(await db("member").from("review_items").select("review_id"));
-    assert.ok(items.length > 0 && items.every((i) => i.review_id === reviewOnA));
+  test("each member reads reviews and items on their own profile only (member-vs-member)", async () => {
+    for (const [who, mine, theirs] of [["member", reviewOnA, reviewOnC], ["member2", reviewOnC, reviewOnA]] as const) {
+      const reviews = ids(rows(await db(who).from("checker_reviews").select("id")), "id");
+      assert.deepEqual(reviews, [mine], `${who} must see only their own review`);
+      assert.ok(!reviews.includes(theirs));
+      const items = rows(await db(who).from("review_items").select("review_id"));
+      assert.ok(items.length > 0 && items.every((i) => i.review_id === mine), `${who} saw items of another profile`);
+    }
   });
 
-  test("checker, manager and admin read what their role allows", async () => {
+  test("a checker reads ALL reviews and items, including other people's; manager and admin read all too", async () => {
+    const everyReview = [reviewOnA, reviewOnB, reviewOnC, otherReview];
     for (const r of ["checker", "manager", "admin"] as const) {
       const seen = ids(rows(await db(r).from("checker_reviews").select("id")), "id");
-      assert.ok(seen.includes(reviewOnA) && seen.includes(reviewOnB), `${r} cannot read both reviews`);
+      for (const id of everyReview) assert.ok(seen.includes(id), `${r} cannot read review ${id}`);
+      const items = ids(rows(await db(r).from("review_items").select("id")), "id");
+      assert.ok(items.includes(otherItem), `${r} cannot read someone else's review item`);
     }
+    const adminCount = rows(await db("admin").from("checker_reviews").select("id")).length;
+    assert.equal(rows(await db("checker").from("checker_reviews").select("id")).length, adminCount);
   });
 
-  test("a checker can update their own review; members and managers cannot", async () => {
+  test("a checker can update their own review and items", async () => {
     assert.equal((await db("checker").from("checker_reviews").update({ status: "approved" }).eq("id", reviewOnA).select()).error, null);
-    for (const r of ["member", "manager"] as const) {
-      assert.ok(nothingHappened(await db(r).from("checker_reviews").update({ status: "changes_requested" }).eq("id", reviewOnA).select()));
-      assert.ok(nothingHappened(await db(r).from("review_items").update({ resolved: true }).eq("review_id", reviewOnA).select()));
-    }
+    const item = await db("checker").from("review_items").update({ resolved: true }).eq("review_id", reviewOnA).select();
+    assert.equal(item.error, null);
+    assert.ok(rows(item).length > 0);
     assert.equal(rows(await db("admin").from("checker_reviews").select("status").eq("id", reviewOnA))[0]?.status, "approved");
   });
 
+  test("a checker cannot update or delete someone else's review or item (read-only on others')", async () => {
+    assert.ok(nothingHappened(await db("checker").from("checker_reviews").update({ status: "approved" }).eq("id", otherReview).select()));
+    assert.ok(nothingHappened(await db("checker").from("review_items").update({ resolved: true }).eq("id", otherItem).select()));
+    assert.ok(nothingHappened(await db("checker").from("checker_reviews").delete().eq("id", otherReview).select()));
+    assert.ok(nothingHappened(await db("checker").from("review_items").delete().eq("id", otherItem).select()));
+    const review = rows(await db("admin").from("checker_reviews").select("status").eq("id", otherReview))[0];
+    const item = rows(await db("admin").from("review_items").select("resolved").eq("id", otherItem))[0];
+    assert.equal(review?.status, "pending");
+    assert.equal(item?.resolved, false);
+  });
+
+  test("members and managers cannot update reviews or items", async () => {
+    for (const r of ["member", "member2", "manager"] as const) {
+      assert.ok(nothingHappened(await db(r).from("checker_reviews").update({ status: "changes_requested" }).eq("id", reviewOnA).select()));
+      assert.ok(nothingHappened(await db(r).from("review_items").update({ resolved: true }).eq("review_id", reviewOnA).select()));
+    }
+  });
+
   test("a checker cannot move a review to another checker or version", async () => {
-    assert.ok(nothingHappened(await db("checker").from("checker_reviews").update({ checker_id: userId.admin }).eq("id", reviewOnA).select()));
-    assert.ok(nothingHappened(await db("checker").from("checker_reviews").update({ version_id: versionsB[1] }).eq("id", reviewOnA).select()));
+    assert.ok(nothingHappened(await db("checker").from("checker_reviews").update({ checker_id: userId.admin }).eq("id", reviewOnB).select()));
+    assert.ok(nothingHappened(await db("checker").from("checker_reviews").update({ version_id: versionsB[1] }).eq("id", reviewOnB).select()));
   });
 });
 
