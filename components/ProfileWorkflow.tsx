@@ -9,6 +9,7 @@ import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
+import { defaultLabel, resolveLabel } from "@/lib/versionLabel";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -168,7 +169,7 @@ export default function ProfileWorkflow({
   const [downloaded, setDownloaded] = useState(false); // DOCX downloaded and not edited since
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveLabel, setSaveLabel] = useState(initial ? "" : "Base");
+  const [saveLabel, setSaveLabel] = useState(defaultLabel({ lastSavedNo: initial?.versionNo ?? null, roleSpecific: false }));
   const [roleSpecific, setRoleSpecific] = useState(false);
 
   // draft recovery (sessionStorage only; see lib/draft.ts)
@@ -403,14 +404,20 @@ export default function ProfileWorkflow({
   /** Saves the current form as a new immutable version in My Profiles (drafts with blanks are allowed). */
   const handleSave = async () => {
     if (!data || saving) return;
-    setSaving(true);
     setSaveError(null);
+    const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
+    // A role-specific version must be named; a normal one falls back to "Base" / "v<next>".
+    const resolved = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: kind === "role_specific" });
+    if (!resolved.ok) {
+      setSaveError(resolved.message);
+      return;
+    }
+    const label = resolved.label;
+    setSaving(true);
     const effective: ResumeData =
       fromScratch && templateId === "internal"
         ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) }
         : data;
-    const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
-    const label = saveLabel.trim() || (kind === "role_specific" ? "Role-specific" : "Base");
     const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
     try {
       const res = await fetch(`${BASE}/api/profiles`, {
@@ -443,7 +450,7 @@ export default function ProfileWorkflow({
       setSavedInfo({ no: json.versionNo, label });
       setDirty(false);
       setRoleSpecific(false);
-      setSaveLabel("");
+      setSaveLabel(defaultLabel({ lastSavedNo: json.versionNo, roleSpecific: false })); // next default: v2, v3, ...
       if (fromScratch && templateId === "internal") {
         // the saved summary is the full "<N>+ Years..." string, so the form leaves bare-number mode
         setData(effective);
@@ -468,7 +475,7 @@ export default function ProfileWorkflow({
     setSavedProfileId(d.profileId);
     setLastVersionId(d.versionId);
     setSavedInfo(d.versionNo !== null ? { no: d.versionNo, label: d.label } : null);
-    setSaveLabel(d.versionId ? "" : "Base");
+    setSaveLabel(defaultLabel({ lastSavedNo: d.versionNo, roleSpecific: false }));
     setRoleSpecific(false);
     setSaveError(null);
     setErrors(null);
@@ -525,7 +532,7 @@ export default function ProfileWorkflow({
         )}
         {pendingDraft && <DraftRestoreBanner savedAt={pendingDraft.savedAt} onRestore={handleRestoreDraft} onDiscard={handleDiscardDraft} />}
         {session && data && (
-          <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} />
+          <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} error={saveError} />
         )}
         <div className="mb-10">
           <Stepper
@@ -764,7 +771,7 @@ export default function ProfileWorkflow({
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[12rem] flex-1">
                   <label htmlFor="save-label" className="mb-1 block text-xs font-medium text-ink-light">
-                    Version label
+                    Version label{roleSpecific ? " (required)" : ""}
                   </label>
                   <input
                     id="save-label"
@@ -773,6 +780,7 @@ export default function ProfileWorkflow({
                     value={saveLabel}
                     onChange={(e) => setSaveLabel(e.target.value)}
                     placeholder={roleSpecific ? "e.g. Java Backend" : "e.g. Base"}
+                    aria-required={roleSpecific}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                   />
                 </div>
@@ -787,7 +795,16 @@ export default function ProfileWorkflow({
               </div>
               {lastVersionId && (
                 <label className="mt-3 flex items-center gap-2 text-sm text-ink-light">
-                  <input type="checkbox" checked={roleSpecific} onChange={(e) => setRoleSpecific(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={roleSpecific}
+                    onChange={(e) => {
+                      // A role-specific version asks for its own name; unticking brings the default back.
+                      setRoleSpecific(e.target.checked);
+                      setSaveLabel(defaultLabel({ lastSavedNo: savedInfo?.no ?? null, roleSpecific: e.target.checked }));
+                      setSaveError(null);
+                    }}
+                  />
                   Save as a role-specific version of v{savedInfo?.no}
                 </label>
               )}

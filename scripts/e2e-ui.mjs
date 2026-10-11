@@ -191,4 +191,49 @@ await t.scenario("previews hide empty sections and show ratings as x/5", async (
   }
 });
 
+await t.scenario("version labels default to Base, then v2, v3...; role-specific asks for a name", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "review form");
+  await t.setName("E2E Label Test");
+  const label = () => ev("document.getElementById('save-label').value");
+  const setLabel = (v) => ev(`(()=>{const i=document.getElementById('save-label'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  const saved = (text) => waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`, text);
+  const roleBox = () => ev("[...document.querySelectorAll('label')].find(l=>l.textContent.includes('role-specific'))?.querySelector('input')?.click()");
+  const versions = () => sql("select string_agg(version_no||':'||kind||':'||label, ' | ' order by version_no) from profile_versions where profile_id=(select id from profiles where candidate_name='E2E Label Test')");
+
+  check("the first save defaults to Base", (await label()) === "Base");
+  await click("Save to My Profiles");
+  await saved("Saved · v1 · Base");
+  check("after saving, the box holds the next default (v2), not an empty box", (await label()) === "v2");
+  await click("Save new version");
+  await saved("Saved · v2 · v2");
+  check("and then v3", (await label()) === "v3");
+
+  await roleBox();
+  await sleep(200);
+  check("ticking role-specific clears the box and marks it required", (await label()) === "" && (await ev("document.querySelector('label[for=save-label]').textContent")).includes("(required)"));
+  await click("Save new version");
+  await waitFor("document.body.innerText.includes('Give this role-specific version a name')", "name required message");
+  check("a role-specific version without a name is refused", (await versions()) === "1:base:Base | 2:base:v2");
+  await roleBox();
+  await sleep(200);
+  check("unticking brings the default back", (await label()) === "v3");
+
+  await roleBox();
+  await setLabel("Java Backend");
+  await click("Save new version");
+  await saved("Saved · v3 · Java Backend");
+  check("a named role-specific version saves with its parent", (await versions()) === "1:base:Base | 2:base:v2 | 3:role_specific:Java Backend");
+  check("the next default continues at v4 and the box is a normal version again", (await label()) === "v4");
+
+  // Opening a saved version pre-fills the next number too
+  const profile = sql("select id from profiles where candidate_name='E2E Label Test'");
+  const v1 = sql(`select id from profile_versions where profile_id='${profile}' and version_no=1`);
+  await goto(`/internal?version=${v1}`);
+  await waitFor("!!document.getElementById('save-label')", "saved version open");
+  check("opening v1 pre-fills v2", (await label()) === "v2");
+});
+
 t.finish();

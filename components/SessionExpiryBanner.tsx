@@ -16,11 +16,13 @@ interface SessionExpiryBannerProps {
   canSave: boolean;
   saving: boolean;
   onSave: () => void;
+  /** Why the last save did not go through (e.g. a role-specific version still needs a name). */
+  error?: string | null;
 }
 
 const TICK_MS = 10_000;
 
-export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSave }: SessionExpiryBannerProps) {
+export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSave, error }: SessionExpiryBannerProps) {
   // The moment the session ends, fixed on mount from the server's measurement.
   const deadline = useRef<number>(Date.now() + remainingMs);
   const [left, setLeft] = useState<number>(remainingMs);
@@ -42,7 +44,10 @@ export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSa
       aria-live={ended ? "assertive" : "polite"}
       className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
     >
-      <p>{message}</p>
+      <div>
+        <p>{message}</p>
+        {error && <p className="mt-1 text-brand-700">{error}</p>}
+      </div>
       {canSave && !ended && (
         <button
           type="button"
