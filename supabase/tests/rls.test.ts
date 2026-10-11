@@ -121,8 +121,15 @@ describe("app_users: each role gets exactly its rows", () => {
     test(`${r} sees ${expected[r]} row(s)`, async () => {
       const res = await db(r).from("app_users").select("id,email,role");
       assert.equal(res.error, null);
-      assert.equal(rows(res).length, expected[r]);
-      if (r === "member" || r === "member2" || r === "checker") assert.equal(rows(res)[0]?.id, userId[r]);
+      // Count only the seeded @example.test users: real people who signed in with Google on this laptop
+      // also have app_users rows, and must not change the result.
+      const seeded = rows(res).filter((u) => String(u.email).endsWith("@example.test"));
+      assert.equal(seeded.length, expected[r]);
+      if (r === "member" || r === "member2" || r === "checker") {
+        // These roles may read only themselves, so the TOTAL (not just the seeded count) must be 1.
+        assert.equal(rows(res).length, 1);
+        assert.equal(rows(res)[0]?.id, userId[r]);
+      }
     });
   }
 });
