@@ -8,6 +8,7 @@ import { generateDocx } from "@/lib/generate";
 import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { describeFlagPath } from "@/lib/reviewFlags";
+import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import type { ExtractIssue, ExtractResult } from "@/lib/extract.types";
 import {
   blankResume,
@@ -145,6 +146,9 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveLabel, setSaveLabel] = useState(initial ? "" : "Base");
   const [roleSpecific, setRoleSpecific] = useState(false);
+
+  // Warn before leaving (refresh, close, in-app links) while edits are unsaved.
+  useUnsavedChangesWarning(dirty);
 
   const fromScratch = source === "scratch";
   const uploading = uploadStatus !== "idle";
