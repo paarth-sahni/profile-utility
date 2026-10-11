@@ -184,7 +184,7 @@ export default function ProfileWorkflow({
 
   // Warn before leaving (refresh, close, in-app links) while the work is unsaved and not yet downloaded.
   const unsaved = hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded });
-  useUnsavedChangesWarning(unsaved);
+  const leaveGuard = useUnsavedChangesWarning(unsaved);
 
   // Offer a draft left behind by an ended session (same user, same template, still fresh).
   useEffect(() => {
@@ -520,6 +520,16 @@ export default function ProfileWorkflow({
       </section>
 
       <main className="mx-auto max-w-6xl px-4 py-10">
+        {leaveGuard.pendingHref && (
+          <ConfirmDialog
+            title="Leave without saving?"
+            message="Your profile has changes that are not saved and have not been downloaded. If you leave now, they will be lost."
+            confirmLabel="Leave anyway"
+            cancelLabel="Stay"
+            onConfirm={leaveGuard.leave}
+            onCancel={leaveGuard.stay}
+          />
+        )}
         {discardAsk && (
           <ConfirmDialog
             title="Discard your unsaved draft?"

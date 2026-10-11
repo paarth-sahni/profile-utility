@@ -1,21 +1,39 @@
 "use client";
 
 /**
- * Purpose: warns before the user loses unsaved work. While `dirty` is true it
- *  1. sets a `beforeunload` handler (refresh, close tab, typing a new address, leaving the site), and
- *  2. intercepts clicks on in-app links (Next <Link> navigations do not fire `beforeunload`) and asks
- *     for confirmation with window.confirm; "Cancel" stops the navigation.
+ * Purpose: protects unsaved work. While `dirty` is true it
+ *  1. sets a `beforeunload` handler: the browser's own prompt for refresh, closing the tab, typing a new address and
+ *     leaving the site (that prompt cannot be styled, so it stays native), and
+ *  2. intercepts clicks on in-app links (Next <Link> navigations do not fire `beforeunload`): the click is stopped and
+ *     the target is returned as `pendingHref`, so the caller can show its own branded dialog and then call `leave()`
+ *     (navigate there) or `stay()` (forget it).
  * Not covered: the browser Back/Forward buttons inside the app (no reliable hook for them in the App Router).
  */
-import { useEffect } from "react";
-import { isInAppNavigation } from "./unsavedGuard";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { isInAppNavigation, toRouterPath } from "./unsavedGuard";
 
-export const UNSAVED_MESSAGE = "You have unsaved changes. If you leave this page they will be lost. Leave anyway?";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-/** Installs the warning while `dirty` is true; removes it when false or on unmount. */
-export function useUnsavedChangesWarning(dirty: boolean, message: string = UNSAVED_MESSAGE): void {
+export interface LeaveGuard {
+  /** The link the user tried to follow while there is unsaved work, or null. */
+  pendingHref: string | null;
+  /** The user chose to stay: forget the link. */
+  stay: () => void;
+  /** The user chose to leave anyway: go to the link. */
+  leave: () => void;
+}
+
+/** Installs the guard while `dirty` is true; removes it when false or on unmount. */
+export function useUnsavedChangesWarning(dirty: boolean): LeaveGuard {
+  const router = useRouter();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty) {
+      setPendingHref(null);
+      return;
+    }
 
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -39,10 +57,10 @@ export function useUnsavedChangesWarning(dirty: boolean, message: string = UNSAV
         },
         window.location.href,
       );
-      if (leaving && !window.confirm(message)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      if (!leaving) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setPendingHref(anchor.href);
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -51,5 +69,17 @@ export function useUnsavedChangesWarning(dirty: boolean, message: string = UNSAV
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("click", onClick, true);
     };
-  }, [dirty, message]);
+  }, [dirty]);
+
+  const stay = useCallback(() => setPendingHref(null), []);
+  const leave = useCallback(() => {
+    const href = pendingHref;
+    setPendingHref(null);
+    if (!href) return;
+    const path = toRouterPath(href, window.location.href, BASE_PATH);
+    if (path) router.push(path);
+    else window.location.assign(href);
+  }, [pendingHref, router]);
+
+  return { pendingHref, stay, leave };
 }

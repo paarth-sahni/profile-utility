@@ -1,7 +1,7 @@
 /** Purpose: unit tests for isInAppNavigation (which link clicks the unsaved-changes guard must intercept). */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasUnsavedWork, isInAppNavigation, type LinkClick, type WorkState } from "./unsavedGuard";
+import { hasUnsavedWork, isInAppNavigation, toRouterPath, type LinkClick, type WorkState } from "./unsavedGuard";
 
 const HERE = "http://localhost:3000/internal?version=abc";
 const click = (over: Partial<LinkClick>): LinkClick => ({
@@ -76,4 +76,21 @@ test("hasUnsavedWork: a DOCX download since the last edit clears the warning", (
 
 test("hasUnsavedWork: editing after a download (downloaded reset) warns again", () => {
   assert.equal(hasUnsavedWork(work({ dirty: true, downloaded: false })), true);
+});
+
+test("toRouterPath: same-site links become router paths (query and hash kept)", () => {
+  assert.equal(toRouterPath("http://localhost:3000/profiles?x=1#top", HERE), "/profiles?x=1#top");
+  assert.equal(toRouterPath("/profiles", HERE), "/profiles");
+});
+
+test("toRouterPath: the basePath is removed because the router adds it back", () => {
+  const here = "https://tools.example.test/profile/internal";
+  assert.equal(toRouterPath("https://tools.example.test/profile/profiles", here, "/profile"), "/profiles");
+  assert.equal(toRouterPath("https://tools.example.test/profile", here, "/profile"), "/");
+  assert.equal(toRouterPath("https://tools.example.test/profiles", here, "/profile"), "/profiles", "only a real prefix is stripped");
+});
+
+test("toRouterPath: other sites and unparseable links give null", () => {
+  assert.equal(toRouterPath("https://example.com/", HERE), null);
+  assert.equal(toRouterPath("http://[bad", HERE), null);
 });

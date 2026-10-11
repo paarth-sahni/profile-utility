@@ -58,3 +58,19 @@ export function isInAppNavigation(click: LinkClick, currentUrl: string): boolean
   if (to.origin !== from.origin) return false;
   return to.pathname !== from.pathname || to.search !== from.search;
 }
+
+/**
+ * The path to give Next's router for a confirmed same-site link: pathname + query + hash, without the app's
+ * basePath (the router adds it back). Returns null if the URL is not on this site or cannot be parsed.
+ */
+export function toRouterPath(href: string, currentUrl: string, basePath: string = ""): string | null {
+  try {
+    const to = new URL(href, currentUrl);
+    const from = new URL(currentUrl);
+    if (to.origin !== from.origin) return null;
+    const path = basePath && (to.pathname === basePath || to.pathname.startsWith(`${basePath}/`)) ? to.pathname.slice(basePath.length) || "/" : to.pathname;
+    return `${path}${to.search}${to.hash}`;
+  } catch {
+    return null;
+  }
+}

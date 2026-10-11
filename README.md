@@ -82,7 +82,7 @@ npm run test:e2e
 ```
 
 `npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs` (Open in Google Docs on
-Review, My Profiles and Manage, plus the saved-profile screens). Google is **stubbed** in the page (a fake token client;
+Review, My Profiles and Manage; previews hiding empty sections; version label defaults; the unsaved-changes dialog). Google is **stubbed** in the page (a fake token client;
 Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
 `npm run dev` starts, otherwise they are skipped.

@@ -236,4 +236,60 @@ await t.scenario("version labels default to Base, then v2, v3...; role-specific 
   check("opening v1 pre-fills v2", (await label()) === "v2");
 });
 
+await t.scenario("unsaved-changes dialog (branded) when leaving through an in-app link", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "review form");
+  await t.setName("E2E Leave Test");
+  const nativeBefore = t.dialogs.length;
+  const dialogOpen = () => ev("!!document.querySelector('dialog[open]')");
+  const beforeUnloadPrevented = () => ev("(()=>{const e=new Event('beforeunload',{cancelable:true}); window.dispatchEvent(e); return e.defaultPrevented})()");
+
+  check("the browser's own beforeunload prompt stays active for refresh and close", await beforeUnloadPrevented());
+
+  await click("My Profiles", "header a");
+  await waitFor("!!document.querySelector('dialog[open]')", "leave dialog");
+  check("clicking a nav link asks 'Leave without saving?' in the branded dialog", (await bodyText()).includes("Leave without saving?") && (await ev("location.pathname")) === "/internal");
+  check("the buttons are Stay and Leave anyway, and focus starts on Stay", (await ev("[...document.querySelectorAll('dialog[open] button')].map(b=>b.textContent.trim()).join('|')")) === "Stay|Leave anyway" && (await ev("document.activeElement?.textContent?.trim()")) === "Stay");
+  check("no native confirm() was used", t.dialogs.length === nativeBefore);
+  await t.key("Escape", "Escape", 27);
+  await sleep(300);
+  check("Esc = Stay: the dialog closes and the form is untouched", !(await dialogOpen()) && (await ev("location.pathname")) === "/internal" && (await t.getName()) === "E2E Leave Test");
+
+  await click("My Profiles", "header a");
+  await waitFor("!!document.querySelector('dialog[open]')", "dialog again");
+  await click("Stay");
+  await sleep(300);
+  check("Stay keeps you on the page", !(await dialogOpen()) && (await ev("location.pathname")) === "/internal");
+
+  // saving removes the warning
+  await click("Save to My Profiles");
+  await waitFor("document.body.innerText.includes('Saved')", "saved");
+  await sleep(300);
+  check("after saving, beforeunload no longer fires and links do not ask", !(await beforeUnloadPrevented()));
+
+  // typing again brings it back; Leave anyway goes through
+  await t.setName("E2E Leave Test 2");
+  await sleep(200);
+  await click("My Profiles", "header a");
+  await waitFor("!!document.querySelector('dialog[open]')", "dialog (leave)");
+  await click("Leave anyway");
+  await waitFor("location.pathname === '/profiles'", "navigated to My Profiles");
+  check("Leave anyway navigates to the link", true);
+  check("it was an in-app navigation (no native prompt)", t.dialogs.length === nativeBefore);
+
+  // a clean page never asks
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "form");
+  await click("My Profiles", "header a");
+  await sleep(500);
+  check("a blank form nobody typed into still counts as unsaved work, so it asks", await dialogOpen());
+  await click("Leave anyway");
+  await waitFor("location.pathname === '/profiles'", "left");
+});
+
 t.finish();
