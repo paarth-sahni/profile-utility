@@ -168,4 +168,4 @@ await t.scenario("starting something new while a draft is pending asks 'Discard 
   check("without a pending draft there is no dialog", !(await ev("!!document.querySelector('dialog')")));
 });
 
-t.finish();
+await t.finish();

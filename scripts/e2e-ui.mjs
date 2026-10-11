@@ -322,4 +322,4 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
   }
 });
 
-t.finish();
+await t.finish();

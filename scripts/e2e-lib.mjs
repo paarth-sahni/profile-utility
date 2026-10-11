@@ -185,8 +185,8 @@ export async function startHarness(title) {
         console.log(`FAIL  ${name}: ${e.message}`);
       }
     },
-    /** Deletes the "E2E ..." test data, closes Chrome, prints the summary and exits. */
-    finish() {
+    /** Deletes the "E2E ..." test data, closes Chrome (and its temp profile), prints the summary and exits. */
+    async finish() {
       try {
         sql(`delete from profiles where candidate_name like 'E2E %'`);
         sql(`update auth.users set last_sign_in_at = now() where email like '%@example.test'`);
@@ -195,7 +195,9 @@ export async function startHarness(title) {
       }
       try {
         ws.close();
+        const exited = new Promise((r) => chrome.once("exit", r));
         chrome.kill();
+        await Promise.race([exited, sleep(3000)]); // Chrome writes to its profile until it exits
         rmSync(profileDir, { recursive: true, force: true });
       } catch {
         /* best effort */
