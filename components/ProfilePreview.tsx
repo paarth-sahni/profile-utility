@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cleanList, formatRating, hasContent, hasText } from "@/lib/previewModel";
 import type { ExternalResume, InternalResume, ResumeData, TemplateId } from "@/lib/schemas";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -11,7 +12,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Chips({ items }: { items: string[] }) {
-  if (!items.length) return <p className="text-sm text-ink-light">—</p>;
   return (
     <ul className="flex flex-wrap gap-1.5">
       {items.map((t, i) => (
@@ -33,117 +33,139 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-/** Read-only view of a saved profile version (no editing; use "Open in Review" to change it). */
+/** Read-only view of a saved profile version (no editing; use "Open in Review" to change it). Like the Word
+ *  document, it leaves out anything that is blank or "N/A", and sections with nothing to show disappear. */
 export default function ProfilePreview({ template, data }: { template: TemplateId; data: ResumeData }) {
   const d = data as InternalResume & ExternalResume;
-  const projects = d.projects as { duration: string; role: string; teamSize: string; description: string; responsibilities: string[]; title?: string; client?: string; toolsAndTechnologies?: string[] }[];
+  type PreviewProject = { duration: string; role: string; teamSize: string; description: string; responsibilities: string[]; title?: string; client?: string; toolsAndTechnologies?: string[] };
+  const projects = (d.projects as PreviewProject[]).filter((p) =>
+    hasContent(p.title, p.client, p.duration, p.role, p.teamSize, p.description, p.toolsAndTechnologies, p.responsibilities),
+  );
+  const education = (d.education ?? []).filter((e) => hasText(e.year) || hasText(e.qualification));
+  const internalSkills = template === "internal" ? (d.skills as unknown as { name: string; rating: string }[]).filter((s) => hasText(s.name)) : [];
+  const externalSkills = template === "external" ? cleanList(d.skills as unknown as string[]) : [];
+  const tools = cleanList(d.tools);
+  const certifications = cleanList(d.certifications);
+  const domains = template === "internal" ? cleanList(d.domains) : [];
+  const languages = template === "internal" ? cleanList(d.languages) : [];
+  const managerial = template === "internal" ? cleanList(d.managerialExperience) : [];
+  const experience = template === "external" ? (d.experience ?? []).filter((x) => hasContent(x.company, x.position, x.duration, x.highlights)) : [];
+  const headline = [d.jobTitle, d.experienceSummary, d.specialization].filter(hasText).join(" · ");
+
   return (
     <article className="space-y-5 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <header>
-        <h2 className="text-2xl font-semibold text-ink-dark">{d.name || "Untitled profile"}</h2>
-        <p className="text-sm text-ink-light">
-          {[d.jobTitle, d.experienceSummary, d.specialization].filter(Boolean).join(" · ")}
-        </p>
+        <h2 className="text-2xl font-semibold text-ink-dark">{hasText(d.name) ? d.name : "Untitled profile"}</h2>
+        {headline && <p className="text-sm text-ink-light">{headline}</p>}
       </header>
 
-      {d.overview && (
+      {hasText(d.overview) && (
         <Section title="Overview">
           <p className="whitespace-pre-wrap text-sm text-ink">{d.overview}</p>
         </Section>
       )}
 
-      {d.education?.some((e) => e.year || e.qualification) && (
+      {education.length > 0 && (
         <Section title="Education">
-          {d.education.map((e, i) => (
+          {education.map((e, i) => (
             <p key={i} className="text-sm text-ink">
-              {[e.qualification, e.year].filter(Boolean).join(" — ")}
+              {[e.qualification, e.year].filter(hasText).join(" — ")}
             </p>
           ))}
         </Section>
       )}
 
-      {template === "internal" ? (
+      {internalSkills.length > 0 && (
         <Section title="Skills">
-          {d.skills.length ? (
-            <ul className="grid gap-1 text-sm sm:grid-cols-2">
-              {(d.skills as unknown as { name: string; rating: string }[]).map((s, i) => (
-                <li key={i} className="flex justify-between gap-3 border-b border-hairline py-1">
-                  <span>{s.name}</span>
-                  <span className="text-ink-light">{s.rating}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-ink-light">—</p>
-          )}
+          <ul className="grid gap-1 text-sm sm:grid-cols-2">
+            {internalSkills.map((s, i) => (
+              <li key={i} className="flex justify-between gap-3 border-b border-hairline py-1">
+                <span>{s.name}</span>
+                {formatRating(s.rating) && <span className="text-ink-light">{formatRating(s.rating)}</span>}
+              </li>
+            ))}
+          </ul>
         </Section>
-      ) : (
+      )}
+      {externalSkills.length > 0 && (
         <Section title="Skills">
-          <Chips items={d.skills as unknown as string[]} />
+          <Chips items={externalSkills} />
         </Section>
       )}
 
-      <Section title="Tools">
-        <Chips items={d.tools} />
-      </Section>
-      <Section title="Certifications">
-        <Chips items={d.certifications} />
-      </Section>
-
-      {template === "internal" && (
-        <>
-          <Section title="Domains">
-            <Chips items={d.domains} />
-          </Section>
-          <Section title="Languages">
-            <Chips items={d.languages} />
-          </Section>
-          {d.managerialExperience?.length > 0 && (
-            <Section title="Managerial experience">
-              <Bullets items={d.managerialExperience} />
-            </Section>
-          )}
-        </>
+      {tools.length > 0 && (
+        <Section title="Tools">
+          <Chips items={tools} />
+        </Section>
+      )}
+      {certifications.length > 0 && (
+        <Section title="Certifications">
+          <Chips items={certifications} />
+        </Section>
+      )}
+      {domains.length > 0 && (
+        <Section title="Domains">
+          <Chips items={domains} />
+        </Section>
+      )}
+      {languages.length > 0 && (
+        <Section title="Languages">
+          <Chips items={languages} />
+        </Section>
+      )}
+      {managerial.length > 0 && (
+        <Section title="Managerial experience">
+          <Bullets items={managerial} />
+        </Section>
       )}
 
       {projects.length > 0 && (
         <Section title="Projects">
           <div className="space-y-4">
-            {projects.map((p, i) => (
-              <div key={i} className="rounded-lg border border-hairline p-4">
-                <p className="font-medium text-ink-dark">{p.title ?? p.client ?? "Project"}</p>
-                <p className="text-xs text-ink-light">
-                  {[p.duration, p.role, p.teamSize && `Team: ${p.teamSize}`].filter(Boolean).join(" · ")}
-                </p>
-                {p.toolsAndTechnologies && p.toolsAndTechnologies.length > 0 && (
-                  <div className="mt-2">
-                    <Chips items={p.toolsAndTechnologies} />
-                  </div>
-                )}
-                {p.description && <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{p.description}</p>}
-                {p.responsibilities.length > 0 && (
-                  <div className="mt-2">
-                    <Bullets items={p.responsibilities} />
-                  </div>
-                )}
-              </div>
-            ))}
+            {projects.map((p, i) => {
+              const tech = cleanList(p.toolsAndTechnologies);
+              const duties = cleanList(p.responsibilities);
+              const meta = [p.duration, p.role, hasText(p.teamSize) ? `Team: ${p.teamSize}` : ""].filter(hasText);
+              return (
+                <div key={i} className="rounded-lg border border-hairline p-4">
+                  <p className="font-medium text-ink-dark">{hasText(p.title) ? p.title : hasText(p.client) ? p.client : "Project"}</p>
+                  {meta.length > 0 && <p className="text-xs text-ink-light">{meta.join(" · ")}</p>}
+                  {tech.length > 0 && (
+                    <div className="mt-2">
+                      <Chips items={tech} />
+                    </div>
+                  )}
+                  {hasText(p.description) && <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{p.description}</p>}
+                  {duties.length > 0 && (
+                    <div className="mt-2">
+                      <Bullets items={duties} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Section>
       )}
 
-      {template === "external" && d.experience?.length > 0 && (
+      {experience.length > 0 && (
         <Section title="Experience">
           <div className="space-y-4">
-            {d.experience.map((x, i) => (
-              <div key={i} className="rounded-lg border border-hairline p-4">
-                <p className="font-medium text-ink-dark">{x.company}</p>
-                <p className="text-xs text-ink-light">{[x.position, x.duration].filter(Boolean).join(" · ")}</p>
-                <div className="mt-2">
-                  <Bullets items={x.highlights} />
+            {experience.map((x, i) => {
+              const highlights = cleanList(x.highlights);
+              const meta = [x.position, x.duration].filter(hasText);
+              return (
+                <div key={i} className="rounded-lg border border-hairline p-4">
+                  {hasText(x.company) && <p className="font-medium text-ink-dark">{x.company}</p>}
+                  {meta.length > 0 && <p className="text-xs text-ink-light">{meta.join(" · ")}</p>}
+                  {highlights.length > 0 && (
+                    <div className="mt-2">
+                      <Bullets items={highlights} />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Section>
       )}

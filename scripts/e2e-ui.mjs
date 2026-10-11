@@ -153,4 +153,42 @@ await t.scenario("Open in Google Docs", async () => {
   check("a manager can export the version they are viewing", true);
 });
 
+await t.scenario("previews hide empty sections and show ratings as x/5", async () => {
+  await signIn("member");
+  await goto("/internal");
+  const sparse = {
+    name: "E2E Sparse Person", jobTitle: "Engineer", experienceSummary: "", specialization: "", overview: "",
+    education: [],
+    projects: [
+      { duration: "", title: "Real Project", toolsAndTechnologies: [""], teamSize: "N/A", role: "", projectLink: "", description: "", responsibilities: [""] },
+      { duration: "", title: "", toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [] },
+    ],
+    skills: [{ name: "Java", rating: "4" }, { name: "SQL", rating: "" }, { name: "", rating: "" }],
+    certifications: [], tools: ["", "Git"], managerialExperience: [""], domains: [], languages: [],
+  };
+  const saved = await saveProfile(sparse);
+  const inspect = () =>
+    ev(`(()=>{const a=document.querySelector('article'); const sec=(t)=>[...a.querySelectorAll('section')].find(s=>s.querySelector('h3')?.textContent===t);
+      return JSON.stringify({
+        headings:[...a.querySelectorAll('h3')].map(h=>h.textContent),
+        emptyItems:[...a.querySelectorAll('li')].filter(li=>!li.textContent.trim()).length,
+        skills:[...(sec('Skills')?.querySelectorAll('li')??[])].map(li=>li.innerText),
+        tools:[...(sec('Tools')?.querySelectorAll('li')??[])].map(li=>li.textContent.trim()),
+        projectCards:(sec('Projects')?.querySelectorAll('.rounded-lg')??[]).length,
+        projectBullets:(sec('Projects')?.querySelectorAll('ul.list-disc li')??[]).length,
+        hasTeam:a.textContent.includes('Team:'), hasDash:a.textContent.includes('—'),
+      })})()`);
+  for (const [who, path] of [["member", `/profiles/${saved.profileId}`], ["manager", `/manage/${saved.profileId}`]]) {
+    await signIn(who);
+    await goto(path);
+    await waitFor("document.body.innerText.includes('E2E Sparse Person')", `${who} preview`);
+    const r = JSON.parse(await inspect());
+    r.skills = r.skills.map((x) => x.replace(/\s+/g, " ").trim());
+    check(`${path.split("/")[1]}: only sections with content are shown`, JSON.stringify(r.headings) === JSON.stringify(["Skills", "Tools", "Projects"]), JSON.stringify(r.headings));
+    check(`${path.split("/")[1]}: ratings read x/5, a blank rating shows nothing, blank skills are dropped`, JSON.stringify(r.skills) === JSON.stringify(["Java 4/5", "SQL"]), JSON.stringify(r.skills));
+    check(`${path.split("/")[1]}: blank chips and lone empty bullets are gone`, JSON.stringify(r.tools) === JSON.stringify(["Git"]) && r.emptyItems === 0 && r.projectBullets === 0, JSON.stringify(r));
+    check(`${path.split("/")[1]}: an empty project is skipped and an N/A team size is hidden`, r.projectCards === 1 && !r.hasTeam && !r.hasDash, JSON.stringify(r));
+  }
+});
+
 t.finish();
