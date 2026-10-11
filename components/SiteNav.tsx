@@ -14,8 +14,12 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
   // Resolve the "home" for whichever route is currently browsing. Each route only
   // links to its own flow; the other is reachable only by knowing its URL.
   const home = pathname.startsWith("/external") ? "/external" : "/internal";
-  const LINKS: { href: string; label: string; external?: boolean }[] = [
+  // Link visibility is cosmetic: /manage checks the role on the server and the database enforces it too.
+  const canManage = user?.role === "manager" || user?.role === "admin";
+  const LINKS: { href: string; label: string; external?: boolean; section?: boolean }[] = [
     { href: home, label: "Generator" },
+    ...(user ? [{ href: "/profiles", label: "My Profiles", section: true }] : []),
+    ...(user && canManage ? [{ href: "/manage", label: "Manage", section: true }] : []),
     { href: `${home}/instructions`, label: "Instructions" },
     { href: "/style-guide", label: "Style Guide" },
     // The submission form only applies to the internal profile workflow.
@@ -44,7 +48,8 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
                 </a>
               );
             }
-            const active = pathname === link.href;
+            // Section links (My Profiles, Manage) stay active on their sub-pages, e.g. /profiles/<id>.
+            const active = pathname === link.href || (link.section === true && pathname.startsWith(`${link.href}/`));
             return (
               <Link
                 key={link.href}

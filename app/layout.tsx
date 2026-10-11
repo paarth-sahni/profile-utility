@@ -4,6 +4,7 @@ import "./globals.css";
 import SiteNav from "@/components/SiteNav";
 import Footer from "@/components/Footer";
 import { sessionExpired } from "@/lib/authRules";
+import { getCurrentUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { NavUser } from "@/components/UserMenu";
 
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 /** The signed-in user's display details (name and photo come from the Google profile). */
-async function currentUser(): Promise<NavUser | null> {
+async function currentUser(): Promise<Omit<NavUser, "role"> | null> {
   try {
     const supabase = await createSupabaseServerClient();
     const { data } = await supabase.auth.getUser();
@@ -39,7 +40,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await currentUser();
+  // The role comes from app_users through the user's own session (never from the browser or the JWT).
+  // It only decides which nav links are shown; the pages and the database enforce access themselves.
+  const [display, me] = await Promise.all([currentUser(), getCurrentUser()]);
+  const user: NavUser | null = display ? { ...display, role: me?.role ?? null } : null;
   return (
     <html lang="en" className={`${lexend.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-[--background] text-ink">
