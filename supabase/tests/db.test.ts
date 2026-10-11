@@ -120,8 +120,41 @@ describe("manager/admin name search and read-only views", () => {
     assert.equal(hits[0]?.candidateName, "Jamie Placeholder");
   });
 
+  // Typos and prefixes (pg_trgm word_similarity + word-prefix match). Only the seeded names are asserted, because
+  // real people's profiles may also exist in a developer's local database.
+  const names = async (q: string): Promise<string[]> => (await searchProfilesByNameAs(ctx.manager, q)).map((h) => h.candidateName);
+
+  for (const q of ["alx", "aelx", "alex sampl", "alex", "Alex Samp", "sam", "lex"]) {
+    test(`"${q}" finds Alex Sample and no other seeded profile`, async () => {
+      const found = (await names(q)).filter((n) => SEEDED.includes(n));
+      assert.deepEqual(found, ["Alex Sample"]);
+    });
+  }
+
+  test("a full name does not drag in similar-sounding names (Sample vs Example)", async () => {
+    assert.deepEqual((await names("Alex Sample")).filter((n) => SEEDED.includes(n)), ["Alex Sample"]);
+  });
+
+  test("a short typo of another name finds that person only", async () => {
+    assert.deepEqual((await names("jmie")).filter((n) => SEEDED.includes(n)), ["Jamie Placeholder"]);
+    assert.deepEqual((await names("riley")).filter((n) => SEEDED.includes(n)), ["Riley Example"]);
+  });
+
+  for (const q of ["zzz", "bob", "xavier", "michael", "qwerty"]) {
+    test(`unrelated "${q}" matches no seeded profile`, async () => {
+      assert.deepEqual((await names(q)).filter((n) => SEEDED.includes(n)), []);
+    });
+  }
+
+  test("the best match ranks first", async () => {
+    const hits = await searchProfilesByNameAs(ctx.manager, "alex sampl");
+    assert.equal(hits[0]?.candidateName, "Alex Sample");
+    assert.ok(hits[0].score > 0.8);
+  });
+
   test("LIKE wildcards in the query are literal", async () => {
     assert.deepEqual(await searchProfilesByNameAs(ctx.manager, "%"), []);
+    assert.deepEqual(await searchProfilesByNameAs(ctx.manager, "_"), []);
   });
 
   test("the manager finds a profile a member just saved", async () => {
