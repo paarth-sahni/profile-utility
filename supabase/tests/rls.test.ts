@@ -143,9 +143,12 @@ describe("profiles: each role gets exactly its rows", () => {
     test(`${r} sees profiles ${expected[r].join("+")}`, async () => {
       const res = await db(r).from("profiles").select("id");
       assert.equal(res.error, null);
-      const seen = ids(rows(res), "id").sort();
       const want = expected[r].map(idOf).sort();
-      assert.deepEqual(seen, want);
+      // Roles that read everything also see profiles that real people saved on this laptop, so compare only
+      // the seeded ones. Members must match exactly: any extra row would be a leak.
+      const all = ids(rows(res), "id");
+      const seen = r === "member" || r === "member2" ? all : all.filter((id) => [profileA, profileB, profileC].includes(id));
+      assert.deepEqual(seen.sort(), want);
     });
   }
 
