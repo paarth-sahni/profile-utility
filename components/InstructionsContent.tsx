@@ -31,6 +31,25 @@ export default function InstructionsContent({ audience }: { audience: Audience }
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
+      <Card title="Signing in">
+        <ol className="space-y-4">
+          <Step n={1} title="Open the Generator">
+            Go to the Generator page. If you aren&apos;t signed in, you&apos;ll be taken to the sign-in page.
+          </Step>
+          <Step n={2} title="Sign in with Google">
+            Click <strong>Sign in with Google</strong> and choose your <strong>@infobeans.com</strong> account. Personal
+            Gmail accounts and other company accounts are not allowed.
+          </Step>
+          <Step n={3} title="Start generating">
+            You&apos;ll land on the Generator. Use <strong>Sign out</strong> in the top-right corner when you&apos;re done,
+            especially on shared computers.
+          </Step>
+        </ol>
+        <p className="mt-4 text-sm text-gray-600">
+          Can&apos;t sign in? Check that you picked your InfoBeans account, then try again. If it still fails, contact
+          your administrator.
+        </p>
+      </Card>
       {showExternal && (
         <Card title="External Profile">
           <p className="mb-4 text-sm text-gray-600">

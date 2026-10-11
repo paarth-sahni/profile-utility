@@ -12,7 +12,8 @@ export type ExtractErrorCode =
   | "UNREADABLE"
   | "LLM_FAILED"
   | "TIMEOUT"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  | "UNAUTHENTICATED";
 
 /** Error thrown anywhere in the pipeline; the route maps `code` to an HTTP status. */
 export class ExtractError extends Error {
@@ -102,4 +103,5 @@ export const EXTRACT_ERROR_MESSAGES: Record<ExtractErrorCode, string> = {
   LLM_FAILED: "We couldn't read this resume automatically. Please try again, or fill in the form manually.",
   TIMEOUT: "This is taking too long. Please try again, or fill in the form manually.",
   RATE_LIMITED: "The service is busy, try again in a minute.",
+  UNAUTHENTICATED: "Your session has expired. Please sign in again.",
 };

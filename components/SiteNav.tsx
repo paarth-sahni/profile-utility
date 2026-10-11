@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { INTERNAL_FORM_URL } from "@/lib/constants";
+import UserMenu, { type NavUser } from "@/components/UserMenu";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-export default function SiteNav() {
+export default function SiteNav({ user }: { user?: NavUser | null }) {
   const pathname = usePathname();
+  const onLogin = pathname === "/login";
 
   // Resolve the "home" for whichever route is currently browsing. Each route only
   // links to its own flow; the other is reachable only by knowing its URL.
@@ -28,7 +30,7 @@ export default function SiteNav() {
           <img src={`${BASE}/img/logo.png`} alt="InfoBeans" width={240} height={76} className="h-[26px] w-auto sm:h-9" />
         </Link>
         <div className="flex items-center gap-1">
-          {LINKS.map((link) => {
+          {!onLogin && LINKS.map((link) => {
             if (link.external) {
               return (
                 <a
@@ -56,6 +58,11 @@ export default function SiteNav() {
               </Link>
             );
           })}
+          {user && !onLogin && (
+            <div className="ml-3 border-l border-hairline pl-3">
+              <UserMenu user={user} />
+            </div>
+          )}
         </div>
       </nav>
     </header>

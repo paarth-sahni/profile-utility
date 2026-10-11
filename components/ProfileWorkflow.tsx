@@ -30,7 +30,17 @@ interface FieldError {
 }
 
 /** How the current profile was started: uploaded resume or blank form. */
-type Source = "upload" | "scratch";
+type Source = "upload" | "scratch" | "saved";
+
+/** A previously saved version opened from My Profiles. */
+export interface SavedInitial {
+  profileId: string;
+  versionId: string;
+  versionNo: number;
+  label: string;
+  data: ResumeData;
+  reviewFlags: { path: string; reason: string }[];
+}
 
 type UploadStatus = "idle" | "reading" | "structuring";
 
@@ -99,13 +109,13 @@ const STATUS_TEXT: Record<Exclude<UploadStatus, "idle">, string> = {
 
 const toFieldErrors = (issues: ExtractIssue[]): FieldError[] => issues.map((i) => ({ path: i.path, message: i.message }));
 
-export default function ProfileWorkflow({ audience }: { audience: Audience }) {
+export default function ProfileWorkflow({ audience, initial }: { audience: Audience; initial?: SavedInitial | null }) {
   const templateId = audience; // the route fixes the template
   const start = START[templateId];
 
-  const [step, setStep] = useState(0);
-  const [source, setSource] = useState<Source | null>(null);
-  const [data, setData] = useState<ResumeData | null>(null);
+  const [step, setStep] = useState(initial ? STEP_REVIEW : 0);
+  const [source, setSource] = useState<Source | null>(initial ? "saved" : null);
+  const [data, setData] = useState<ResumeData | null>(initial?.data ?? null);
   const [errors, setErrors] = useState<FieldError[] | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -123,6 +133,18 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
   const [extraction, setExtraction] = useState<ExtractResult | null>(null);
   const [flagsDismissed, setFlagsDismissed] = useState(false);
   const [edited, setEdited] = useState(false);
+
+  // saving to My Profiles
+  const [savedProfileId, setSavedProfileId] = useState<string | null>(initial?.profileId ?? null);
+  const [lastVersionId, setLastVersionId] = useState<string | null>(initial?.versionId ?? null);
+  const [savedInfo, setSavedInfo] = useState<{ no: number; label: string } | null>(
+    initial ? { no: initial.versionNo, label: initial.label } : null,
+  );
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveLabel, setSaveLabel] = useState(initial ? "" : "Base");
+  const [roleSpecific, setRoleSpecific] = useState(false);
 
   const fromScratch = source === "scratch";
   const uploading = uploadStatus !== "idle";
@@ -146,6 +168,12 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
     setData(blankResume(templateId));
     setSource("scratch");
     setExtraction(null);
+    setSavedProfileId(null);
+    setLastVersionId(null);
+    setSavedInfo(null);
+    setSaveLabel("Base");
+    setRoleSpecific(false);
+    setDirty(false);
     setEdited(false);
     setStep(STEP_REVIEW);
     setGenerateError(null);
@@ -155,7 +183,7 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
 
   const handleFile = async (file: File) => {
     if (uploading) return;
-    if (source === "upload" && edited && !window.confirm("Uploading a new file will replace the edits you've made. Continue?")) {
+    if ((source === "upload" || source === "saved") && edited && !window.confirm("Uploading a new file will replace the edits you've made. Continue?")) {
       return;
     }
     setUploadError(null);
@@ -167,6 +195,12 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
       setData(result.data);
       setSource("upload");
       setExtraction(result);
+      setSavedProfileId(null);
+      setLastVersionId(null);
+      setSavedInfo(null);
+      setSaveLabel("Base");
+      setRoleSpecific(false);
+      setDirty(false);
       setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
@@ -239,12 +273,66 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
   const handleFormChange = (d: ResumeData) => {
     setData(d);
     setEdited(true);
+    setDirty(true);
     if (errors) setErrors(null);
   };
 
-  const flags = extraction?.reviewFlags ?? [];
+  /** Saves the current form as a new immutable version in My Profiles (drafts with blanks are allowed). */
+  const handleSave = async () => {
+    if (!data || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    const effective: ResumeData =
+      fromScratch && templateId === "internal"
+        ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) }
+        : data;
+    const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
+    const label = saveLabel.trim() || (kind === "role_specific" ? "Role-specific" : "Base");
+    const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    try {
+      const res = await fetch(`${BASE}/api/profiles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template: templateId,
+          kind,
+          label,
+          profileId: savedProfileId,
+          parentVersionId: kind === "role_specific" ? lastVersionId : null,
+          source: savedProfileId || source === "saved" ? "edit" : source === "scratch" ? "scratch" : "upload",
+          data: effective,
+          reviewFlags: extraction?.reviewFlags ?? initial?.reviewFlags ?? [],
+          analysis: extraction?.analysis ?? null,
+          promptPlan: extraction?.promptPlan ?? [],
+        }),
+      });
+      if (res.status === 401) {
+        window.location.assign(`${BASE}/login?error=session&next=${encodeURIComponent(window.location.pathname)}`);
+        return;
+      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message ?? "We could not save your profile. Please try again.");
+      setSavedProfileId(json.profileId);
+      setLastVersionId(json.versionId);
+      setSavedInfo({ no: json.versionNo, label });
+      setDirty(false);
+      setRoleSpecific(false);
+      setSaveLabel("");
+      if (fromScratch && templateId === "internal") {
+        // the saved summary is the full "<N>+ Years..." string, so the form leaves bare-number mode
+        setData(effective);
+        setSource("saved");
+      }
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "We could not save your profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const flags = extraction?.reviewFlags ?? initial?.reviewFlags ?? [];
   const issues = extraction?.issues ?? [];
-  const showFlagsPanel = source === "upload" && !flagsDismissed && (flags.length > 0 || issues.length > 0);
+  const showFlagsPanel = (source === "upload" || source === "saved") && !flagsDismissed && (flags.length > 0 || issues.length > 0);
 
   return (
     <div className="w-full text-ink">
@@ -489,6 +577,56 @@ export default function ProfileWorkflow({ audience }: { audience: Audience }) {
             {generated && !generateError && (
               <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{generated}</div>
             )}
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[12rem] flex-1">
+                  <label htmlFor="save-label" className="mb-1 block text-xs font-medium text-ink-light">
+                    Version label
+                  </label>
+                  <input
+                    id="save-label"
+                    type="text"
+                    maxLength={60}
+                    value={saveLabel}
+                    onChange={(e) => setSaveLabel(e.target.value)}
+                    placeholder={roleSpecific ? "e.g. Java Backend" : "e.g. Base"}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-md border border-brand-500 px-4 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : savedProfileId ? "Save new version" : "Save to My Profiles"}
+                </button>
+              </div>
+              {lastVersionId && (
+                <label className="mt-3 flex items-center gap-2 text-sm text-ink-light">
+                  <input type="checkbox" checked={roleSpecific} onChange={(e) => setRoleSpecific(e.target.checked)} />
+                  Save as a role-specific version of v{savedInfo?.no}
+                </label>
+              )}
+              <p className="mt-3 text-xs text-ink-light" aria-live="polite">
+                {saveError ? (
+                  <span className="text-brand-700">{saveError}</span>
+                ) : savedInfo && !dirty ? (
+                  <>
+                    Saved &middot; v{savedInfo.no}
+                    {savedInfo.label ? ` \u00b7 ${savedInfo.label}` : ""} &middot;{" "}
+                    <a href={`/profiles/${savedProfileId}`} className="font-medium text-brand-600 hover:underline">
+                      View in My Profiles
+                    </a>
+                  </>
+                ) : savedInfo ? (
+                  `You have unsaved changes since v${savedInfo.no}.`
+                ) : (
+                  "Not saved yet. Saving keeps this profile private to you and lets you reopen it later."
+                )}
+              </p>
+            </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <button
