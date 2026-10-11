@@ -10,6 +10,7 @@ import { UploadError, uploadResume } from "@/lib/extractClient";
 import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
+import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import type { ExtractIssue, ExtractResult } from "@/lib/extract.types";
 import {
   blankResume,
@@ -111,7 +112,21 @@ const STATUS_TEXT: Record<Exclude<UploadStatus, "idle">, string> = {
 
 const toFieldErrors = (issues: ExtractIssue[]): FieldError[] => issues.map((i) => ({ path: i.path, message: i.message }));
 
-export default function ProfileWorkflow({ audience, initial }: { audience: Audience; initial?: SavedInitial | null }) {
+/** What the server knows about the sign-in (see lib/sessionInfo.ts). */
+export interface WorkflowSession {
+  userId: string;
+  remainingMs: number;
+}
+
+export default function ProfileWorkflow({
+  audience,
+  initial,
+  session,
+}: {
+  audience: Audience;
+  initial?: SavedInitial | null;
+  session?: WorkflowSession | null;
+}) {
   const templateId = audience; // the route fixes the template
   const start = START[templateId];
 
@@ -150,7 +165,8 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
   const [roleSpecific, setRoleSpecific] = useState(false);
 
   // Warn before leaving (refresh, close, in-app links) while the work is unsaved and not yet downloaded.
-  useUnsavedChangesWarning(hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded }));
+  const unsaved = hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded });
+  useUnsavedChangesWarning(unsaved);
 
   const fromScratch = source === "scratch";
   const uploading = uploadStatus !== "idle";
@@ -355,6 +371,9 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
       </section>
 
       <main className="mx-auto max-w-6xl px-4 py-10">
+        {session && data && (
+          <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} />
+        )}
         <div className="mb-10">
           <Stepper
             current={step}
