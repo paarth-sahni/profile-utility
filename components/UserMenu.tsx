@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { clearDraftsOnSignOut, getSessionStorage } from "@/lib/draftStorage";
 
 /** Role as stored in app_users (read on the server). Only used to decide which nav links to show. */
 export type NavRole = "team_member" | "checker" | "manager" | "admin";
@@ -107,7 +108,7 @@ export default function UserMenu({ user }: { user: NavUser }) {
             >
               My Profiles
             </Link>
-            <form action="/auth/signout" method="post">
+            <form action="/auth/signout" method="post" onSubmit={() => clearDraftsOnSignOut(getSessionStorage())}>
               <button
                 type="submit"
                 role="menuitem"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import Stepper from "@/components/Stepper";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
@@ -11,6 +11,10 @@ import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
+import DraftRestoreBanner from "@/components/DraftRestoreBanner";
+import { type Draft, readDraft, shouldKeepDraft, writeDraft } from "@/lib/draft";
+import { clearDraft, getSessionStorage } from "@/lib/draftStorage";
+import type { ResumeAnalysis, ReviewFlag } from "@/lib/extract.types";
 import type { ExtractIssue, ExtractResult } from "@/lib/extract.types";
 import {
   blankResume,
@@ -164,9 +168,69 @@ export default function ProfileWorkflow({
   const [saveLabel, setSaveLabel] = useState(initial ? "" : "Base");
   const [roleSpecific, setRoleSpecific] = useState(false);
 
+  // draft recovery (sessionStorage only; see lib/draft.ts)
+  const [pendingDraft, setPendingDraft] = useState<Draft | null>(null); // found on load, waiting for Restore/Discard
+  const [draftChecked, setDraftChecked] = useState(!session); // true once storage was looked at (nothing to look at without a session)
+  const [restored, setRestored] = useState<{ reviewFlags: ReviewFlag[]; analysis: ResumeAnalysis | null; promptPlan: string[] } | null>(null);
+  const draftRef = useRef<Draft | null>(null); // the latest draft, so it can be written at once on a 401 or page hide
+  // review flags / analysis / prompt plan of whatever is in the form: a fresh extraction, a restored draft, or a saved version
+  const flagsNow: ReviewFlag[] = extraction?.reviewFlags ?? restored?.reviewFlags ?? initial?.reviewFlags ?? [];
+
   // Warn before leaving (refresh, close, in-app links) while the work is unsaved and not yet downloaded.
   const unsaved = hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded });
   useUnsavedChangesWarning(unsaved);
+
+  // Offer a draft left behind by an ended session (same user, same template, still fresh).
+  useEffect(() => {
+    if (!session) return;
+    const found = readDraft(getSessionStorage(), { userId: session.userId, template: templateId });
+    if (found) setPendingDraft(found);
+    setDraftChecked(true); // batched with the line above, so the effect below never sees "checked" without the draft
+  }, [session, templateId]);
+
+  // Keep the draft current while there is unsaved work; remove it once saved or downloaded.
+  // Paused while a found draft waits for Restore/Discard, so it is not overwritten before the user decides.
+  const keepDraft = shouldKeepDraft({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded, source, edited });
+  useEffect(() => {
+    const storage = getSessionStorage();
+    if (!session || !storage || !draftChecked || data === null || source === null || pendingDraft !== null) {
+      draftRef.current = null;
+      return;
+    }
+    if (!keepDraft) {
+      draftRef.current = null;
+      clearDraft(storage, templateId);
+      return;
+    }
+    const draft: Draft = {
+      v: 1,
+      userId: session.userId,
+      template: templateId,
+      source,
+      data,
+      reviewFlags: flagsNow,
+      analysis: extraction?.analysis ?? restored?.analysis ?? null,
+      promptPlan: extraction?.promptPlan ?? restored?.promptPlan ?? [],
+      profileId: savedProfileId,
+      versionId: lastVersionId,
+      versionNo: savedInfo?.no ?? null,
+      label: savedInfo?.label ?? "",
+      savedAt: Date.now(),
+    };
+    draftRef.current = draft;
+    const id = window.setTimeout(() => writeDraft(storage, draft), 300); // debounce typing
+    return () => window.clearTimeout(id);
+  }, [session, draftChecked, data, source, pendingDraft, keepDraft, templateId, flagsNow, extraction, restored, savedProfileId, lastVersionId, savedInfo]);
+
+  // Write the latest draft immediately when the page is hidden or closed (the debounce may not have fired).
+  useEffect(() => {
+    const flush = () => {
+      const storage = getSessionStorage();
+      if (storage && draftRef.current) writeDraft(storage, draftRef.current);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
 
   const fromScratch = source === "scratch";
   const uploading = uploadStatus !== "idle";
@@ -197,6 +261,7 @@ export default function ProfileWorkflow({
     setRoleSpecific(false);
     setDirty(false);
     setDownloaded(false);
+    setRestored(null);
     setEdited(false);
     setStep(STEP_REVIEW);
     setGenerateError(null);
@@ -225,6 +290,7 @@ export default function ProfileWorkflow({
       setRoleSpecific(false);
       setDirty(false);
       setDownloaded(false);
+      setRestored(null);
       setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
@@ -327,12 +393,15 @@ export default function ProfileWorkflow({
           parentVersionId: kind === "role_specific" ? lastVersionId : null,
           source: savedProfileId || source === "saved" ? "edit" : source === "scratch" ? "scratch" : "upload",
           data: effective,
-          reviewFlags: extraction?.reviewFlags ?? initial?.reviewFlags ?? [],
-          analysis: extraction?.analysis ?? null,
-          promptPlan: extraction?.promptPlan ?? [],
+          reviewFlags: flagsNow,
+          analysis: extraction?.analysis ?? restored?.analysis ?? null,
+          promptPlan: extraction?.promptPlan ?? restored?.promptPlan ?? [],
         }),
       });
       if (res.status === 401) {
+        // The session ended: keep the work in this tab (never sent anywhere) so it can be restored after sign-in.
+        const storage = getSessionStorage();
+        if (storage && draftRef.current) writeDraft(storage, draftRef.current);
         window.location.assign(`${BASE}/login?error=session&next=${encodeURIComponent(window.location.pathname)}`);
         return;
       }
@@ -356,7 +425,38 @@ export default function ProfileWorkflow({
     }
   };
 
-  const flags = extraction?.reviewFlags ?? initial?.reviewFlags ?? [];
+  /** Puts the form back exactly as the draft had it. */
+  const handleRestoreDraft = () => {
+    const d = pendingDraft;
+    if (!d) return;
+    setData(d.data);
+    setSource(d.source);
+    setStep(STEP_REVIEW);
+    setExtraction(null);
+    setRestored({ reviewFlags: d.reviewFlags, analysis: d.analysis, promptPlan: d.promptPlan });
+    setSavedProfileId(d.profileId);
+    setLastVersionId(d.versionId);
+    setSavedInfo(d.versionNo !== null ? { no: d.versionNo, label: d.label } : null);
+    setSaveLabel(d.versionId ? "" : "Base");
+    setRoleSpecific(false);
+    setSaveError(null);
+    setErrors(null);
+    setGenerateError(null);
+    setGenerated(null);
+    setFlagsDismissed(false);
+    setEdited(true);
+    setDirty(true);
+    setDownloaded(false);
+    setPendingDraft(null); // the effect above now keeps the restored work as a draft until it is saved
+  };
+
+  /** Deletes the draft without restoring it. */
+  const handleDiscardDraft = () => {
+    clearDraft(getSessionStorage(), templateId);
+    setPendingDraft(null);
+  };
+
+  const flags = flagsNow;
   const issues = extraction?.issues ?? [];
   const showFlagsPanel = (source === "upload" || source === "saved") && !flagsDismissed && (flags.length > 0 || issues.length > 0);
 
@@ -371,6 +471,7 @@ export default function ProfileWorkflow({
       </section>
 
       <main className="mx-auto max-w-6xl px-4 py-10">
+        {pendingDraft && <DraftRestoreBanner savedAt={pendingDraft.savedAt} onRestore={handleRestoreDraft} onDiscard={handleDiscardDraft} />}
         {session && data && (
           <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} />
         )}
