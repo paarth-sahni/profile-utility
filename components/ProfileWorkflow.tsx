@@ -11,6 +11,7 @@ import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import DraftRestoreBanner from "@/components/DraftRestoreBanner";
 import { type Draft, readDraft, shouldKeepDraft, writeDraft } from "@/lib/draft";
 import { clearDraft, getSessionStorage } from "@/lib/draftStorage";
@@ -172,6 +173,8 @@ export default function ProfileWorkflow({
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(null); // found on load, waiting for Restore/Discard
   const [draftChecked, setDraftChecked] = useState(!session); // true once storage was looked at (nothing to look at without a session)
   const [restored, setRestored] = useState<{ reviewFlags: ReviewFlag[]; analysis: ResumeAnalysis | null; promptPlan: string[] } | null>(null);
+  // "Discard your unsaved draft?" asked before a new upload / blank form while the restore prompt is showing
+  const [discardAsk, setDiscardAsk] = useState<{ kind: "blank" } | { kind: "upload"; file: File } | null>(null);
   const draftRef = useRef<Draft | null>(null); // the latest draft, so it can be written at once on a 401 or page hide
   // review flags / analysis / prompt plan of whatever is in the form: a fresh extraction, a restored draft, or a saved version
   const flagsNow: ReviewFlag[] = extraction?.reviewFlags ?? restored?.reviewFlags ?? initial?.reviewFlags ?? [];
@@ -249,8 +252,17 @@ export default function ProfileWorkflow({
     setErrors(null);
   };
 
+  /** Starting a blank form or an upload while the restore prompt is showing would silently bury the draft, so ask first. */
   const startBlankForm = () => {
     if (uploading) return;
+    if (pendingDraft) {
+      setDiscardAsk({ kind: "blank" });
+      return;
+    }
+    runBlankForm();
+  };
+
+  const runBlankForm = () => {
     setData(blankResume(templateId));
     setSource("scratch");
     setExtraction(null);
@@ -271,6 +283,14 @@ export default function ProfileWorkflow({
 
   const handleFile = async (file: File) => {
     if (uploading) return;
+    if (pendingDraft) {
+      setDiscardAsk({ kind: "upload", file });
+      return;
+    }
+    await runUpload(file);
+  };
+
+  const runUpload = async (file: File) => {
     if ((source === "upload" || source === "saved") && edited && !window.confirm("Uploading a new file will replace the edits you've made. Continue?")) {
       return;
     }
@@ -450,6 +470,17 @@ export default function ProfileWorkflow({
     setPendingDraft(null); // the effect above now keeps the restored work as a draft until it is saved
   };
 
+  /** "Yes" on the discard question: delete the draft, then do what the user asked for. */
+  const handleConfirmDiscard = () => {
+    const ask = discardAsk;
+    if (!ask) return;
+    clearDraft(getSessionStorage(), templateId);
+    setPendingDraft(null);
+    setDiscardAsk(null);
+    if (ask.kind === "blank") runBlankForm();
+    else void runUpload(ask.file);
+  };
+
   /** Deletes the draft without restoring it. */
   const handleDiscardDraft = () => {
     clearDraft(getSessionStorage(), templateId);
@@ -471,6 +502,16 @@ export default function ProfileWorkflow({
       </section>
 
       <main className="mx-auto max-w-6xl px-4 py-10">
+        {discardAsk && (
+          <ConfirmDialog
+            title="Discard your unsaved draft?"
+            message="You have unsaved changes from an earlier session. Starting something new will delete them for good."
+            confirmLabel="Yes, discard"
+            cancelLabel="No, keep it"
+            onConfirm={handleConfirmDiscard}
+            onCancel={() => setDiscardAsk(null)}
+          />
+        )}
         {pendingDraft && <DraftRestoreBanner savedAt={pendingDraft.savedAt} onRestore={handleRestoreDraft} onDiscard={handleDiscardDraft} />}
         {session && data && (
           <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} />
