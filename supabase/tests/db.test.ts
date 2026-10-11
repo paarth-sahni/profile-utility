@@ -8,12 +8,20 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { ProfileNotFoundError, saveVersionAs, type DbContext } from "../../lib/db/profilesCore";
+import {
+  ForbiddenError,
+  ProfileNotFoundError,
+  getProfileForManagerAs,
+  getVersionForManagerAs,
+  saveVersionAs,
+  searchProfilesByNameAs,
+  type DbContext,
+} from "../../lib/db/profilesCore";
 import type { SavePayload } from "../../lib/profilePayload";
 import { EXTERNAL_FIXTURE, INTERNAL_FIXTURE } from "./fixtures";
 
 const PASSWORD = "password123";
-type RoleName = "member" | "member2" | "admin" | "manager";
+type RoleName = "member" | "member2" | "admin" | "manager" | "checker";
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -47,7 +55,7 @@ const ctx = {} as Record<RoleName, DbContext>;
 const createdProfiles: string[] = [];
 
 before(async () => {
-  for (const r of ["member", "member2", "admin", "manager"] as const) ctx[r] = await contextFor(r);
+  for (const r of ["member", "member2", "admin", "manager", "checker"] as const) ctx[r] = await contextFor(r);
 });
 
 after(async () => {
@@ -84,6 +92,64 @@ describe("saveVersion: ownership", () => {
       saveVersionAs(ctx.member, internalPayload({ profileId: "00000000-0000-0000-0000-00000000dead" })),
       ProfileNotFoundError,
     );
+  });
+});
+
+describe("manager/admin name search and read-only views", () => {
+  const SEEDED = ["Alex Sample", "Jamie Placeholder", "Riley Example"];
+
+  for (const who of ["manager", "admin"] as const) {
+    test(`${who} finds a seeded profile by a partial name`, async () => {
+      const hits = await searchProfilesByNameAs(ctx[who], "alex samp");
+      assert.equal(hits[0]?.candidateName, "Alex Sample");
+      assert.equal(hits[0]?.ownerEmail, "member@example.test");
+      assert.equal(hits[0]?.versionCount, 2);
+    });
+
+    test(`${who}: an empty query lists every seeded profile`, async () => {
+      const names = (await searchProfilesByNameAs(ctx[who], "")).map((h) => h.candidateName);
+      for (const n of SEEDED) assert.ok(names.includes(n), `${n} missing`);
+    });
+  }
+
+  test("a similar (misspelled) name still matches (trigram)", async () => {
+    const hits = await searchProfilesByNameAs(ctx.manager, "Jamie Placeholdr");
+    assert.equal(hits[0]?.candidateName, "Jamie Placeholder");
+  });
+
+  test("LIKE wildcards in the query are literal", async () => {
+    assert.deepEqual(await searchProfilesByNameAs(ctx.manager, "%"), []);
+  });
+
+  test("the manager finds a profile a member just saved", async () => {
+    const saved = await saveVersionAs(ctx.member, internalPayload({ data: { ...INTERNAL_FIXTURE, name: "Zebediah Searchable" } }));
+    createdProfiles.push(saved.profileId);
+    const hits = await searchProfilesByNameAs(ctx.manager, "zebediah");
+    assert.equal(hits[0]?.id, saved.profileId);
+  });
+
+  for (const who of ["member", "member2", "checker"] as const) {
+    test(`${who} gets ForbiddenError from every manager function`, async () => {
+      await assert.rejects(searchProfilesByNameAs(ctx[who], "alex"), ForbiddenError);
+      await assert.rejects(searchProfilesByNameAs(ctx[who], ""), ForbiddenError);
+      const alex = (await searchProfilesByNameAs(ctx.manager, "Alex Sample"))[0];
+      await assert.rejects(getProfileForManagerAs(ctx[who], alex.id), ForbiddenError);
+      const history = await getProfileForManagerAs(ctx.manager, alex.id);
+      await assert.rejects(getVersionForManagerAs(ctx[who], history!.versions[0].id), ForbiddenError);
+    });
+  }
+
+  test("the manager reads another user's history and versions", async () => {
+    const alex = (await searchProfilesByNameAs(ctx.manager, "Alex Sample"))[0];
+    const history = await getProfileForManagerAs(ctx.manager, alex.id);
+    assert.equal(history?.profile.ownerEmail, "member@example.test");
+    assert.equal(history?.versions.length, 2);
+    const v = await getVersionForManagerAs(ctx.manager, history!.latestVersionId!);
+    assert.equal((v?.data as { name: string }).name, "Alex Sample");
+  });
+
+  test("an unknown profile id is null, not an error", async () => {
+    assert.equal(await getProfileForManagerAs(ctx.manager, "00000000-0000-0000-0000-00000000dead"), null);
   });
 });
 

@@ -28,6 +28,14 @@ export class ProfileNotFoundError extends Error {
   }
 }
 
+/** Thrown when the caller's role may not do this (manager/admin-only features). Maps to HTTP 403. */
+export class ForbiddenError extends Error {
+  constructor() {
+    super("FORBIDDEN");
+    this.name = "ForbiddenError";
+  }
+}
+
 export interface ProfileSummary {
   id: string;
   template: TemplateId;
@@ -141,20 +149,12 @@ export async function getMyProfileAs(
   };
 }
 
-/** Loads one saved version; null unless it belongs to the signed-in user. */
-export async function getVersionAs({ supabase, userId }: DbContext, versionId: string): Promise<LoadedVersion | null> {
+/** Rebuilds one version through get_profile_version (RLS decides visibility); null if missing/invalid. */
+async function fetchVersion(supabase: SupabaseClient, versionId: string): Promise<LoadedVersion | null> {
   if (!uuid.safeParse(versionId).success) return null;
   const { data, error } = await supabase.rpc("get_profile_version", { p_version_id: versionId });
   if (error || !data) return null;
   const j = data as { template: TemplateId; data: unknown; reviewFlags: unknown; meta: LoadedVersion["meta"] };
-  // Explicit ownership check (RLS alone would also let checker/manager/admin through).
-  const { data: owned } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", j.meta.profileId)
-    .eq("owner_id", userId)
-    .maybeSingle();
-  if (!owned) return null;
   const parsed = lenientSchemaFor(j.template).safeParse(j.data);
   const flags = z.array(reviewFlagSchema).safeParse(j.reviewFlags);
   if (!parsed.success) return null;
@@ -164,4 +164,115 @@ export async function getVersionAs({ supabase, userId }: DbContext, versionId: s
     reviewFlags: flags.success ? flags.data : [],
     meta: j.meta,
   };
+}
+
+/** Loads one saved version; null unless it belongs to the signed-in user. */
+export async function getVersionAs({ supabase, userId }: DbContext, versionId: string): Promise<LoadedVersion | null> {
+  const v = await fetchVersion(supabase, versionId);
+  if (!v) return null;
+  // Explicit ownership check (RLS alone would also let checker/manager/admin through).
+  const { data: owned } = await supabase.from("profiles").select("id").eq("id", v.meta.profileId).eq("owner_id", userId).maybeSingle();
+  return owned ? v : null;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Manager / admin views (/manage). Read-only: nothing here writes.
+// ---------------------------------------------------------------------------------------------------------
+
+export interface ManagedProfileSummary extends ProfileSummary {
+  ownerName: string;
+  ownerEmail: string;
+  score: number;
+}
+
+const searchRow = z.object({
+  id: z.string().uuid(),
+  template: z.enum(["internal", "external"]),
+  candidate_name: z.string(),
+  owner_name: z.string().nullable(),
+  owner_email: z.string().nullable(),
+  version_count: z.number(),
+  updated_at: z.string(),
+  score: z.number(),
+});
+
+/** Throws ForbiddenError unless the caller is a manager or admin (role read from the database, not the client). */
+async function requireManagerAs(supabase: SupabaseClient): Promise<void> {
+  const { data, error } = await supabase.rpc("current_app_role");
+  if (error) throw new Error("ROLE_CHECK_FAILED");
+  if (data !== "manager" && data !== "admin") throw new ForbiddenError();
+}
+
+/**
+ * Trigram name search over every profile, for managers and admins only (ForbiddenError otherwise: the SQL
+ * function checks the role as well). An empty query lists the most recently updated profiles. Max 50 rows.
+ */
+export async function searchProfilesByNameAs({ supabase }: DbContext, query: string): Promise<ManagedProfileSummary[]> {
+  const q = query.trim().slice(0, 100);
+  const { data, error } = await supabase.rpc("search_profiles_by_name", { p_query: q });
+  if (error) {
+    if (error.code === "42501") throw new ForbiddenError();
+    throw new Error("SEARCH_FAILED");
+  }
+  const parsed = z.array(searchRow).safeParse(data ?? []);
+  if (!parsed.success) throw new Error("SEARCH_FAILED");
+  return parsed.data.map((r) => ({
+    id: r.id,
+    template: r.template,
+    candidateName: r.candidate_name,
+    versionCount: r.version_count,
+    updatedAt: r.updated_at,
+    ownerName: r.owner_name ?? "",
+    ownerEmail: r.owner_email ?? "",
+    score: r.score,
+  }));
+}
+
+/** Any profile with its version history, for managers/admins; null if it does not exist. */
+export async function getProfileForManagerAs(
+  { supabase }: DbContext,
+  id: string,
+): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null } | null> {
+  await requireManagerAs(supabase);
+  if (!uuid.safeParse(id).success) return null;
+  const { data: p } = await supabase
+    .from("profiles")
+    .select("id, template, candidate_name, updated_at, current_version_id, owner:app_users!profiles_owner_id_fkey(full_name, email)")
+    .eq("id", id)
+    .maybeSingle();
+  if (!p) return null;
+  const { data: vs } = await supabase
+    .from("profile_versions")
+    .select("id, version_no, kind, label, source, created_at")
+    .eq("profile_id", p.id)
+    .order("version_no", { ascending: false });
+  const versions: VersionSummary[] = (vs ?? []).map((v) => ({
+    id: v.id,
+    versionNo: v.version_no,
+    kind: v.kind as VersionSummary["kind"],
+    label: v.label,
+    source: v.source,
+    createdAt: v.created_at,
+  }));
+  const owner = p.owner as unknown as { full_name: string | null; email: string | null } | null;
+  return {
+    profile: {
+      id: p.id,
+      template: p.template as TemplateId,
+      candidateName: p.candidate_name,
+      versionCount: versions.length,
+      updatedAt: p.updated_at,
+      ownerName: owner?.full_name ?? "",
+      ownerEmail: owner?.email ?? "",
+      score: 0,
+    },
+    versions,
+    latestVersionId: p.current_version_id ?? versions[0]?.id ?? null,
+  };
+}
+
+/** One version of any profile, for managers/admins (read-only view); null if missing. */
+export async function getVersionForManagerAs({ supabase }: DbContext, versionId: string): Promise<LoadedVersion | null> {
+  await requireManagerAs(supabase);
+  return fetchVersion(supabase, versionId);
 }

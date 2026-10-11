@@ -74,5 +74,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/internal", "/external", "/profiles/:path*", "/api/extract", "/api/profiles"],
+  matcher: ["/login", "/internal", "/external", "/profiles/:path*", "/manage/:path*", "/api/extract", "/api/profiles"],
 };

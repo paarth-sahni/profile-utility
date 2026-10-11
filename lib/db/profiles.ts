@@ -9,17 +9,21 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SavePayload } from "@/lib/profilePayload";
 import {
   getMyProfileAs,
+  getProfileForManagerAs,
   getVersionAs,
+  getVersionForManagerAs,
   listMyProfilesAs,
   saveVersionAs,
+  searchProfilesByNameAs,
   type DbContext,
   type LoadedVersion,
+  type ManagedProfileSummary,
   type ProfileSummary,
   type VersionSummary,
 } from "./profilesCore";
 
-export { ProfileNotFoundError } from "./profilesCore";
-export type { DbContext, LoadedVersion, ProfileSummary, VersionSummary };
+export { ForbiddenError, ProfileNotFoundError } from "./profilesCore";
+export type { DbContext, LoadedVersion, ManagedProfileSummary, ProfileSummary, VersionSummary };
 
 async function ctx(): Promise<DbContext> {
   const user = await getCurrentUser();
@@ -45,4 +49,19 @@ export async function getMyProfile(id: string): Promise<{ profile: ProfileSummar
 /** Loads one saved version; null unless it belongs to the signed-in user. */
 export async function getVersion(versionId: string): Promise<LoadedVersion | null> {
   return getVersionAs(await ctx(), versionId);
+}
+
+/** Manager/admin only (throws ForbiddenError otherwise): trigram name search; empty query = most recent. */
+export async function searchProfilesByName(query: string): Promise<ManagedProfileSummary[]> {
+  return searchProfilesByNameAs(await ctx(), query);
+}
+
+/** Manager/admin only: any profile with its version history. */
+export async function getProfileForManager(id: string): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null } | null> {
+  return getProfileForManagerAs(await ctx(), id);
+}
+
+/** Manager/admin only: one version of any profile, for the read-only view. */
+export async function getVersionForManager(versionId: string): Promise<LoadedVersion | null> {
+  return getVersionForManagerAs(await ctx(), versionId);
 }
