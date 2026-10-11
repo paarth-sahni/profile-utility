@@ -276,8 +276,8 @@ max_frequency = "5s"
 
 # Configure logged in session timeouts.
 [auth.sessions]
-# Force log out after the specified duration (hard 1-hour sign-in limit; the app also enforces it in proxy.ts).
-timebox = "1h"
+# Force log out after the specified duration (hard 2-hour sign-in limit; the app also enforces it: SESSION_MAX_AGE_MS in lib/authRules.ts).
+timebox = "2h"
 # Force log out if the user has been inactive longer than the specified duration.
 # inactivity_timeout = "8h"
 

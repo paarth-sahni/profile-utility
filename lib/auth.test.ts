@@ -31,12 +31,15 @@ test("allowRequest enforces a sliding window", () => {
   assert.equal(allowRequest("u", 2, 1000, 1500), true);
 });
 
-test("sessionExpired enforces the 1-hour sign-in limit", async () => {
-  const { sessionExpired } = await import("./authRules");
+test("sessionExpired enforces the 2-hour sign-in limit", async () => {
+  const { sessionExpired, SESSION_MAX_AGE_MS } = await import("./authRules");
+  assert.equal(SESSION_MAX_AGE_MS, 2 * 60 * 60 * 1000);
   const now = Date.parse("2026-10-09T12:00:00Z");
   assert.equal(sessionExpired("2026-10-09T11:30:00Z", now), false);
-  assert.equal(sessionExpired("2026-10-09T10:59:59Z", now), true);
-  assert.equal(sessionExpired("2026-10-09T11:00:00Z", now), true);
+  assert.equal(sessionExpired("2026-10-09T10:59:59Z", now), false); // 1h old: no longer expired
+  assert.equal(sessionExpired("2026-10-09T10:00:01Z", now), false); // just under 2h
+  assert.equal(sessionExpired("2026-10-09T10:00:00Z", now), true); // exactly 2h
+  assert.equal(sessionExpired("2026-10-09T09:59:59Z", now), true);
   assert.equal(sessionExpired(null, now), true);
   assert.equal(sessionExpired("garbage", now), true);
 });

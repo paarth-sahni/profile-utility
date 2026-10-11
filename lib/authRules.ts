@@ -5,8 +5,8 @@
 /** Only InfoBeans accounts may sign in. Mirrors the DB trigger (defence in depth). */
 export const ALLOWED_EMAIL_DOMAIN = (process.env.AUTH_ALLOWED_DOMAIN ?? "infobeans.com").toLowerCase();
 
-/** A sign-in is valid for at most one hour; after that the user must sign in with Google again. */
-export const SESSION_MAX_AGE_MS = 60 * 60 * 1000;
+/** A sign-in is valid for at most two hours; after that the user must sign in with Google again. */
+export const SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 /** True once the user's last actual sign-in (not a token refresh) is older than SESSION_MAX_AGE_MS. */
 export function sessionExpired(lastSignInAt: string | null | undefined, now: number = Date.now()): boolean {

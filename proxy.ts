@@ -25,7 +25,7 @@ export async function proxy(request: NextRequest) {
     data: { user: rawUser },
   } = await supabase.auth.getUser();
 
-  // Hard 1-hour limit: refresh tokens would otherwise keep a session alive indefinitely.
+  // Hard sign-in limit (SESSION_MAX_AGE_MS): refresh tokens would otherwise keep a session alive indefinitely.
   let user = rawUser;
   let expired = false;
   if (rawUser && sessionExpired(rawUser.last_sign_in_at)) {
