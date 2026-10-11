@@ -5,7 +5,7 @@
  */
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { saveVersion } from "@/lib/db/profiles";
+import { ProfileNotFoundError, saveVersion } from "@/lib/db/profiles";
 import { parseSavePayload } from "@/lib/profilePayload";
 import { allowRequest } from "@/lib/rateLimit";
 
@@ -33,7 +33,8 @@ export async function POST(request: Request) {
 
   try {
     return NextResponse.json(await saveVersion(payload));
-  } catch {
+  } catch (e) {
+    if (e instanceof ProfileNotFoundError) return err(404, "NOT_FOUND", "We could not find that profile.");
     console.error("[profiles] save failed");
     return err(500, "SAVE_FAILED", "We could not save your profile. Please try again.");
   }
