@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
+import PageHero from "@/components/PageHero";
 import { getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, searchProfilesByName, type ManagedProfileSummary } from "@/lib/db/profiles";
 import { redirect } from "next/navigation";
@@ -34,62 +35,63 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10">
-      <h1 className="text-3xl font-medium tracking-tight text-ink-dark">Manage profiles</h1>
-      <p className="mt-1 text-sm text-ink-light">Search every saved profile by candidate name. Read-only.</p>
+    <div className="w-full text-ink">
+      <PageHero title="Manage profiles" subtitle="Search every saved profile by candidate name. Read-only." />
 
-      <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">
-        <div className="min-w-[14rem] flex-1">
-          <label htmlFor="manage-q" className="mb-1 block text-xs font-medium text-ink-light">
-            Candidate name
-          </label>
-          <input
-            id="manage-q"
-            name="q"
-            type="search"
-            maxLength={100}
-            defaultValue={q}
-            placeholder="e.g. Alex Sample"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <button type="submit" className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
-          Search
-        </button>
-      </Form>
-
-      <div className="mt-8" aria-live="polite">
-        {failed ? (
-          <p className="rounded-md border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700">We could not run that search. Please try again.</p>
-        ) : results.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-            <p className="text-lg font-medium text-ink-dark">{q ? "No profiles match that name" : "No profiles saved yet"}</p>
-            {q && <p className="mt-1 text-sm text-ink-light">Check the spelling, or try part of the name.</p>}
+      <main className="mx-auto w-full max-w-6xl px-4 py-10">
+        <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">
+          <div className="min-w-[14rem] flex-1">
+            <label htmlFor="manage-q" className="mb-1 block text-xs font-medium text-ink-light">
+              Candidate name
+            </label>
+            <input
+              id="manage-q"
+              name="q"
+              type="search"
+              maxLength={100}
+              defaultValue={q}
+              placeholder="e.g. Alex Sample"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
           </div>
-        ) : (
-          <>
-            <p className="mb-3 text-sm text-ink-light">
-              {q ? `${results.length} ${results.length === 1 ? "result" : "results"} for “${q}”` : "Most recently updated profiles"}
-            </p>
-            <ul className="divide-y divide-hairline rounded-xl border border-gray-200 bg-white">
-              {results.map((p) => (
-                <li key={p.id}>
-                  <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-ink-dark">{p.candidateName || "Untitled profile"}</p>
-                      <p className="truncate text-xs text-ink-light">
-                        {p.template === "internal" ? "Internal" : "External"} · {p.versionCount} {p.versionCount === 1 ? "version" : "versions"} · owner{" "}
-                        {p.ownerName || p.ownerEmail || "unknown"}
-                      </p>
-                    </div>
-                    <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-    </main>
+          <button type="submit" className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
+            Search
+          </button>
+        </Form>
+
+        <div className="mt-8" aria-live="polite">
+          {failed ? (
+            <p className="rounded-md border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700">We could not run that search. Please try again.</p>
+          ) : results.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+              <p className="text-lg font-medium text-ink-dark">{q ? "No profiles match that name" : "No profiles saved yet"}</p>
+              {q && <p className="mt-1 text-sm text-ink-light">Check the spelling, or try part of the name.</p>}
+            </div>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-ink-light">
+                {q ? `${results.length} ${results.length === 1 ? "result" : "results"} for “${q}”` : "Most recently updated profiles"}
+              </p>
+              <ul className="divide-y divide-hairline rounded-xl border border-gray-200 bg-white">
+                {results.map((p) => (
+                  <li key={p.id}>
+                    <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink-dark">{p.candidateName || "Untitled profile"}</p>
+                        <p className="truncate text-xs text-ink-light">
+                          {p.template === "internal" ? "Internal" : "External"} · {p.versionCount} {p.versionCount === 1 ? "version" : "versions"} · owner{" "}
+                          {p.ownerName || p.ownerEmail || "unknown"}
+                        </p>
+                      </div>
+                      <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

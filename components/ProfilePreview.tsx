@@ -5,7 +5,7 @@ import type { ExternalResume, InternalResume, ResumeData, TemplateId } from "@/l
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-hairline pt-4">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-light">{title}</h3>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-light">{title}</h3>
       {children}
     </section>
   );
@@ -55,7 +55,7 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
   return (
     <article className="space-y-5 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <header>
-        <h2 className="text-2xl font-semibold text-ink-dark">{hasText(d.name) ? d.name : "Untitled profile"}</h2>
+        <h2 className="text-2xl font-medium text-ink-dark">{hasText(d.name) ? d.name : "Untitled profile"}</h2>
         {headline && <p className="text-sm text-ink-light">{headline}</p>}
       </header>
 

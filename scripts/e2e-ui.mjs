@@ -35,7 +35,11 @@ const COMPLETE = {
 
 /** Saves a profile through the real API as the signed-in user and returns { profileId, versionId }. */
 async function saveProfile(data, label = "Base") {
-  return ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:${JSON.stringify(label)},source:'scratch',data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[]})}).then(r=>r.json())`);
+  const saved = await ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:${JSON.stringify(label)},source:'scratch',data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[]})}).then(r=>r.json())`);
+  if (!saved?.profileId) {
+    throw new Error(`save failed (${JSON.stringify(saved?.error)}). The save API allows 60 saves per 10 minutes per user (in memory): wait a few minutes or restart \`npm run dev\` before re-running.`);
+  }
+  return saved;
 }
 
 // ---- Google stub: a fake GIS token client in the page, and Drive requests answered by the test
@@ -290,6 +294,32 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   check("a blank form nobody typed into still counts as unsaved work, so it asks", await dialogOpen());
   await click("Leave anyway");
   await waitFor("location.pathname === '/profiles'", "left");
+});
+
+await t.scenario("brand rules on My Profiles, Manage and the previews (computed styles)", async () => {
+  await signIn("member");
+  await goto("/internal");
+  const saved = await saveProfile({ ...COMPLETE, name: "E2E Brand Person" });
+  const audit = () =>
+    ev(`(()=>{const heads=[...document.querySelectorAll('main h1, main h2, main h3, section.bg-cream h1')];
+      const heavy=heads.filter(h=>parseInt(getComputedStyle(h).fontWeight)>500).map(h=>h.tagName+':'+getComputedStyle(h).fontWeight+':'+h.textContent.slice(0,24));
+      const all=[...document.querySelectorAll('main *')];
+      return JSON.stringify({ heads:heads.length, heavy,
+        italic: all.filter(e=>getComputedStyle(e).fontStyle==='italic').length,
+        gradients: all.filter(e=>getComputedStyle(e).backgroundImage.includes('gradient')).length,
+        hero: !!document.querySelector('section.bg-cream h1'),
+        font: getComputedStyle(document.querySelector('main')).fontFamily.toLowerCase().includes('lexend') });})()`);
+  const pages = [["member", "/profiles"], ["member", `/profiles/${saved.profileId}`], ["manager", "/manage"], ["manager", `/manage/${saved.profileId}`]];
+  for (const [who, path] of pages) {
+    await signIn(who);
+    await goto(path);
+    await waitFor("!!document.querySelector('main h1, section.bg-cream h1')", `${path} rendered`);
+    const r = JSON.parse(await audit());
+    const name = path.replace(saved.profileId, "[id]");
+    check(`${name}: headings are Lexend Medium, never bold`, r.heads > 0 && r.heavy.length === 0, JSON.stringify(r.heavy));
+    check(`${name}: no italics, no gradients, Lexend font`, r.italic === 0 && r.gradients === 0 && r.font, JSON.stringify(r));
+    check(`${name}: uses the same cream hero band as the generator`, r.hero);
+  }
 });
 
 t.finish();

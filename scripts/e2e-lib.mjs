@@ -135,9 +135,20 @@ export async function startHarness(title) {
       await sleep(300);
       await waitFor("document.readyState==='complete'", `load ${path}`);
     },
-    /** Clicks the first element whose text contains `text` (focusing it first, like a real click). */
-    click: (text, selector = "button") =>
-      ev(`(()=>{const b=[...document.querySelectorAll('${selector}')].find(b=>b.textContent.trim().includes(${JSON.stringify(text)})); if(!b) return false; b.focus(); b.click(); return true})()`),
+    /**
+     * Clicks the first element whose text contains `text` (focusing it first, like a real click). It waits up to 4 s
+     * for React to attach its handlers to that element: right after a page load a click can otherwise land before
+     * hydration and do nothing.
+     */
+    async click(text, selector = "button") {
+      const find = `[...document.querySelectorAll('${selector}')].find(b=>b.textContent.trim().includes(${JSON.stringify(text)}))`;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 4000) {
+        if (await ev(`(()=>{const b=${find}; return !!b && Object.keys(b).some(k=>k.startsWith('__reactProps'))})()`)) break;
+        await sleep(100);
+      }
+      return ev(`(()=>{const b=${find}; if(!b) return false; b.focus(); b.click(); return true})()`);
+    },
     bodyText: () => ev("document.body.innerText"),
     /** Types into the "Name" field the way a user would (React sees an input event). */
     setName: (v) =>

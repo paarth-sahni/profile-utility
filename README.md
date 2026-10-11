@@ -87,6 +87,10 @@ Drive requests are intercepted), so nothing real is called and the test can prov
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
 `npm run dev` starts, otherwise they are skipped.
 
+The scripts save a few dozen profiles as the seeded users, and the save API allows 60 saves per 10 minutes per user
+(an in-memory limit). One `npm run test:e2e` is well within it; if you run it again straight away you may hit the limit
+(saves answer 429 and a scenario times out). Wait a few minutes or restart `npm run dev` to reset it.
+
 Settings (all optional): `APP_URL` (default `http://localhost:3000`), `CHROME_BIN` (default `google-chrome`),
 `E2E_CHROME_PORT` (default `9333`), `E2E_DB_URL`. It needs `psql` on the PATH (to age a session for the expiry
 checks) and Node 20 with `--experimental-websocket` (the npm script sets it). Test data is named "E2E ..." and is
