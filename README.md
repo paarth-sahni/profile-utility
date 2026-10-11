@@ -81,6 +81,12 @@ npm run dev                              # in another terminal; development mode
 npm run test:e2e
 ```
 
+`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs` (Open in Google Docs on
+Review, My Profiles and Manage, plus the saved-profile screens). Google is **stubbed** in the page (a fake token client;
+Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
+`www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
+`npm run dev` starts, otherwise they are skipped.
+
 Settings (all optional): `APP_URL` (default `http://localhost:3000`), `CHROME_BIN` (default `google-chrome`),
 `E2E_CHROME_PORT` (default `9333`), `E2E_DB_URL`. It needs `psql` on the PATH (to age a session for the expiry
 checks) and Node 20 with `--experimental-websocket` (the npm script sets it). Test data is named "E2E ..." and is
@@ -118,10 +124,40 @@ session; it is never taken from the JWT or `user_metadata`. Both enforce the `@i
 2-hour limit (`SESSION_MAX_AGE_MS`). Pure rules (`isAllowedEmail`, `safeNextPath`, `sessionExpired`, ...) live in `lib/authRules.ts`,
 which is safe to import from `proxy.ts`, client components and tests.
 
-## Google Drive scope (for "Open in Google Docs")
+## Open in Google Docs
 
-The sign-in also requests `https://www.googleapis.com/auth/drive.file` (only files the app creates itself).
-In Google Cloud: enable the **Google Drive API**, and add the scope under *Google Auth Platform -> Data Access*.
-Supabase does not store Google tokens: the Docs feature must read `session.provider_token` in
-`app/auth/callback/route.ts` right after `exchangeCodeForSession` (it lasts about an hour, so it can expire before
-the 2-hour session limit does). Users who signed in before this change will be asked to approve once more.
+An **Open in Google Docs** button sits next to *Download DOCX* on Review, on `/profiles/[id]` (every version) and on
+`/manage/[id]` (read-only; the manager view also has *Download DOCX*). It works entirely in the browser:
+
+1. On click, Google Identity Services opens Google's own consent popup and returns a short-lived **access token**
+   for the single scope `https://www.googleapis.com/auth/drive.file` (only files this app creates).
+2. The browser builds the DOCX, uploads it to the user's **own** Drive converting it to a Google Doc
+   (`POST https://www.googleapis.com/upload/drive/v3/files`), and opens the link.
+3. The token is held in a local variable for that one call. It is **never stored** (no cookie, no `localStorage`) and
+   **never sent to our server**: the only request that carries it goes to `www.googleapis.com`.
+
+The script `https://accounts.google.com/gsi/client` is loaded on pages that show the button (so the popup can open
+inside the click). If you add a Content-Security-Policy later, allow `https://accounts.google.com/gsi/` and
+`https://www.googleapis.com`. Failures (blocked pop-up, closed window, access denied, Drive API off, offline, rate
+limit) show a plain-language message and suggest *Download DOCX*.
+
+### Setup
+
+Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`.env.local` locally; for a production build it must be present **at build time**,
+because `NEXT_PUBLIC_` values are baked into the bundle). With no value the buttons are hidden. It is a public ID;
+this feature has no client secret.
+
+In Google Cloud (the same project as the sign-in is fine):
+
+1. **APIs & Services -> Library**: enable the **Google Drive API**. (Without it the button reports "Google Drive is
+   not enabled for this app yet".)
+2. **Google Auth Platform -> Audience**: user type **Internal**, so only InfoBeans accounts can use it.
+3. **Google Auth Platform -> Data Access**: add the scope `.../auth/drive.file`.
+4. **Google Auth Platform -> Clients -> Create client -> Web application**. Under **Authorized JavaScript origins**
+   add `http://localhost:3000` (local) and the production origin (`https://...`). No redirect URI is needed for this
+   popup flow, and the client secret is not used.
+5. Copy the client ID into `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+
+Note for the sign-in code: `components/LoginCard.tsx` still requests `drive.file` when signing in (an earlier plan that
+read `session.provider_token` on the server). Open in Google Docs no longer uses it, so that scope can be dropped from
+the sign-in to keep it to the minimum.

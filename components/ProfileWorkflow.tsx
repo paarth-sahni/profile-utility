@@ -12,6 +12,8 @@ import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
+import type { DocxReady } from "@/lib/docxReady";
 import DraftRestoreBanner from "@/components/DraftRestoreBanner";
 import { type Draft, readDraft, shouldKeepDraft, writeDraft } from "@/lib/draft";
 import { clearDraft, getSessionStorage } from "@/lib/draftStorage";
@@ -332,8 +334,13 @@ export default function ProfileWorkflow({
     if (file) void handleFile(file);
   };
 
-  const handleGenerate = async () => {
-    if (!data) return;
+  /**
+   * Re-validates the form right before an export (DOCX or Google Docs): covers the uploaded-profile path and the
+   * blank-form path, plus any edits made in the review step; the "N/A" check only runs here. Shows the problems
+   * in the form and returns null, or returns the validated data.
+   */
+  const validateForExport = (): ResumeData | null => {
+    if (!data) return null;
 
     // In the internal blank-form route the experience summary is captured as a bare number
     // of years; expand it to the full "<N>+ Years of Industry Experience" string used in the
@@ -343,8 +350,6 @@ export default function ProfileWorkflow({
         ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) }
         : data;
 
-    // Re-validate right before generating — covers the uploaded-profile path and the blank-form
-    // path, plus any edits made in the review step. The "N/A" check only runs here.
     const result = schemaFor(templateId).safeParse(effective);
     if (!result.success) {
       setErrors(
@@ -355,23 +360,29 @@ export default function ProfileWorkflow({
       );
       setGenerateError(null);
       setGenerated(null);
-      return;
+      return null;
     }
     const naIssues = findNAIssues(templateId, result.data);
     if (naIssues.length > 0) {
       setErrors(naIssues);
       setGenerateError(null);
       setGenerated(null);
-      return;
+      return null;
     }
     setErrors(null);
+    return result.data;
+  };
+
+  const handleGenerate = async () => {
+    const valid = validateForExport();
+    if (!valid || !data) return;
 
     setGenerating(true);
     setGenerateError(null);
     setGenerated(null);
     try {
       const candidate = (data as { name?: string }).name?.trim().replace(/\s+/g, "_") || "resume";
-      await generateDocx(templateId, result.data, `${candidate}_${templateId}_profile.docx`);
+      await generateDocx(templateId, valid, `${candidate}_${templateId}_profile.docx`);
       setGenerated("DOCX downloaded — check your downloads.");
       setDownloaded(true);
     } catch (e) {
@@ -816,6 +827,14 @@ export default function ProfileWorkflow({
                 >
                   {generating ? "Generating…" : "DOCX ↓"}
                 </button>
+                <OpenInGoogleDocsButton
+                  template={templateId}
+                  title={`${(data as { name?: string }).name?.trim() || "Profile"} — ${templateId} profile`}
+                  prepare={(): DocxReady => {
+                    const valid = validateForExport();
+                    return valid ? { ok: true, data: valid } : { ok: false, message: "Please fix the highlighted fields first." };
+                  }}
+                />
                 {templateId === "internal" && generated && !generateError && (
                   <button
                     type="button"

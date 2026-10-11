@@ -5,6 +5,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import DownloadDocxButton from "@/components/DownloadDocxButton";
+import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
 import ProfilePreview from "@/components/ProfilePreview";
 import { getCurrentUser } from "@/lib/auth";
@@ -61,7 +63,14 @@ export default async function ManageProfilePage({
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div>
           {shown ? (
-            <ProfilePreview template={shown.template} data={shown.data} />
+            <>
+              {/* Read-only: exports are built in the browser from the version you are viewing; nothing is changed or saved. */}
+              <div className="mb-4 flex flex-wrap items-start gap-2">
+                <DownloadDocxButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
+                <GoogleDocsForVersion template={shown.template} data={shown.data} />
+              </div>
+              <ProfilePreview template={shown.template} data={shown.data} />
+            </>
           ) : (
             <p className="text-sm text-ink-light">This version could not be displayed.</p>
           )}

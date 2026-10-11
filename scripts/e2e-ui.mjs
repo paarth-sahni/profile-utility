@@ -1,0 +1,156 @@
+/**
+ * Purpose: optional browser test for the saved-profile screens and exports (npm run test:e2e): Open in Google
+ * Docs on Review, /profiles/[id] and /manage/[id], and (added with later features) previews, version labels and the
+ * unsaved-changes dialog. Google is STUBBED in the page (a fake token client) and Drive requests are intercepted, so
+ * nothing real is called and the test can prove what is sent where. Local stack and seeded users only.
+ * The Google checks need NEXT_PUBLIC_GOOGLE_CLIENT_ID set (any value) in .env.local when `npm run dev` starts;
+ * without it they are skipped.
+ */
+import { startHarness } from "./e2e-lib.mjs";
+
+const t = await startHarness("e2e-ui");
+const { check, goto, click, bodyText, waitFor, ev, sleep, sql, signIn, send, on, APP } = t;
+
+const FAKE_TOKEN = "FAKE-TOKEN-e2e-123";
+const DRIVE_URL = "https://www.googleapis.com/upload/drive/v3/files";
+
+/** A profile that passes the strict schema (so it can be exported). */
+const COMPLETE = {
+  name: "E2E Docs Person",
+  jobTitle: "Senior Engineer",
+  experienceSummary: "8+ Years of Industry Experience",
+  specialization: "Java and cloud",
+  overview: "An overview.",
+  education: [{ year: "2014", qualification: "B.E." }],
+  projects: [
+    { duration: "2020 - 2022", title: "Billing Platform", toolsAndTechnologies: ["Java"], teamSize: "4", role: "Lead", projectLink: "", description: "Built it.", responsibilities: ["Designed the schema"] },
+  ],
+  skills: [{ name: "Java", rating: "4" }],
+  certifications: ["Sample Cloud Associate"],
+  tools: ["Git"],
+  managerialExperience: [],
+  domains: ["Fintech"],
+  languages: ["English"],
+};
+
+/** Saves a profile through the real API as the signed-in user and returns { profileId, versionId }. */
+async function saveProfile(data, label = "Base") {
+  return ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:${JSON.stringify(label)},source:'scratch',data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[]})}).then(r=>r.json())`);
+}
+
+// ---- Google stub: a fake GIS token client in the page, and Drive requests answered by the test
+await send("Page.addScriptToEvaluateOnNewDocument", {
+  source: `window.__gis = { calls: 0, scope: null, mode: 'ok' };
+    window.google = { accounts: { oauth2: { initTokenClient(cfg) { return { requestAccessToken() {
+      window.__gis.calls++; window.__gis.scope = cfg.scope;
+      const m = window.__gis.mode;
+      setTimeout(() => {
+        if (m === 'ok') cfg.callback({ access_token: '${FAKE_TOKEN}' });
+        else if (m === 'denied') cfg.callback({ error: 'access_denied' });
+        else cfg.error_callback({ type: m === 'blocked' ? 'popup_failed_to_open' : 'popup_closed' });
+      }, 50);
+    } }; } } } };`,
+});
+await send("Fetch.enable", { patterns: [{ urlPattern: "https://www.googleapis.com/*" }] });
+let driveReply = { status: 200, body: { id: "e2e-doc", webViewLink: "https://docs.google.com/document/d/e2e-doc/edit" } };
+const driveRequests = [];
+const CORS = [
+  { name: "Access-Control-Allow-Origin", value: "*" },
+  { name: "Access-Control-Allow-Headers", value: "authorization, content-type" },
+  { name: "Access-Control-Allow-Methods", value: "POST, OPTIONS" },
+];
+on("Fetch.requestPaused", async (p) => {
+  if (p.request.method === "OPTIONS") {
+    // CORS preflight (the Authorization header makes the browser send one): approve it, do not count it
+    await send("Fetch.fulfillRequest", { requestId: p.requestId, responseCode: 204, responseHeaders: CORS });
+    return;
+  }
+  driveRequests.push({ url: p.request.url, headers: p.request.headers, body: p.request.postData ?? "" });
+  await send("Fetch.fulfillRequest", {
+    requestId: p.requestId,
+    responseCode: driveReply.status,
+    responseHeaders: [{ name: "Content-Type", value: "application/json" }, ...CORS],
+    body: Buffer.from(JSON.stringify(driveReply.body)).toString("base64"),
+  });
+});
+const toApp = []; // everything sent to our own origin
+on("Network.requestWillBeSent", (p) => {
+  if (p.request.url.startsWith(APP)) toApp.push({ url: p.request.url, headers: JSON.stringify(p.request.headers), body: p.request.postData ?? "" });
+});
+const setMode = (mode) => ev(`window.__gis.mode=${JSON.stringify(mode)}`);
+const gisCalls = () => ev("window.__gis.calls");
+const googleButton = () => ev("!!document.querySelector('[data-google-docs] button')");
+const clickGoogle = () => click("Open in Google Docs");
+const statusText = () => ev("document.querySelector('[data-google-docs]')?.innerText ?? ''");
+
+await t.scenario("Open in Google Docs", async () => {
+  await signIn("member");
+  await goto("/internal");
+  const saved = await saveProfile(COMPLETE);
+  const incomplete = await saveProfile({ ...COMPLETE, name: "E2E Incomplete Person", overview: "" }, "Draft");
+  await goto(`/profiles/${saved.profileId}`);
+  await waitFor("document.body.innerText.includes('E2E Docs Person')", "profile page");
+  if (!(await googleButton())) {
+    console.log("SKIP  Open in Google Docs: NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set for the running dev server");
+    return;
+  }
+
+  check("the button shows on /profiles/[id]", true);
+  await clickGoogle();
+  await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "created message");
+  const req = driveRequests.at(-1);
+  check("only the drive.file scope was requested", (await ev("window.__gis.scope")) === "https://www.googleapis.com/auth/drive.file");
+  check("one upload went to www.googleapis.com", driveRequests.length === 1 && req.url.startsWith(DRIVE_URL));
+  check("the token was sent to Google as a Bearer header", req.headers.Authorization === `Bearer ${FAKE_TOKEN}`);
+  check("the upload asks Drive to convert the DOCX to a Google Doc", req.body.includes("application/vnd.google-apps.document") && req.body.includes("E2E Docs Person"));
+  check("a link to the new document is shown", (await ev("document.querySelector('[data-google-docs] a')?.href")) === "https://docs.google.com/document/d/e2e-doc/edit");
+  check("the token never went to our server (URLs, headers, bodies)", toApp.every((r) => !r.url.includes(FAKE_TOKEN) && !r.headers.includes(FAKE_TOKEN) && !r.body.includes(FAKE_TOKEN)));
+  const stored = await ev(`JSON.stringify([document.cookie, Object.entries(localStorage), Object.entries(sessionStorage)])`);
+  check("the token is not stored (cookies, localStorage, sessionStorage)", !stored.includes(FAKE_TOKEN));
+
+  // Friendly errors
+  for (const [mode, expected] of [["blocked", "blocked the Google sign-in window"], ["closed", "closed before you finished"], ["denied", "access was not granted"]]) {
+    await goto(`/profiles/${saved.profileId}`);
+    await setMode(mode);
+    await clickGoogle();
+    await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", `error for ${mode}`);
+    const text = await statusText();
+    check(`"${mode}" shows a friendly message`, text.includes(expected) && !/token|undefined|Error/i.test(text), text);
+  }
+  await goto(`/profiles/${saved.profileId}`);
+  driveReply = { status: 403, body: { error: { errors: [{ reason: "accessNotConfigured" }] } } };
+  await clickGoogle();
+  await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", "api disabled");
+  check("Drive API off shows an admin-facing hint", (await statusText()).includes("not enabled for this app yet"));
+  driveReply = { status: 200, body: { id: "e2e-doc", webViewLink: "https://docs.google.com/document/d/e2e-doc/edit" } };
+
+  // An incomplete version is stopped before Google is contacted
+  await goto(`/profiles/${incomplete.profileId}`);
+  const before = await gisCalls();
+  await clickGoogle();
+  await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", "incomplete message");
+  check("an incomplete profile is refused before any Google popup", (await statusText()).includes("Incomplete:") && (await gisCalls()) === before);
+
+  // Review screen
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "review form");
+  check("the button shows on Review", await googleButton());
+  const calls = await gisCalls();
+  await clickGoogle();
+  await sleep(500);
+  check("on Review, an incomplete form shows the errors and contacts no Google popup", (await statusText()).includes("fix the highlighted fields") && (await gisCalls()) === calls);
+
+  // Manager: read-only page with both export buttons
+  await signIn("manager");
+  await goto(`/manage/${saved.profileId}`);
+  await waitFor("document.body.innerText.includes('E2E Docs Person')", "manage page");
+  const manage = await bodyText();
+  check("/manage/[id] has Download DOCX and Open in Google Docs", manage.includes("Download DOCX") && (await googleButton()));
+  check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in Review"));
+  await clickGoogle();
+  await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
+  check("a manager can export the version they are viewing", true);
+});
+
+t.finish();

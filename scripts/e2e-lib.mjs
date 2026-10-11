@@ -72,8 +72,10 @@ export async function startHarness(title) {
   let id = 0;
   const pending = new Map();
   const dialogs = [];
+  const listeners = new Map();
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
+    if (d.method) for (const fn of listeners.get(d.method) ?? []) fn(d.params);
     if (d.id && pending.has(d.id)) {
       pending.get(d.id)(d);
       pending.delete(d.id);
@@ -113,6 +115,10 @@ export async function startHarness(title) {
   const h = {
     APP,
     dialogs,
+    /** Subscribes to a CDP event, e.g. on("Network.requestWillBeSent", (params) => ...). */
+    on(method, fn) {
+      listeners.set(method, [...(listeners.get(method) ?? []), fn]);
+    },
     sleep,
     sql,
     send,
