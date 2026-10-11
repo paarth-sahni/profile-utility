@@ -57,6 +57,35 @@ npm install
 npm run dev
 ```
 
+## Tests
+
+| Command | What it runs | Needs |
+|---|---|---|
+| `npm test` | unit tests (`lib/*.test.ts`) | nothing |
+| `npm run test:db` | the data layer as seeded users (round trips, ownership, search) | local Supabase + seed |
+| `npm run test:rls` | Row Level Security per role and table | local Supabase + seed |
+| `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
+
+### End-to-end browser checks (optional)
+
+`npm run test:e2e` drives a real headless Chrome through the Review screen: draft recovery in `sessionStorage`,
+the 401-then-restore path, the session-expiry banner, Discard, the "Discard your unsaved draft?" dialog, sign-out
+clearing drafts, and another user never seeing a draft. It runs only against the **local stack and the seeded
+users** (`member@example.test`, ... `password123`) and signs them in by setting a session cookie, so Google sign-in
+is not involved. It refuses to run if the Supabase or database URL is not local.
+
+```bash
+npm run db:start && npm run db:reset     # local stack + seed (once)
+npm run dev                              # in another terminal; development mode only:
+                                         # the seeded @example.test users cannot sign in to a production build
+npm run test:e2e
+```
+
+Settings (all optional): `APP_URL` (default `http://localhost:3000`), `CHROME_BIN` (default `google-chrome`),
+`E2E_CHROME_PORT` (default `9333`), `E2E_DB_URL`. It needs `psql` on the PATH (to age a session for the expiry
+checks) and Node 20 with `--experimental-websocket` (the npm script sets it). Test data is named "E2E ..." and is
+deleted when the run ends. The harness is `scripts/e2e-lib.mjs`; scenarios are `scripts/e2e-*.mjs`.
+
 ## Local auth setup (Google sign-in)
 
 Users sign in with their InfoBeans Google account (`@infobeans.com` only). `/internal`, `/external` and
