@@ -2,7 +2,8 @@
  * Purpose: tests the app's server data layer (lib/db/profiles.ts) against the local Supabase stack, acting as
  * seeded fictional users through their own sessions, so RLS applies exactly as in the app.
  * Requires `npm run db:start && npm run db:reset`. Run: `npm run test:db`.
- * Covers: a user cannot save into someone else's profile (even an admin), and (added later) round trips.
+ * Covers: save -> load round trips for both templates, version numbering under concurrent saves, a user cannot
+ * save into or read someone else's profile (even an admin), and the manager/admin search and read-only views.
  * The service-role key is never used. Tests delete the profiles they create (through the admin's session).
  */
 import assert from "node:assert/strict";
@@ -11,7 +12,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ForbiddenError,
   ProfileNotFoundError,
+  getMyProfileAs,
   getProfileForManagerAs,
+  getVersionAs,
   getVersionForManagerAs,
   saveVersionAs,
   searchProfilesByNameAs,
@@ -153,5 +156,106 @@ describe("manager/admin name search and read-only views", () => {
   });
 });
 
-// Referenced so the fixtures stay imported for the round-trip tests added next.
-void EXTERNAL_FIXTURE;
+describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
+  const flags = [
+    { path: "overview", reason: "Check the wording" },
+    { path: "projects[0].teamSize", reason: "Label says 2-3" },
+  ];
+
+  test("internal profile with every field filled (range team size, empty rating, no managerial items, multi-line text)", async () => {
+    const saved = await saveVersionAs(ctx.member, internalPayload({ reviewFlags: flags, promptPlan: ["step one", "step two"] }));
+    createdProfiles.push(saved.profileId);
+    const loaded = await getVersionAs(ctx.member, saved.versionId);
+    assert.ok(loaded, "version must load");
+    assert.equal(loaded.template, "internal");
+    assert.deepEqual(loaded.data, INTERNAL_FIXTURE);
+    assert.deepEqual(loaded.reviewFlags, flags);
+    assert.equal(loaded.meta.versionNo, 1);
+    assert.equal(loaded.meta.label, "Base");
+  });
+
+  test("external profile with every field filled", async () => {
+    const saved = await saveVersionAs(ctx.member, {
+      template: "external",
+      kind: "base",
+      label: "Client CV",
+      source: "scratch",
+      data: EXTERNAL_FIXTURE,
+      reviewFlags: [],
+      analysis: null,
+      promptPlan: [],
+    });
+    createdProfiles.push(saved.profileId);
+    const loaded = await getVersionAs(ctx.member, saved.versionId);
+    assert.ok(loaded, "version must load");
+    assert.equal(loaded.template, "external");
+    assert.deepEqual(loaded.data, EXTERNAL_FIXTURE);
+  });
+
+  test("a later version and a role-specific version round-trip too, and older versions stay unchanged", async () => {
+    const v1 = await saveVersionAs(ctx.member, internalPayload());
+    createdProfiles.push(v1.profileId);
+    const edited = { ...INTERNAL_FIXTURE, jobTitle: "Principal Engineer", skills: [{ name: "Go", rating: "3" }] };
+    const v2 = await saveVersionAs(ctx.member, internalPayload({ profileId: v1.profileId, data: edited, source: "edit", label: "Edited" }));
+    const v3 = await saveVersionAs(
+      ctx.member,
+      internalPayload({ profileId: v1.profileId, kind: "role_specific", parentVersionId: v2.versionId, label: "Java Backend", source: "edit" }),
+    );
+    assert.deepEqual([v1.versionNo, v2.versionNo, v3.versionNo], [1, 2, 3]);
+    assert.deepEqual((await getVersionAs(ctx.member, v1.versionId))?.data, INTERNAL_FIXTURE);
+    assert.deepEqual((await getVersionAs(ctx.member, v2.versionId))?.data, edited);
+    const third = await getVersionAs(ctx.member, v3.versionId);
+    assert.deepEqual(third?.data, INTERNAL_FIXTURE);
+    assert.equal(third?.meta.kind, "role_specific");
+    assert.equal(third?.meta.label, "Java Backend");
+  });
+
+  test("a role-specific version without a parent is rejected", async () => {
+    await assert.rejects(saveVersionAs(ctx.member, internalPayload({ kind: "role_specific", parentVersionId: null })));
+  });
+
+  test("a parent from another profile is rejected", async () => {
+    const a = await saveVersionAs(ctx.member, internalPayload());
+    const b = await saveVersionAs(ctx.member, internalPayload());
+    createdProfiles.push(a.profileId, b.profileId);
+    await assert.rejects(
+      saveVersionAs(ctx.member, internalPayload({ profileId: a.profileId, kind: "role_specific", parentVersionId: b.versionId })),
+    );
+  });
+});
+
+describe("version numbers stay sequential under concurrent saves", () => {
+  test("8 simultaneous saves to one profile get versions 1..9 with no gaps or duplicates", async () => {
+    const first = await saveVersionAs(ctx.member, internalPayload());
+    createdProfiles.push(first.profileId);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => saveVersionAs(ctx.member, internalPayload({ profileId: first.profileId, label: `Concurrent ${i}`, source: "edit" }))),
+    );
+    const numbers = [first.versionNo, ...results.map((r) => r.versionNo)].sort((a, b) => a - b);
+    assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+});
+
+describe("a user cannot read another user's profile or version through the app's data layer", () => {
+  let memberVersion: string;
+  let memberProfile: string;
+
+  before(async () => {
+    const saved = await saveVersionAs(ctx.member, internalPayload());
+    memberVersion = saved.versionId;
+    memberProfile = saved.profileId;
+    createdProfiles.push(memberProfile);
+  });
+
+  for (const who of ["member2", "admin", "manager", "checker"] as const) {
+    test(`${who} gets null for the member's version and profile (My Profiles is strictly your own)`, async () => {
+      assert.equal(await getVersionAs(ctx[who], memberVersion), null);
+      assert.equal(await getMyProfileAs(ctx[who], memberProfile), null);
+    });
+  }
+
+  test("the owner can read both", async () => {
+    assert.ok(await getVersionAs(ctx.member, memberVersion));
+    assert.ok(await getMyProfileAs(ctx.member, memberProfile));
+  });
+});
