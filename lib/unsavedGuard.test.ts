@@ -1,7 +1,7 @@
 /** Purpose: unit tests for isInAppNavigation (which link clicks the unsaved-changes guard must intercept). */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isInAppNavigation, type LinkClick } from "./unsavedGuard";
+import { hasUnsavedWork, isInAppNavigation, type LinkClick, type WorkState } from "./unsavedGuard";
 
 const HERE = "http://localhost:3000/internal?version=abc";
 const click = (over: Partial<LinkClick>): LinkClick => ({
@@ -50,4 +50,30 @@ test("target _self counts as same tab", () => {
 
 test("an unparseable URL is ignored rather than throwing", () => {
   assert.equal(isInAppNavigation(click({ href: "http://[bad" }), HERE), false);
+});
+
+const work = (over: Partial<WorkState>): WorkState => ({ hasProfile: true, saved: false, dirty: false, downloaded: false, ...over });
+
+test("hasUnsavedWork: a fresh extraction or blank form is unsaved even before any edit", () => {
+  assert.equal(hasUnsavedWork(work({})), true);
+});
+
+test("hasUnsavedWork: nothing loaded means nothing to lose", () => {
+  assert.equal(hasUnsavedWork(work({ hasProfile: false })), false);
+  assert.equal(hasUnsavedWork(work({ hasProfile: false, dirty: true })), false);
+});
+
+test("hasUnsavedWork: saved and unedited is safe; saved then edited is not", () => {
+  assert.equal(hasUnsavedWork(work({ saved: true })), false);
+  assert.equal(hasUnsavedWork(work({ saved: true, dirty: true })), true);
+});
+
+test("hasUnsavedWork: a DOCX download since the last edit clears the warning", () => {
+  assert.equal(hasUnsavedWork(work({ downloaded: true })), false);
+  assert.equal(hasUnsavedWork(work({ downloaded: true, dirty: true })), false);
+  assert.equal(hasUnsavedWork(work({ saved: true, dirty: true, downloaded: true })), false);
+});
+
+test("hasUnsavedWork: editing after a download (downloaded reset) warns again", () => {
+  assert.equal(hasUnsavedWork(work({ dirty: true, downloaded: false })), true);
 });

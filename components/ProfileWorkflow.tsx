@@ -8,6 +8,7 @@ import { generateDocx } from "@/lib/generate";
 import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { describeFlagPath } from "@/lib/reviewFlags";
+import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import type { ExtractIssue, ExtractResult } from "@/lib/extract.types";
 import {
@@ -142,13 +143,14 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
     initial ? { no: initial.versionNo, label: initial.label } : null,
   );
   const [dirty, setDirty] = useState(false);
+  const [downloaded, setDownloaded] = useState(false); // DOCX downloaded and not edited since
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveLabel, setSaveLabel] = useState(initial ? "" : "Base");
   const [roleSpecific, setRoleSpecific] = useState(false);
 
-  // Warn before leaving (refresh, close, in-app links) while edits are unsaved.
-  useUnsavedChangesWarning(dirty);
+  // Warn before leaving (refresh, close, in-app links) while the work is unsaved and not yet downloaded.
+  useUnsavedChangesWarning(hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded }));
 
   const fromScratch = source === "scratch";
   const uploading = uploadStatus !== "idle";
@@ -178,6 +180,7 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
     setSaveLabel("Base");
     setRoleSpecific(false);
     setDirty(false);
+    setDownloaded(false);
     setEdited(false);
     setStep(STEP_REVIEW);
     setGenerateError(null);
@@ -205,6 +208,7 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
       setSaveLabel("Base");
       setRoleSpecific(false);
       setDirty(false);
+      setDownloaded(false);
       setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
@@ -267,6 +271,7 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
       const candidate = (data as { name?: string }).name?.trim().replace(/\s+/g, "_") || "resume";
       await generateDocx(templateId, result.data, `${candidate}_${templateId}_profile.docx`);
       setGenerated("DOCX downloaded — check your downloads.");
+      setDownloaded(true);
     } catch (e) {
       setGenerateError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -278,6 +283,7 @@ export default function ProfileWorkflow({ audience, initial }: { audience: Audie
     setData(d);
     setEdited(true);
     setDirty(true);
+    setDownloaded(false);
     if (errors) setErrors(null);
   };
 
