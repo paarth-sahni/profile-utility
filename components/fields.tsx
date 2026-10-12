@@ -2,6 +2,10 @@
 
 import { createContext, ReactNode, useContext, useId, useState } from "react";
 import { isNAValue } from "@/lib/schemas";
+import { addTags, hasOpenBracket, splitTags } from "@/lib/tags";
+
+/** A comma or a line break ends an item in the tag input. */
+const TAG_SEPARATOR = { test: (v: string) => v.includes(",") || v.includes(String.fromCharCode(10)) || v.includes(String.fromCharCode(13)) };
 
 /** Wording shown wherever an optional section has nothing in it: the generated document leaves it out entirely. */
 export const LEFT_OUT_NOTE = "— left out of the document";
@@ -47,12 +51,15 @@ export function Section({
   onRemove,
   defaultOpen = false,
   empty = false,
+  invalid = false,
 }: {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
   onRemove?: () => void;
   defaultOpen?: boolean;
+  /** True when a required field inside needs attention: the section opens itself and its title turns red. */
+  invalid?: boolean;
   /** True for an OPTIONAL section with nothing real in it: shows that it will be left out of the document. */
   empty?: boolean;
 }) {
@@ -60,6 +67,11 @@ export function Section({
   const bodyId = useId();
   const signal = useContext(AccordionContext);
   const [seenTick, setSeenTick] = useState(signal.tick);
+  const [wasInvalid, setWasInvalid] = useState(invalid);
+  if (invalid !== wasInvalid) {
+    setWasInvalid(invalid);
+    if (invalid) setOpen(true);
+  }
   if (signal.tick !== seenTick) {
     setSeenTick(signal.tick);
     setOpen(signal.mode === "open");
@@ -88,8 +100,9 @@ export function Section({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <h3 className="truncate text-sm font-medium uppercase tracking-wide text-gray-700">
+          <h3 className={`truncate text-sm font-medium uppercase tracking-wide ${invalid ? "text-brand-600" : "text-gray-700"}`}>
             {title}
+            {invalid && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-brand-600">needs attention</span>}
             {empty && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-gray-400">{LEFT_OUT_NOTE}</span>}
           </h3>
         </button>
@@ -125,6 +138,7 @@ export function Field({
   numeric = false,
   maxWords,
   hint,
+  error,
 }: {
   label: string;
   value: string;
@@ -137,6 +151,8 @@ export function Field({
   maxWords?: number;
   /** Helper text shown under the input (e.g. a live preview of the formatted value). */
   hint?: ReactNode;
+  /** A problem with this field: highlights it in red and shows the message under it. */
+  error?: string;
 }) {
   const showNAHint = optional && isNAValue(value);
   const handleChange = (raw: string) => {
@@ -150,7 +166,7 @@ export function Field({
     onChange(v);
   };
   return (
-    <label className="block">
+    <label className="block" data-invalid={error ? "true" : undefined}>
       <span className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-600">
         {label}
         {optional && <span className="font-normal text-gray-400">(optional)</span>}
@@ -163,7 +179,7 @@ export function Field({
           onChange={(e) => handleChange(e.target.value)}
           className={`w-full rounded-md border py-2 pl-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 ${
             optional ? "pr-8" : "pr-3"
-          } ${showNAHint ? "border-amber-400" : "border-gray-300"}`}
+          } ${error ? "border-brand-500 bg-brand-50/40" : showNAHint ? "border-amber-400" : "border-gray-300"}`}
         />
         {optional && value.trim() !== "" && (
           <button
@@ -176,7 +192,8 @@ export function Field({
           </button>
         )}
       </div>
-      {hint && !showNAHint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
+      {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
+      {hint && !showNAHint && !error && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
       {showNAHint && (
         <p className="mt-1 text-xs text-amber-600">
           Not found in the resume — it will be left out of the final document automatically. Add the real value here
@@ -193,6 +210,7 @@ export function AreaField({
   onChange,
   rows = 4,
   optional = false,
+  error,
 }: {
   label: string;
   value: string;
@@ -200,9 +218,11 @@ export function AreaField({
   rows?: number;
   /** Marks the field "(optional)": when empty it is left out of the document. */
   optional?: boolean;
+  /** A problem with this field: highlights it in red and shows the message under it. */
+  error?: string;
 }) {
   return (
-    <label className="block">
+    <label className="block" data-invalid={error ? "true" : undefined}>
       <span className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-600">
         {label}
         {optional && <span className="font-normal text-gray-400">(optional)</span>}
@@ -211,8 +231,11 @@ export function AreaField({
         value={value}
         rows={rows}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        className={`w-full rounded-md border px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+          error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
+        }`}
       />
+      {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
     </label>
   );
 }
@@ -346,6 +369,82 @@ export function RemovedSection({ title, onRestore }: { title: string; onRestore:
       <button type="button" onClick={onRestore} className="text-xs font-medium text-brand-600 hover:underline">
         Restore
       </button>
+    </div>
+  );
+}
+
+/**
+ * Compact editor for SHORT list items (tools, domains, languages, skills): the items show as removable chips and
+ * you type in one box. Enter or a comma adds what you typed; pasting "a, b, c" adds all of them; Backspace in the
+ * empty box removes the last chip. The data is still a plain string[].
+ */
+export function TagInput({
+  label,
+  items,
+  onChange,
+  placeholder = "Type and press Enter or comma",
+  error,
+}: {
+  label?: string;
+  items: string[];
+  onChange: (items: string[]) => void;
+  placeholder?: string;
+  error?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const tags = items.map((t) => t.trim()).filter(Boolean);
+
+  const commit = (text: string) => {
+    if (!splitTags(text).length) return;
+    onChange(addTags(tags, text));
+    setDraft("");
+  };
+
+  return (
+    <div data-invalid={error ? "true" : undefined}>
+      {label && <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>}
+      <div
+        className={`flex flex-wrap items-center gap-1.5 rounded-md border bg-white px-2 py-1.5 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 ${
+          error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
+        }`}
+      >
+        {tags.map((t, i) => (
+          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 rounded-full bg-cream px-2.5 py-1 text-xs text-ink ring-1 ring-hairline">
+            {t}
+            <button
+              type="button"
+              aria-label={`Remove ${t}`}
+              onClick={() => onChange(tags.filter((_, j) => j !== i))}
+              className="text-gray-400 transition hover:text-brand-600"
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={draft}
+          placeholder={tags.length ? "" : placeholder}
+          aria-label={label ?? "Add item"}
+          onChange={(e) => {
+            const v = e.target.value;
+            // a typed or pasted comma / line break finishes the item(s), unless it sits inside an open bracket
+            if (TAG_SEPARATOR.test(v) && !hasOpenBracket(v)) commit(v);
+            else setDraft(v);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit(draft);
+            } else if (e.key === "Backspace" && draft === "" && tags.length) {
+              onChange(tags.slice(0, -1));
+            }
+          }}
+          onBlur={() => commit(draft)}
+          className="min-w-[8rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm text-ink focus:outline-none"
+        />
+      </div>
+      {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
     </div>
   );
 }

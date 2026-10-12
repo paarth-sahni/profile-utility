@@ -36,10 +36,21 @@ export function useStepHistory({ enabled, step, askBeforeLeaving, goStart }: Opt
   live.current = { step, askBeforeLeaving, goStart };
   const skipGuard = useRef(false); // next Back was confirmed: do not ask again
   const ignoreNext = useRef(false); // next popstate came from our own history.back()
+  const firstRun = useRef(true);
 
   // keep the history entry in step with the screen
   useEffect(() => {
     if (!enabled) return;
+    if (firstRun.current) {
+      firstRun.current = false;
+      // After a reload (or coming back to this entry) the browser still carries our marker while the page starts
+      // fresh at Start. Just clear the marker; going "back" here would throw the user out to the previous page.
+      if (step === 0 && marked()) {
+        const { [MARK]: _stale, ...rest } = (window.history.state ?? {}) as Record<string, unknown>;
+        void _stale;
+        window.history.replaceState(rest, "", window.location.href);
+      }
+    }
     if (step > 0) {
       // Start -> later step: add the entry. Later step -> later step: reuse it.
       if (marked()) window.history.replaceState({ [MARK]: step }, "", window.location.href);

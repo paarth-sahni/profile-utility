@@ -317,6 +317,33 @@ export function applyProfileHeader(
   return out;
 }
 
+/** A rating written the way resumes write it: "4.5/5", "4 / 5", "out of 5". */
+const RATING_PATTERN = /\b[0-5](?:\.\d+)?\s*\/\s*5\b|\bout of 5\b/i;
+
+/**
+ * Skill ratings are never estimated. A rating stays only when the resume states ratings AND this number appears in it;
+ * otherwise it is blanked (the person fills it in) and any review flag on it is dropped. Internal template only.
+ */
+export function blankUnstatedRatings(templateId: TemplateId, data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (templateId !== "internal" || !isRecord(data) || !Array.isArray(data.skills)) return flags;
+  const statedAnywhere = RATING_PATTERN.test(sourceText);
+  const blanked = new Set<number>();
+  data.skills.forEach((skill, i) => {
+    if (!isRecord(skill)) return;
+    const rating = skill.rating == null ? "" : String(skill.rating).trim();
+    if (!rating) return;
+    if (!statedAnywhere || !valueInSource(rating, sourceText)) {
+      skill.rating = "";
+      blanked.add(i);
+    }
+  });
+  if (blanked.size === 0) return flags;
+  return flags.filter((f) => {
+    const m = /^skills\.(\d+)\.rating$/.exec(f.path);
+    return !(m && blanked.has(Number(m[1])));
+  });
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -326,7 +353,8 @@ export function applyBackstops(
   documentType?: string,
 ): { data: unknown; flags: ReviewFlag[] } {
   const copy = structuredClone(data);
-  let next = fillEmptyResponsibilities(templateId, copy, flags);
+  const withoutRatingFlags = blankUnstatedRatings(templateId, copy, flags, sourceText);
+  let next = fillEmptyResponsibilities(templateId, copy, withoutRatingFlags);
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);

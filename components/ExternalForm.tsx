@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { cleanList, hasContent } from "@/lib/previewModel";
 import { wordCount, type ExternalResume } from "@/lib/schemas";
-import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, moveItem } from "./fields";
+import { hasErrorUnder } from "@/lib/fieldErrors";
+import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem } from "./fields";
 
 const BLANK_PROJECT: ExternalResume["projects"][number] = {
   duration: "", client: "", teamSize: "", role: "", description: "", responsibilities: [""],
@@ -13,11 +14,14 @@ export default function ExternalForm({
   data,
   onChange,
   expandTick = 0,
+  fieldErrors,
 }: {
   data: ExternalResume;
   onChange: (data: ExternalResume) => void;
   /** Bumped by the parent to open every section (e.g. when generating fails). */
   expandTick?: number;
+  /** Problems with required fields, keyed by field path ("name", "education.0.year", ...). Shown in red. */
+  fieldErrors?: Record<string, string>;
 }) {
   const [projectsRemoved, setProjectsRemoved] = useState(false);
 
@@ -27,12 +31,14 @@ export default function ExternalForm({
   const removeProjects = () => { set("projects", []); setProjectsRemoved(true); };
   const restoreProjects = () => { set("projects", [{ ...BLANK_PROJECT }]); setProjectsRemoved(false); };
 
+  const fe = fieldErrors ?? {};
+
   return (
     <Accordion expandTick={expandTick}>
-      <Section title="Profile" defaultOpen>
+      <Section title="Profile" defaultOpen invalid={hasErrorUnder(fe, "name", "jobTitle", "overview")}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name" value={data.name} onChange={(v) => set("name", v)} />
-          <Field label="Job title" value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
+          <Field label="Name" error={fe["name"]} value={data.name} onChange={(v) => set("name", v)} />
+          <Field label="Job title" error={fe["jobTitle"]} value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
           <Field label="Experience summary" optional value={data.experienceSummary} onChange={(v) => set("experienceSummary", v)} />
           <Field
             label="Specialization"
@@ -43,27 +49,27 @@ export default function ExternalForm({
             hint={`Max 5 words · ${wordCount(data.specialization)} used`}
           />
         </div>
-        <AreaField label="Overview" value={data.overview} onChange={(v) => set("overview", v)} />
+        <AreaField label="Overview" error={fe["overview"]} value={data.overview} onChange={(v) => set("overview", v)} />
       </Section>
 
-      <Section title="Education & Training">
+      <Section title="Education & Training" invalid={hasErrorUnder(fe, "education")}>
         <p className="text-xs text-ink-light">Highest qualification only — the profile carries a single education entry.</p>
         <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
-          <Field label="Year" value={data.education[0].year} onChange={(v) => set("education", [{ ...data.education[0], year: v }])} />
-          <Field label="Qualification" value={data.education[0].qualification} onChange={(v) => set("education", [{ ...data.education[0], qualification: v }])} />
+          <Field label="Year" error={fe["education.0.year"]} value={data.education[0].year} onChange={(v) => set("education", [{ ...data.education[0], year: v }])} />
+          <Field label="Qualification" error={fe["education.0.qualification"]} value={data.education[0].qualification} onChange={(v) => set("education", [{ ...data.education[0], qualification: v }])} />
         </div>
       </Section>
 
-      <Section title="Skills">
-        <StringListEditor items={data.skills} onChange={(v) => set("skills", v)} addLabel="Add skill" />
+      <Section title="Skills" invalid={hasErrorUnder(fe, "skills")}>
+        <TagInput items={data.skills} onChange={(v) => set("skills", v)} placeholder="e.g. Java, React, SQL" error={fe["skills"]} />
       </Section>
 
       <Section title="Tools" empty={cleanList(data.tools).length === 0}>
-        <StringListEditor items={data.tools} onChange={(v) => set("tools", v)} addLabel="Add tool" />
+        <TagInput items={data.tools} onChange={(v) => set("tools", v)} placeholder="e.g. Git, Jira, Docker" />
       </Section>
 
       <Section title="Certifications" empty={cleanList(data.certifications).length === 0}>
-        <StringListEditor items={data.certifications} onChange={(v) => set("certifications", v)} addLabel="Add certification" />
+        <TagInput items={data.certifications} onChange={(v) => set("certifications", v)} placeholder="e.g. PSM I, AWS Cloud Practitioner" />
       </Section>
 
       {projectsRemoved ? (
@@ -71,6 +77,7 @@ export default function ExternalForm({
       ) : (
         <Section
           title="Projects"
+          invalid={hasErrorUnder(fe, "projects")}
           empty={!data.projects.some((p) => hasContent(p.client, p.duration, p.role, p.description, p.teamSize, p.responsibilities))}
           onRemove={removeProjects}
           actions={
@@ -93,7 +100,7 @@ export default function ExternalForm({
                 onRemove={(idx) => set("projects", data.projects.filter((_, j) => j !== idx))}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Project Name" value={p.client} onChange={(v) => setP({ client: v })} />
+                  <Field label="Project Name" error={fe[`projects.${i}.client`]} value={p.client} onChange={(v) => setP({ client: v })} />
                   <Field label="Duration" optional value={p.duration} onChange={(v) => setP({ duration: v })} />
                   <Field label="Team size" optional value={p.teamSize} onChange={(v) => setP({ teamSize: v })} />
                 </div>
@@ -114,6 +121,7 @@ export default function ExternalForm({
 
       <Section
         title="Experience"
+        invalid={hasErrorUnder(fe, "experience")}
         empty={!data.experience.some((e) => hasContent(e.company, e.position, e.duration, e.highlights))}
         actions={
           <AddButton
@@ -135,7 +143,7 @@ export default function ExternalForm({
               onRemove={(idx) => set("experience", data.experience.filter((_, j) => j !== idx))}
             >
               <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Company Name" value={e.company} onChange={(v) => setE({ company: v })} />
+                <Field label="Company Name" error={fe[`experience.${i}.company`]} value={e.company} onChange={(v) => setE({ company: v })} />
                 <Field label="Role" optional value={e.position} onChange={(v) => setE({ position: v })} />
                 <Field label="Duration" optional value={e.duration} onChange={(v) => setE({ duration: v })} />
               </div>

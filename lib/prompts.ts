@@ -38,7 +38,7 @@ TRUTHFULNESS (highest priority)
 - Use only facts present in the resume. Never invent employers, clients, projects, dates, certifications, metrics, team sizes or links.
 - Keep facts exactly as stated: the same tools, channels, platforms, numbers and wording (e.g. "via REST and gRPC" stays "via REST and gRPC"). You MAY fix grammar, remove filler and make bullets parallel and concise, but you may NOT add claims or outcomes. Do not add adjectives or evaluative phrases that are not in the source ("seamless", "robust", "successfully", "efficiently", "scalable", "demonstrated", "proven", "strong", "skilled", "track record"), including in the overview. Do not generalise, upgrade or soften what was stated.
 - If information for a field or list does not exist in the resume, use "" for text and [] for lists. Never write "N/A" or placeholders.
-- Every value you had to estimate or infer (not stated outright) must be listed in reviewFlags with its dot path (e.g. "projects.0.duration", "skills.2.rating") and a short reason. Paths index the arrays in YOUR OUTPUT (after any re-ordering), not the order in the source.
+- Every value you had to estimate or infer (not stated outright) must be listed in reviewFlags with its dot path (e.g. "projects.0.duration", "projects.1.teamSize") and a short reason. Paths index the arrays in YOUR OUTPUT (after any re-ordering), not the order in the source.
 
 WRITING STANDARD
 - Overview: 3-5 sentences, third person, restating only facts found in the resume (experience, core expertise, domains, achievements). Start with the role or profile (e.g. "Computer Science graduate specializing in…", "Cloud engineer with…"); never with "The candidate" or any pronoun.
@@ -74,7 +74,7 @@ OUTPUT
 ${RESUME_AS_DATA_RULE}`;
 
 export const INTERNAL_RULES = `INTERNAL PROFILE RULES
-- skills[].rating: if the resume states ratings, use them. Otherwise estimate from 1.0-5.0 based on years of use and how prominent the skill is, with one decimal place, and flag EVERY estimated rating (path "skills.<index>.rating").
+- skills[].rating: use the rating only if the resume states one for that skill (for example "4.5/5"). Otherwise use "" (an empty string). NEVER estimate or guess a rating from years of experience, and do not add a reviewFlag for a missing rating: the person fills the ratings in themselves.
 - projectLink: keep "NDA", "Internal — InfoBeans" and real URLs exactly as written. If it is only a word such as "GitHub" with no URL, keep it and add a reviewFlag (path "projects.<index>.projectLink") with the reason "add the full URL". If nothing is stated, use "" (use "NDA" only if the resume itself says NDA or confidential).
 - languages: never assume English. If none are stated, return [] and flag it.`;
 
@@ -231,16 +231,16 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   ],
   "skills": [                      // One entry per skill, shown in the sidebar with a rating
     { "name": string,              // e.g. "ReactJS"
-      "rating": string }           // Rating out of 5 as a plain number string, e.g. "3.8" (rendered as "(3.8/5)")
+      "rating": string }           // Rating out of 5 as a plain number string, e.g. "3.8" (rendered as "(3.8/5)"); "" when the resume gives none
   ],
   "certifications": [string],      // Certifications stated in the resume, e.g. ["Scrum Master (PSM I)"]; [] if none
   "tools": [string],               // e.g. ["Jenkins", "Postman", "Git"]
   "managerialExperience": [string],// Managerial capabilities evidenced in the resume, e.g. ["Project Management", "Team Building"]; [] if none
   "domains": [string],             // Business domains worked in, e.g. ["Healthcare", "E-commerce"]
   "languages": [string],           // Spoken languages stated in the resume, e.g. ["English", "Hindi"]; [] if none
-  "reviewFlags": [                 // Every inferred/estimated value (including every estimated skill rating); [] if none
-    { "path": string,              // dot path, e.g. "skills.2.rating"
-      "reason": string }           // short reason, e.g. "Rating estimated from years of use"
+  "reviewFlags": [                 // Every inferred/estimated value; [] if none
+    { "path": string,              // dot path, e.g. "projects.0.duration"
+      "reason": string }           // short reason, e.g. "Duration inferred from the dates"
   ]
 }`;
 
