@@ -3,25 +3,8 @@
 import { useState } from "react";
 import { cleanList, hasContent } from "@/lib/previewModel";
 import { formatYearsExperience, wordCount, type InternalResume } from "@/lib/schemas";
-import { Accordion, AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
-
-function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
-      <span className="text-sm text-gray-400">
-        <span className="font-medium uppercase tracking-wide">{title}</span>
-        <span className="ml-2 italic">— removed from document</span>
-      </span>
-      <button
-        type="button"
-        onClick={onRestore}
-        className="text-xs font-medium text-brand-600 hover:underline"
-      >
-        Restore
-      </button>
-    </div>
-  );
-}
+import { hasErrorUnder } from "@/lib/fieldErrors";
+import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem } from "./fields";
 
 const BLANK_PROJECT: InternalResume["projects"][number] = {
   duration: "", title: "", toolsAndTechnologies: [""], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [""],
@@ -32,11 +15,14 @@ export default function InternalForm({
   onChange,
   fromScratch = false,
   expandTick = 0,
+  fieldErrors,
 }: {
   data: InternalResume;
   onChange: (data: InternalResume) => void;
   /** Bumped by the parent to open every section (e.g. when generating fails). */
   expandTick?: number;
+  /** Problems with required fields, keyed by field path ("name", "education.0.year", ...). Shown in red. */
+  fieldErrors?: Record<string, string>;
   /** The blank-form ("Create a Profile from Scratch") route captures the experience
    *  summary as a plain number of years; the LLM route supplies the full string. */
   fromScratch?: boolean;
@@ -52,12 +38,14 @@ export default function InternalForm({
   const removeManagerial = () => { set("managerialExperience", []); setManagerialRemoved(true); };
   const restoreManagerial = () => { set("managerialExperience", [""]); setManagerialRemoved(false); };
 
+  const fe = fieldErrors ?? {};
+
   return (
     <Accordion expandTick={expandTick}>
-      <Section title="Profile" defaultOpen>
+      <Section title="Profile" defaultOpen invalid={hasErrorUnder(fe, "name", "jobTitle", "overview")}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name" value={data.name} onChange={(v) => set("name", v)} />
-          <Field label="Job title" value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
+          <Field label="Name" error={fe["name"]} value={data.name} onChange={(v) => set("name", v)} />
+          <Field label="Job title" error={fe["jobTitle"]} value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
           {fromScratch ? (
             <Field
               label="Years of Industry Experience"
@@ -83,14 +71,14 @@ export default function InternalForm({
             hint={`Max 5 words · ${wordCount(data.specialization)} used`}
           />
         </div>
-        <AreaField label="Overview" value={data.overview} onChange={(v) => set("overview", v)} />
+        <AreaField label="Overview" error={fe["overview"]} value={data.overview} onChange={(v) => set("overview", v)} />
       </Section>
 
-      <Section title="Education & Training">
+      <Section title="Education & Training" invalid={hasErrorUnder(fe, "education")}>
         <p className="text-xs text-ink-light">Highest qualification only — the profile carries a single education entry.</p>
         <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
-          <Field label="Year" value={data.education[0].year} onChange={(v) => set("education", [{ ...data.education[0], year: v }])} />
-          <Field label="Qualification" value={data.education[0].qualification} onChange={(v) => set("education", [{ ...data.education[0], qualification: v }])} />
+          <Field label="Year" error={fe["education.0.year"]} value={data.education[0].year} onChange={(v) => set("education", [{ ...data.education[0], year: v }])} />
+          <Field label="Qualification" error={fe["education.0.qualification"]} value={data.education[0].qualification} onChange={(v) => set("education", [{ ...data.education[0], qualification: v }])} />
         </div>
       </Section>
 
@@ -99,6 +87,7 @@ export default function InternalForm({
       ) : (
         <Section
           title="Projects"
+          invalid={hasErrorUnder(fe, "projects")}
           empty={!data.projects.some((p) => hasContent(p.title, p.duration, p.role, p.description, p.teamSize, p.toolsAndTechnologies, p.responsibilities))}
           onRemove={removeProjects}
           actions={
@@ -121,7 +110,7 @@ export default function InternalForm({
                 onRemove={(idx) => set("projects", data.projects.filter((_, j) => j !== idx))}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Project Name" value={p.title} onChange={(v) => setP({ title: v })} />
+                  <Field label="Project Name" error={fe[`projects.${i}.title`]} value={p.title} onChange={(v) => setP({ title: v })} />
                   <Field label="Duration" optional value={p.duration} onChange={(v) => setP({ duration: v })} />
                   <Field label="Team size" optional value={p.teamSize} onChange={(v) => setP({ teamSize: v })} />
                   <Field label="Role" optional value={p.role} onChange={(v) => setP({ role: v })} />
@@ -132,11 +121,11 @@ export default function InternalForm({
                   value={p.projectLink}
                   onChange={(v) => setP({ projectLink: v })}
                 />
-                <StringListEditor
+                <TagInput
                   label="Tools & technologies"
                   items={p.toolsAndTechnologies}
                   onChange={(v) => setP({ toolsAndTechnologies: v })}
-                  addLabel="Add tool"
+                  placeholder="e.g. Java, Spring Boot, AWS (S3, EC2)"
                 />
                 <AreaField label="Project Description" optional value={p.description} onChange={(v) => setP({ description: v })} />
                 <StringListEditor
@@ -154,8 +143,10 @@ export default function InternalForm({
 
       <Section
         title="Skills (with rating out of 5)"
+        invalid={hasErrorUnder(fe, "skills")}
         actions={<AddButton label="Add skill" onClick={() => set("skills", [...data.skills, { name: "", rating: "" }])} />}
       >
+        {fe["skills"] && <p className="text-xs font-medium text-brand-600">{fe["skills"]}</p>}
         {data.skills.map((s, i) => (
           <ItemCard
             key={i}
@@ -166,35 +157,35 @@ export default function InternalForm({
             onRemove={(idx) => set("skills", data.skills.filter((_, j) => j !== idx))}
           >
             <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <Field label="Skill" value={s.name} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
-              <Field label="Rating (e.g. 3.8)" value={s.rating} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, rating: v } : x)))} />
+              <Field label="Skill" error={fe[`skills.${i}.name`]} value={s.name} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
+              <Field label="Rating out of 5 (e.g. 4)" error={fe[`skills.${i}.rating`]} value={s.rating} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, rating: v } : x)))} />
             </div>
           </ItemCard>
         ))}
       </Section>
 
       <Section title="Certifications" empty={cleanList(data.certifications).length === 0}>
-        <StringListEditor items={data.certifications} onChange={(v) => set("certifications", v)} addLabel="Add certification" />
+        <TagInput items={data.certifications} onChange={(v) => set("certifications", v)} placeholder="e.g. PSM I, AWS Cloud Practitioner" />
       </Section>
 
       <Section title="Tools" empty={cleanList(data.tools).length === 0}>
-        <StringListEditor items={data.tools} onChange={(v) => set("tools", v)} addLabel="Add tool" />
+        <TagInput items={data.tools} onChange={(v) => set("tools", v)} placeholder="e.g. Git, Jira, Docker" />
       </Section>
 
       {managerialRemoved ? (
         <RemovedSection title="Managerial Experience" onRestore={restoreManagerial} />
       ) : (
         <Section title="Managerial Experience" empty={cleanList(data.managerialExperience).length === 0} onRemove={removeManagerial}>
-          <StringListEditor items={data.managerialExperience} onChange={(v) => set("managerialExperience", v)} addLabel="Add item" />
+          <TagInput items={data.managerialExperience} onChange={(v) => set("managerialExperience", v)} placeholder="e.g. Project Management, Team Building" />
         </Section>
       )}
 
       <Section title="Domains" empty={cleanList(data.domains).length === 0}>
-        <StringListEditor items={data.domains} onChange={(v) => set("domains", v)} addLabel="Add domain" />
+        <TagInput items={data.domains} onChange={(v) => set("domains", v)} placeholder="e.g. Retail, Fintech" />
       </Section>
 
       <Section title="Languages" empty={cleanList(data.languages).length === 0}>
-        <StringListEditor items={data.languages} onChange={(v) => set("languages", v)} addLabel="Add language" />
+        <TagInput items={data.languages} onChange={(v) => set("languages", v)} placeholder="e.g. English, Hindi" />
       </Section>
     </Accordion>
   );

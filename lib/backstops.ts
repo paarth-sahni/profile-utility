@@ -320,178 +320,31 @@ export function applyProfileHeader(
   return out;
 }
 
-// ---------------------------------------------------------------------------------------------------------
-// No-repetition checks (3f-3h). They only FLAG: the text is never rewritten, because a rewrite could add or change facts.
-// ---------------------------------------------------------------------------------------------------------
+/** A rating written the way resumes write it: "4.5/5", "4 / 5", "out of 5". */
+const RATING_PATTERN = /\b[0-5](?:\.\d+)?\s*\/\s*5\b|\bout of 5\b/i;
 
-export const OVERVIEW_REPEATS_HEADER_REASON = "overview repeats the header";
-export const BULLET_REPEATS_BULLET_REASON = "bullet repeats another bullet in this entry";
-export const BULLET_REPEATS_DESCRIPTION_REASON = "bullet repeats the description";
-export const DESCRIPTION_STARTS_WITH_TITLE_REASON = "description starts with the project title";
-
-/** Words that carry no meaning for comparing two pieces of text. */
-const STOP_WORDS = new Set(["a", "an", "the", "and", "or", "of", "in", "on", "for", "to", "with", "by", "at", "as", "is", "are", "was", "were", "from", "into", "that", "this", "its", "their", "his", "her"]);
-/** Seniority prefixes are dropped when comparing job titles ("Senior Software Engineer" restated as "Software engineer"). */
-const SENIORITY_WORDS = new Set(["senior", "sr", "junior", "jr", "lead", "principal", "staff", "associate", "head", "chief", "assistant"]);
-
-/** Light stem so "pipelines"/"pipeline" and "migrated"/"migrates"/"migrating" compare equal (plural, -ing / -ed, final e). */
-function stem(word: string): string {
-  let w = word;
-  if (w.length > 4) {
-    if (w.endsWith("ies")) w = `${w.slice(0, -3)}y`;
-    else if (/(sses|xes|ches|shes)$/.test(w)) w = w.slice(0, -2);
-    else if (w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
-  }
-  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
-  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
-  if (w.length > 4 && w.endsWith("e")) w = w.slice(0, -1);
-  return w;
-}
-
-/** Lower-cased content tokens (letters, digits, + and #), stop words removed, lightly stemmed. */
-export function contentTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[‐‑–—]/g, "-")
-    .split(/[^a-z0-9+#]+/)
-    .filter((w) => w && !STOP_WORDS.has(w))
-    .map(stem);
-}
-
-/** Overlap coefficient of two token lists: shared distinct tokens / the smaller distinct set (0 when either is empty). */
-export function tokenOverlap(a: string[], b: string[]): number {
-  const A = new Set(a);
-  const B = new Set(b);
-  if (A.size === 0 || B.size === 0) return 0;
-  let shared = 0;
-  for (const t of A) if (B.has(t)) shared++;
-  return shared / Math.min(A.size, B.size);
-}
-
-/** The first sentence: up to the first . ! or ? that is followed by a space and a capital letter (so "e.g." and "Node.js" survive). */
-export function firstSentence(text: string): string {
-  const m = text.trim().match(/^[\s\S]*?[.!?](?=\s+[A-Z])/);
-  return m ? m[0] : text.trim();
-}
-
-/** True when all `needle` tokens occur in `hay` within a window of needle.length + 1 tokens (any order, at most one extra word between). */
-function tokensWithinWindow(needle: string[], hay: string[]): boolean {
-  const need = new Set(needle);
-  if (need.size === 0) return false;
-  const size = need.size + 1;
-  for (let start = 0; start + 1 <= hay.length; start++) {
-    const window = new Set(hay.slice(start, start + size));
-    let all = true;
-    for (const t of need) if (!window.has(t)) { all = false; break; }
-    if (all) return true;
-  }
-  return false;
-}
-
-/** Does `sentence` restate `header` (a job title or specialization), allowing seniority words, reordering and plurals? */
-export function restatesHeaderText(sentence: string, header: string, dropSeniority: boolean): boolean {
-  let needle = contentTokens(header);
-  if (dropSeniority) {
-    const core = needle.filter((t) => !SENIORITY_WORDS.has(t));
-    if (core.length > 0) needle = core;
-  }
-  if (needle.length === 0) return false;
-  // a single word ("Developer") only counts when it is among the first three words of the sentence; deeper in, it is
-  // ordinary vocabulary ("Leads a team of developers…")
-  if (new Set(needle).size === 1) {
-    const opening = sentence.toLowerCase().split(/[^a-z0-9+#]+/).filter(Boolean).slice(0, 3).map(stem);
-    return opening.includes(needle[0]);
-  }
-  return tokensWithinWindow(needle, contentTokens(sentence));
-}
-
-/** "18+ Years of Industry Experience" -> 18; null when the line states no years. */
-const yearsOf = (line: string): number | null => {
-  const m = line.match(/(\d+)\s*\+?\s*(?:years?|yrs?)\b/i);
-  return m ? Number(m[1]) : null;
-};
-
-/** A years-of-experience statement: "15 years of experience", "over 6+ years of professional experience", "experience of 8 years". */
-const YEARS_OF_EXPERIENCE = /\b\d+\s*\+?\s*(?:years?|yrs?)\b(?:\s+of)?(?:\s+[\w-]+){0,3}?\s+experience\b|\bexperience\s+of\s+\d+\s*\+?\s*(?:years?|yrs?)\b/i;
-
-/** 3f. Flags an overview whose first sentence restates the job title, the experience line / its years, or the specialization. */
-export function flagOverviewRepeatsHeader(data: unknown, flags: ReviewFlag[]): ReviewFlag[] {
-  if (!isRecord(data) || hasFlag(flags, "overview", OVERVIEW_REPEATS_HEADER_REASON)) return flags;
-  const overview = str(data.overview);
-  if (!overview) return flags;
-  const sentence = firstSentence(overview);
-  const title = str(data.jobTitle);
-  const spec = str(data.specialization);
-  const headerYears = yearsOf(str(data.experienceSummary));
-  const repeatsTitle = !!title && restatesHeaderText(sentence, title, true);
-  const repeatsSpec = !!spec && restatesHeaderText(sentence, spec, false);
-  const statesYears =
-    YEARS_OF_EXPERIENCE.test(sentence) ||
-    (headerYears !== null && new RegExp(`\\b${headerYears}\\s*\\+?\\s*(?:years|yrs)\\b`, "i").test(sentence)); // plural only: "a 6 year programme" is not experience
-  if (!repeatsTitle && !repeatsSpec && !statesYears) return flags;
-  return [...flags, { path: "overview", reason: OVERVIEW_REPEATS_HEADER_REASON }];
-}
-
-/** The name an entry is printed under: internal project title, external project client. */
-const projectNameKey = (templateId: TemplateId): string => (templateId === "internal" ? "title" : "client");
-
-/** 3g. Flags the later of two near-duplicate bullets (overlap >= 0.8) in one entry, and any bullet that copies the description. */
-export function flagRepeatedBullets(templateId: TemplateId, data: unknown, flags: ReviewFlag[]): ReviewFlag[] {
-  if (!isRecord(data)) return flags;
-  const out = [...flags];
-  const flag = (path: string, reason: string) => {
-    if (!hasFlag(out, path, reason)) out.push({ path, reason });
-  };
-  /** Compares the bullets of one entry (and optionally its description). */
-  const checkEntry = (bullets: unknown, base: string, listKey: string, description: string) => {
-    if (!Array.isArray(bullets)) return;
-    const tokens = bullets.map((b) => contentTokens(str(b)));
-    const descTokens = contentTokens(description);
-    const MIN = 4; // very short bullets overlap by chance; identical ones are still caught below
-    bullets.forEach((raw, j) => {
-      const text = str(raw);
-      if (!text) return;
-      const path = `${base}.${listKey}.${j}`;
-      for (let k = 0; k < j; k++) {
-        const same = text.toLowerCase() === str(bullets[k]).toLowerCase();
-        if (same || (tokens[j].length >= MIN && tokens[k].length >= MIN && tokenOverlap(tokens[j], tokens[k]) >= 0.8)) {
-          flag(path, BULLET_REPEATS_BULLET_REASON);
-          break;
-        }
-      }
-      if (descTokens.length >= MIN && tokens[j].length >= MIN && tokenOverlap(tokens[j], descTokens) >= 0.8) {
-        flag(path, BULLET_REPEATS_DESCRIPTION_REASON);
-      }
-    });
-  };
-  if (Array.isArray(data.projects)) {
-    data.projects.forEach((p, i) => {
-      if (isRecord(p)) checkEntry(p.responsibilities, `projects.${i}`, "responsibilities", str(p.description));
-    });
-  }
-  if (Array.isArray(data.experience)) {
-    data.experience.forEach((e, i) => {
-      if (isRecord(e)) checkEntry(e.highlights, `experience.${i}`, "highlights", "");
-    });
-  }
-  return out;
-}
-
-/** 3h. Flags a project description that starts with the project's own name (it is printed right above the description). */
-export function flagDescriptionStartsWithTitle(templateId: TemplateId, data: unknown, flags: ReviewFlag[]): ReviewFlag[] {
-  if (!isRecord(data) || !Array.isArray(data.projects)) return flags;
-  const out = [...flags];
-  data.projects.forEach((p, i) => {
-    if (!isRecord(p)) return;
-    const name = contentTokens(str(p[projectNameKey(templateId)]));
-    const desc = contentTokens(str(p.description));
-    if (name.length === 0 || desc.length < name.length) return;
-    // the first words of the description are the name (allowing the odd stem / plural difference)
-    if (tokenOverlap(desc.slice(0, name.length), name) < 0.8) return;
-    const path = `projects.${i}.description`;
-    if (!hasFlag(out, path, DESCRIPTION_STARTS_WITH_TITLE_REASON)) out.push({ path, reason: DESCRIPTION_STARTS_WITH_TITLE_REASON });
+/**
+ * Skill ratings are never estimated. A rating stays only when the resume states ratings AND this number appears in it;
+ * otherwise it is blanked (the person fills it in) and any review flag on it is dropped. Internal template only.
+ */
+export function blankUnstatedRatings(templateId: TemplateId, data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (templateId !== "internal" || !isRecord(data) || !Array.isArray(data.skills)) return flags;
+  const statedAnywhere = RATING_PATTERN.test(sourceText);
+  const blanked = new Set<number>();
+  data.skills.forEach((skill, i) => {
+    if (!isRecord(skill)) return;
+    const rating = skill.rating == null ? "" : String(skill.rating).trim();
+    if (!rating) return;
+    if (!statedAnywhere || !valueInSource(rating, sourceText)) {
+      skill.rating = "";
+      blanked.add(i);
+    }
   });
-  return out;
+  if (blanked.size === 0) return flags;
+  return flags.filter((f) => {
+    const m = /^skills\.(\d+)\.rating$/.exec(f.path);
+    return !(m && blanked.has(Number(m[1])));
+  });
 }
 
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
@@ -503,7 +356,8 @@ export function applyBackstops(
   documentType?: string,
 ): { data: unknown; flags: ReviewFlag[] } {
   const copy = structuredClone(data);
-  let next = fillEmptyResponsibilities(templateId, copy, flags);
+  const withoutRatingFlags = blankUnstatedRatings(templateId, copy, flags, sourceText);
+  let next = fillEmptyResponsibilities(templateId, copy, withoutRatingFlags);
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);

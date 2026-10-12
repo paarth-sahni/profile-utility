@@ -15,7 +15,7 @@ function Chips({ items }: { items: string[] }) {
   return (
     <ul className="flex flex-wrap gap-1.5">
       {items.map((t, i) => (
-        <li key={i} className="rounded-full bg-cream px-2.5 py-1 text-xs text-ink">
+        <li key={i} className="rounded-2xl bg-cream px-2.5 py-1 text-xs text-ink">
           {t}
         </li>
       ))}
@@ -43,6 +43,9 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
   );
   const education = (d.education ?? []).filter((e) => hasText(e.year) || hasText(e.qualification));
   const internalSkills = template === "internal" ? (d.skills as unknown as { name: string; rating: string }[]).filter((s) => hasText(s.name)) : [];
+  // highest rating first; skills without a rating keep their order at the end
+  const ratingValue = (r: string) => (hasText(r) && Number.isFinite(Number(r)) ? Number(r) : -1);
+  const sortedSkills = [...internalSkills].sort((a, b) => ratingValue(b.rating) - ratingValue(a.rating));
   const externalSkills = template === "external" ? cleanList(d.skills as unknown as string[]) : [];
   const tools = cleanList(d.tools);
   const certifications = cleanList(d.certifications);
@@ -77,11 +80,13 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
 
       {internalSkills.length > 0 && (
         <Section title="Skills">
-          <ul className="grid gap-1 text-sm sm:grid-cols-2">
-            {internalSkills.map((s, i) => (
-              <li key={i} className="flex justify-between gap-3 border-b border-hairline py-1">
-                <span>{s.name}</span>
-                {formatRating(s.rating) && <span className="text-ink-light">{formatRating(s.rating)}</span>}
+          <ul className="flex flex-wrap gap-1.5">
+            {sortedSkills.map((s, i) => (
+              <li key={i} className="inline-flex items-center gap-1.5 rounded-full bg-cream py-1 pl-3 pr-1 text-xs text-ink">
+                {s.name}
+                {formatRating(s.rating) && (
+                  <span className="rounded-full bg-white px-2 py-0.5 font-medium text-brand-600 ring-1 ring-hairline">{formatRating(s.rating)}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -115,7 +120,7 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
       )}
       {managerial.length > 0 && (
         <Section title="Managerial experience">
-          <Bullets items={managerial} />
+          <Chips items={managerial} />
         </Section>
       )}
 

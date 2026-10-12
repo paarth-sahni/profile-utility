@@ -29,6 +29,9 @@ const looseText = () => z.string();
 /** True for a value with real content: not blank and not an "N/A"-style placeholder. */
 export const isRealText = (value: string): boolean => value.trim() !== "" && !isNAValue(value);
 
+/** True when a name has at least one letter or digit, so "--", "..." or "/" do not pass as a name. */
+export const isMeaningfulName = (value: string): boolean => isRealText(value) && /[\p{L}\p{N}]/u.test(value);
+
 /** An optional list (certifications, tools, ...): may be empty, and blank / "N/A" items are allowed and ignored. */
 const optionalList = () => z.array(z.string());
 
@@ -66,8 +69,12 @@ export const externalProjectSchema = z
     responsibilities: optionalList(),
   })
   .superRefine((p, ctx) => {
-    if (anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities) && !isRealText(p.client)) {
-      ctx.addIssue({ code: "custom", path: ["client"], message: "client is required" });
+    if (anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities) && !isMeaningfulName(p.client)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["client"],
+        message: isRealText(p.client) ? "Enter a valid project name" : "client is required",
+      });
     }
   });
 
@@ -79,8 +86,12 @@ export const externalExperienceSchema = z
     highlights: optionalList(),
   })
   .superRefine((x, ctx) => {
-    if (anyReal(x.company, x.position, x.duration, x.highlights) && !isRealText(x.company)) {
-      ctx.addIssue({ code: "custom", path: ["company"], message: "company is required" });
+    if (anyReal(x.company, x.position, x.duration, x.highlights) && !isMeaningfulName(x.company)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["company"],
+        message: isRealText(x.company) ? "Enter a valid company name" : "company is required",
+      });
     }
   });
 
@@ -118,9 +129,13 @@ export const internalProjectSchema = z
   .superRefine((p, ctx) => {
     if (
       anyReal(p.duration, p.title, p.toolsAndTechnologies, p.teamSize, p.role, p.projectLink, p.description, p.responsibilities) &&
-      !isRealText(p.title)
+      !isMeaningfulName(p.title)
     ) {
-      ctx.addIssue({ code: "custom", path: ["title"], message: "title is required" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["title"],
+        message: isRealText(p.title) ? "Enter a valid project name" : "title is required",
+      });
     }
   });
 
@@ -159,6 +174,8 @@ export const schemaFor = (id: TemplateId) =>
 export interface NAIssue {
   path: string;
   message: string;
+  /** Dot path of the field ("projects.0.title"), used to highlight it on the Review screen. */
+  key?: string;
 }
 
 /** Human-readable names for schema field keys, used to turn a raw path like
@@ -253,6 +270,7 @@ export function findNAIssues(templateId: TemplateId, data: ResumeData): NAIssue[
       if (isNAValue(value) && !isOptionalNAPath(path)) {
         issues.push({
           path: describeFieldPath(path),
+          key: path.join("."),
           message: 'Still shows the placeholder "N/A" — please replace it with the real value before generating.',
         });
       }

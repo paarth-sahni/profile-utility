@@ -17,6 +17,7 @@ import {
 import { extractResumeText } from "./extractText";
 import { applyBackstops, reconcileFlagPaths } from "./backstops";
 import { completeJson } from "./llm";
+import { toNameCase } from "./nameCase";
 import { normalizeToShape } from "./normalize";
 import { ANALYZE_PROMPT, RESUME_AS_DATA_RULE, buildExtractionPrompt, describePromptPlan } from "./prompts";
 import { describeFieldPath, schemaFor, type TemplateId } from "./schemas";
@@ -134,6 +135,8 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
 
   // 7. Always return something the Review form can render, plus whatever is still invalid.
   const normalized = normalizeToShape(templateId, backstopped.data);
+  // Resumes often print the name in capitals; show it in normal case.
+  normalized.name = toNameCase(normalized.name);
   const finalCheck = profileSchema.safeParse(normalized);
   const issues = finalCheck.success ? [] : toIssues(finalCheck.error.issues);
   // every flag must point at a field that exists in the output

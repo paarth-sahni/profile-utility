@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import Stepper from "@/components/Stepper";
+import UploadProgress from "@/components/UploadProgress";
+import ExtractionSummary from "@/components/ExtractionSummary";
+import ProfileGeneratorMark from "@/components/ProfileGeneratorMark";
+import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
 import { generateDocx } from "@/lib/generate";
@@ -20,7 +24,7 @@ import DraftRestoreBanner from "@/components/DraftRestoreBanner";
 import { type Draft, readDraft, shouldKeepDraft, writeDraft } from "@/lib/draft";
 import { clearDraft, getSessionStorage } from "@/lib/draftStorage";
 import type { ResumeAnalysis, ReviewFlag } from "@/lib/extract.types";
-import type { ExtractIssue, ExtractResult } from "@/lib/extract.types";
+import type { ExtractResult } from "@/lib/extract.types";
 import {
   blankResume,
   describeFieldPath,
@@ -54,7 +58,7 @@ export interface SavedInitial {
   reviewFlags: { path: string; reason: string }[];
 }
 
-type UploadStatus = "idle" | "reading" | "structuring";
+type UploadStatus = "idle" | "reading" | "structuring" | "finishing";
 
 const STEP_UPLOAD = 1;
 const STEP_REVIEW = 2;
@@ -114,12 +118,9 @@ const STEP_LABELS: Record<TemplateId, string[]> = {
   internal: ["Start", "Upload resume", "Review & Generate", "Submit"],
 };
 
-const STATUS_TEXT: Record<Exclude<UploadStatus, "idle">, string> = {
-  reading: "Reading your resume…",
-  structuring: "Structuring your profile…",
-};
+/** Shown next to the Save button when required information is missing. */
+const MISSING_MSG = "Some required information is missing. Fill in the fields marked in red, then save again.";
 
-const toFieldErrors = (issues: ExtractIssue[]): FieldError[] => issues.map((i) => ({ path: i.path, message: i.message }));
 
 /** What the server knows about the sign-in (see lib/sessionInfo.ts). */
 export interface WorkflowSession {
@@ -143,6 +144,9 @@ export default function ProfileWorkflow({
   const [source, setSource] = useState<Source | null>(initial ? "saved" : null);
   const [data, setData] = useState<ResumeData | null>(initial?.data ?? null);
   const [errors, setErrors] = useState<FieldError[] | null>(null);
+  // field key ("name", "education.0.year") -> message, to mark the fields in red
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [scrollTick, setScrollTick] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<string | null>(null);
@@ -157,7 +161,6 @@ export default function ProfileWorkflow({
 
   // extraction result shown on Review
   const [extraction, setExtraction] = useState<ExtractResult | null>(null);
-  const [flagsDismissed, setFlagsDismissed] = useState(false);
   const [edited, setEdited] = useState(false);
 
   // saving to My Profiles
@@ -314,7 +317,11 @@ export default function ProfileWorkflow({
     setUploadError(null);
     setFileName(file.name);
     setUploadStatus("reading");
-    stageTimer.current = setTimeout(() => setUploadStatus("structuring"), 4000);
+    // step the progress view forward while the server works (the last timer is cleared in `finally`)
+    stageTimer.current = setTimeout(() => {
+      setUploadStatus("structuring");
+      stageTimer.current = setTimeout(() => setUploadStatus("finishing"), 8000);
+    }, 4000);
     try {
       const result = await uploadResume(file, templateId);
       setData(result.data);
@@ -328,7 +335,6 @@ export default function ProfileWorkflow({
       setDirty(false);
       setDownloaded(false);
       setRestored(null);
-      setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
       setGenerateError(null);
@@ -350,42 +356,53 @@ export default function ProfileWorkflow({
   };
 
   /**
+   * Checks a profile against the rules that apply to every profile (required fields, placeholder "N/A" values) and
+   * returns the validated data, or the list of problems plus a field-key -> message map to highlight them.
+   * In the internal blank-form route the experience summary is a bare number of years; it is expanded to the full
+   * "<N>+ Years of Industry Experience" string first (the upload route already supplies that string).
+   */
+  const checkProfile = (d: ResumeData): { data: ResumeData | null; list: FieldError[]; byPath: Record<string, string> } => {
+    const effective: ResumeData =
+      fromScratch && templateId === "internal"
+        ? { ...(d as InternalResume), experienceSummary: formatYearsExperience((d as InternalResume).experienceSummary) }
+        : d;
+    const result = schemaFor(templateId).safeParse(effective);
+    if (!result.success) {
+      const fe = pathIssuesToErrors(result.error.issues.map((i) => ({ path: i.path as (string | number)[], message: i.message })));
+      return {
+        data: null,
+        list: fe.list.map((p) => ({ path: p.label, message: p.message })),
+        byPath: fe.byPath,
+      };
+    }
+    const na = findNAIssues(templateId, result.data);
+    if (na.length > 0) {
+      const byPath: Record<string, string> = {};
+      for (const n of na) if (n.key) byPath[n.key] = 'Replace the placeholder "N/A" with the real value.';
+      return { data: null, list: na, byPath };
+    }
+    return { data: result.data as ResumeData, list: [], byPath: {} };
+  };
+
+  /**
    * Re-validates the form right before an export (DOCX or Google Docs): covers the uploaded-profile path and the
    * blank-form path, plus any edits made in the review step; the "N/A" check only runs here. Shows the problems
    * in the form and returns null, or returns the validated data.
    */
   const validateForExport = (): ResumeData | null => {
     if (!data) return null;
-
-    // In the internal blank-form route the experience summary is captured as a bare number
-    // of years; expand it to the full "<N>+ Years of Industry Experience" string used in the
-    // document (the upload route already supplies that string, so it is left untouched).
-    const effective: ResumeData =
-      fromScratch && templateId === "internal"
-        ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) }
-        : data;
-
-    const result = schemaFor(templateId).safeParse(effective);
-    if (!result.success) {
-      setErrors(
-        result.error.issues.map((issue) => ({
-          path: issue.path.length ? describeFieldPath(issue.path as (string | number)[]) : "(root)",
-          message: issue.message,
-        })),
-      );
-      setGenerateError(null);
-      setGenerated(null);
-      return null;
+    const r = checkProfile(data);
+    if (r.data) {
+      setErrors(null);
+      setFieldErrors({});
+      return r.data;
     }
-    const naIssues = findNAIssues(templateId, result.data);
-    if (naIssues.length > 0) {
-      setErrors(naIssues);
-      setGenerateError(null);
-      setGenerated(null);
-      return null;
-    }
-    setErrors(null);
-    return result.data;
+    setErrors(r.list);
+    setFieldErrors(r.byPath);
+    setGenerateError(null);
+    setGenerated(null);
+    setScrollTick((t) => t + 1);
+    return null;
   };
 
   const handleGenerate = async () => {
@@ -407,24 +424,37 @@ export default function ProfileWorkflow({
     }
   };
 
-  // When generating fails, open every section so the user can find the fields that need fixing.
-  const [expandTick, setExpandTick] = useState(0);
+  // After a failed check, bring the first marked field into view (its section opens itself first).
   useEffect(() => {
-    if (errors && errors.length > 0) setExpandTick((t) => t + 1);
-  }, [errors]);
+    if (scrollTick === 0) return;
+    const t = setTimeout(() => {
+      document.querySelector<HTMLElement>('[data-invalid="true"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [scrollTick]);
 
   const handleFormChange = (d: ResumeData) => {
     setData(d);
     setEdited(true);
     setDirty(true);
     setDownloaded(false);
-    if (errors) setErrors(null);
+    if (errors) {
+      const r = checkProfile(d);
+      setErrors(r.data ? null : r.list);
+      setFieldErrors(r.data ? {} : r.byPath);
+      if (r.data && saveError === MISSING_MSG) setSaveError(null);
+    }
   };
 
   /** Saves the current form as a new immutable version in My Profiles (drafts with blanks are allowed). */
   const handleSave = async () => {
     if (!data || saving) return;
     setSaveError(null);
+    // required information must be there before anything is saved (same rules as Generate)
+    if (!validateForExport()) {
+      setSaveError(MISSING_MSG);
+      return;
+    }
     const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
     // A role-specific version must be named; a normal one falls back to "Base" / "v<next>".
     const resolved = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: kind === "role_specific" });
@@ -501,7 +531,6 @@ export default function ProfileWorkflow({
     setErrors(null);
     setGenerateError(null);
     setGenerated(null);
-    setFlagsDismissed(false);
     setEdited(true);
     setDirty(true);
     setDownloaded(false);
@@ -526,17 +555,24 @@ export default function ProfileWorkflow({
   };
 
   const flags = flagsNow;
-  const issues = extraction?.issues ?? [];
-  const showFlagsPanel = (source === "upload" || source === "saved") && !flagsDismissed && (flags.length > 0 || issues.length > 0);
 
   return (
     <div className="w-full text-ink">
       {/* hero — only on the start page; title and subtext are per-audience. The subtext stays on one line on wide
           screens (font scales with the viewport) and wraps normally on narrow ones. */}
       {step === 0 && (
-        <section className="bg-cream">
-          <div className="mx-auto max-w-[110rem] px-4 py-7 text-center">
-            <h1 className="text-3xl font-medium tracking-tight text-ink-dark sm:text-4xl">InfoBeans Profile Generator</h1>
+        <section className="relative overflow-hidden bg-cream">
+          {/* soft brand glow behind the title */}
+          <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-100/70 blur-3xl" aria-hidden />
+          <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-peach/60 blur-3xl" aria-hidden />
+          <div className="relative mx-auto max-w-[110rem] px-4 pb-6 pt-7 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-hairline">
+              <ProfileGeneratorMark className="h-9 w-9" />
+            </div>
+            <h1 className="text-3xl font-medium tracking-tight text-ink-dark sm:text-4xl lg:text-5xl">
+              InfoBeans <span className="text-brand-500">Profile Generator</span>
+            </h1>
+            <span className="mx-auto mt-3 block h-1 w-14 rounded-full bg-brand-500" aria-hidden />
             <p className="mx-auto mt-3 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
               {HERO_SUBTEXT[templateId]}
             </p>
@@ -649,7 +685,7 @@ export default function ProfileWorkflow({
                 onDrop={onDrop}
                 className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition ${
                   dragging ? "border-brand-500 bg-brand-50" : "border-gray-300 bg-white"
-                } ${uploading ? "opacity-60" : ""}`}
+                }`}
               >
                 <input
                   ref={fileInput}
@@ -664,26 +700,24 @@ export default function ProfileWorkflow({
                     if (file) void handleFile(file);
                   }}
                 />
-                <p className="text-sm text-ink">Drag and drop your file here, or</p>
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => fileInput.current?.click()}
-                  className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
-                >
-                  Choose a file
-                </button>
-                <p className="text-xs text-ink-light">PDF or DOCX, up to 10 MB</p>
-              </div>
-
-              <div aria-live="polite" className="mt-4 min-h-6 text-sm text-ink-light">
-                {uploading && (
-                  <span>
-                    {fileName ? `${fileName} — ` : ""}
-                    {STATUS_TEXT[uploadStatus as Exclude<UploadStatus, "idle">]}
-                  </span>
+                {uploading ? (
+                  <UploadProgress stage={uploadStatus as "reading" | "structuring" | "finishing"} fileName={fileName} />
+                ) : (
+                  <>
+                    <p className="text-sm text-ink">Drag and drop your file here, or</p>
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => fileInput.current?.click()}
+                      className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
+                    >
+                      Choose a file
+                    </button>
+                    <p className="text-xs text-ink-light">PDF or DOCX, up to 10 MB</p>
+                  </>
                 )}
               </div>
+
 
               {uploadError && !uploading && (
                 <div role="alert" className="mt-2 space-y-3 rounded-md border border-brand-200 bg-brand-50 p-3">
@@ -724,65 +758,18 @@ export default function ProfileWorkflow({
         {/* ---------- STEP 2: review & generate ---------- */}
         {step === STEP_REVIEW && data && (
           <div className="animate-fade-up space-y-5">
-            {source === "upload" && extraction && (
-              <details className="rounded-md border border-gray-200 bg-white px-4 py-2 text-xs text-ink-light">
-                <summary className="cursor-pointer hover:text-ink">How this profile was read</summary>
-                <dl className="mt-2 space-y-1">
-                  <div>
-                    <dt className="inline font-medium text-ink">Document: </dt>
-                    <dd className="inline">{extraction.analysis.documentType.replaceAll("_", " ")}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline font-medium text-ink">Seniority: </dt>
-                    <dd className="inline">{extraction.analysis.seniority}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline font-medium text-ink">Prompt modules: </dt>
-                    <dd className="inline">{extraction.promptPlan.join(", ") || "none"}</dd>
-                  </div>
-                </dl>
-              </details>
-            )}
-
-            {showFlagsPanel && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-4">
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-amber-800">Please double-check</p>
-                  <button
-                    type="button"
-                    onClick={() => setFlagsDismissed(true)}
-                    aria-label="Dismiss"
-                    className="rounded px-1 text-sm text-amber-700 hover:bg-amber-100"
-                  >
-                    ✕
-                  </button>
-                </div>
-                {flags.length > 0 && <FlagList flags={flags} />}
-                {issues.length > 0 && (
-                  <>
-                    <p className="mb-1 mt-3 text-sm font-semibold text-amber-800">Still needed before you can generate</p>
-                    <ul className="space-y-1 text-sm text-amber-900">
-                      {toFieldErrors(issues).map((f, i) => (
-                        <li key={i}>
-                          <span className="font-medium">{f.path}</span> — {f.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            )}
+            {source === "upload" && extraction && <ExtractionSummary fileName={fileName} />}
 
             {templateId === "external" ? (
-              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} expandTick={expandTick} />
+              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} fieldErrors={fieldErrors} />
             ) : (
-              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} expandTick={expandTick} />
+              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} fieldErrors={fieldErrors} />
             )}
 
             {errors && (
               <div className="rounded-md border border-brand-200 bg-brand-50 p-3">
                 <p className="mb-2 text-sm font-semibold text-brand-700">
-                  Can&apos;t generate yet — {errors.length} {errors.length === 1 ? "issue" : "issues"} to fix:
+                  Please fix {errors.length} {errors.length === 1 ? "issue" : "issues"} before continuing:
                 </p>
                 <ul className="space-y-1 text-sm text-brand-700">
                   {errors.map((err, i) => (

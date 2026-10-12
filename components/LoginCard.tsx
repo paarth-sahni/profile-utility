@@ -46,16 +46,11 @@ export default function LoginCard({ next, initialError }: { next: string; initia
 
   return (
     <div className="animate-fade-up w-full max-w-md">
-      {/* Brand row: logo | app name, centred over the card and kept on ONE line (it wraps only on very narrow phones). */}
-      <div className="mb-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`${BASE}/img/logo.png`} alt="InfoBeans" width={240} height={76} className="h-11 w-auto sm:h-12" />
-        <span className="hidden h-9 w-px bg-hairline sm:block" aria-hidden />
-        <span className="flex items-center gap-2.5">
-          <ProfileGeneratorMark className="h-9 w-9 shrink-0 sm:h-10 sm:w-10" />
-          <span className="whitespace-nowrap text-xl font-medium leading-none text-ink sm:text-[1.4rem]">
-            Profile <span className="text-brand-500">Generator</span>
-          </span>
+      {/* Only the app mark and name here: the InfoBeans logo is already in the header. */}
+      <div className="mb-8 flex items-center justify-center gap-3.5">
+        <ProfileGeneratorMark className="h-12 w-12 shrink-0" />
+        <span className="whitespace-nowrap text-3xl font-medium leading-none text-ink">
+          Profile <span className="text-brand-500">Generator</span>
         </span>
       </div>
 

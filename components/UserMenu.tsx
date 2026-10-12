@@ -66,7 +66,7 @@ export default function UserMenu({ user }: { user: NavUser }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account menu for ${user.name}`}
-        className="flex items-center gap-2 rounded-full p-0.5 pr-2 ring-1 ring-hairline transition hover:ring-brand-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        className="flex items-center gap-2 rounded-full p-0.5 ring-1 ring-hairline md:pr-2 transition hover:ring-brand-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
       >
         <Avatar user={user} size="sm" />
         <svg
@@ -78,7 +78,7 @@ export default function UserMenu({ user }: { user: NavUser }) {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`text-ink-light transition-transform ${open ? "rotate-180" : ""}`}
+          className={`hidden text-ink-light transition-transform md:block ${open ? "rotate-180" : ""}`}
           aria-hidden
         >
           <polyline points="6 9 12 15 18 9" />

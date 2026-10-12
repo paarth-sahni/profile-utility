@@ -48,7 +48,7 @@ export default async function RootLayout({
     <html lang="en" className={`${lexend.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-[--background] text-ink">
         <SiteNav user={user} />
-        <div className="flex-1">{children}</div>
+        <div className="flex flex-1 flex-col">{children}</div>
         <Footer />
       </body>
     </html>
