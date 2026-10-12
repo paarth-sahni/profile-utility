@@ -10,8 +10,8 @@ never stored.
 The generator (`/internal`, `/external`) is one workflow with these steps:
 
 1. **Start** — upload a resume / existing profile, or start from a blank form.
-2. **Upload resume** — the file is read and pre-fills the form; anything that had to be estimated is flagged in a
-   *Please double-check* panel (grouped when the same thing applies to many fields).
+2. **Upload resume** — the file is read and pre-fills the form; a single note above the form asks you to review every
+   section (`ExtractionSummary`).
 3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
    (name, job title, overview, one education entry, one skill) are marked in red when missing. Internal profiles can
    also be saved here (*Save to My Profiles*, version labels, role-specific versions).
@@ -121,7 +121,7 @@ DOCX rendered, the downloaded file matches what was previewed, validation gate, 
 Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version (and reusing it when unchanged),
 external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
 and admins only (Preview, My Profiles, Manage), previews hiding empty sections, version label defaults, the
-unsaved-changes dialog, optional-section notes, brand rules and the grouped review flags. Google is **stubbed** in the page (a fake token client;
+unsaved-changes dialog, optional-section notes and brand rules. Google is **stubbed** in the page (a fake token client;
 Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
 `npm run dev` starts, otherwise they are skipped.
