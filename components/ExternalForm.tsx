@@ -1,26 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { cleanList, hasContent } from "@/lib/previewModel";
 import { wordCount, type ExternalResume } from "@/lib/schemas";
-import { Accordion, AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
-
-function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
-      <span className="text-sm text-gray-400">
-        <span className="font-medium uppercase tracking-wide">{title}</span>
-        <span className="ml-2 italic">— removed from document</span>
-      </span>
-      <button
-        type="button"
-        onClick={onRestore}
-        className="text-xs font-medium text-brand-600 hover:underline"
-      >
-        Restore
-      </button>
-    </div>
-  );
-}
+import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, moveItem } from "./fields";
 
 const BLANK_PROJECT: ExternalResume["projects"][number] = {
   duration: "", client: "", teamSize: "", role: "", description: "", responsibilities: [""],
@@ -50,9 +33,10 @@ export default function ExternalForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" value={data.name} onChange={(v) => set("name", v)} />
           <Field label="Job title" value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
-          <Field label="Experience summary" value={data.experienceSummary} onChange={(v) => set("experienceSummary", v)} />
+          <Field label="Experience summary" optional value={data.experienceSummary} onChange={(v) => set("experienceSummary", v)} />
           <Field
             label="Specialization"
+            optional
             value={data.specialization}
             onChange={(v) => set("specialization", v)}
             maxWords={5}
@@ -74,11 +58,11 @@ export default function ExternalForm({
         <StringListEditor items={data.skills} onChange={(v) => set("skills", v)} addLabel="Add skill" />
       </Section>
 
-      <Section title="Tools">
+      <Section title="Tools" empty={cleanList(data.tools).length === 0}>
         <StringListEditor items={data.tools} onChange={(v) => set("tools", v)} addLabel="Add tool" />
       </Section>
 
-      <Section title="Certifications">
+      <Section title="Certifications" empty={cleanList(data.certifications).length === 0}>
         <StringListEditor items={data.certifications} onChange={(v) => set("certifications", v)} addLabel="Add certification" />
       </Section>
 
@@ -87,6 +71,7 @@ export default function ExternalForm({
       ) : (
         <Section
           title="Projects"
+          empty={!data.projects.some((p) => hasContent(p.client, p.duration, p.role, p.description, p.teamSize, p.responsibilities))}
           onRemove={removeProjects}
           actions={
             <AddButton
@@ -109,11 +94,11 @@ export default function ExternalForm({
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Project Name" value={p.client} onChange={(v) => setP({ client: v })} />
-                  <Field label="Duration" value={p.duration} onChange={(v) => setP({ duration: v })} />
+                  <Field label="Duration" optional value={p.duration} onChange={(v) => setP({ duration: v })} />
                   <Field label="Team size" optional value={p.teamSize} onChange={(v) => setP({ teamSize: v })} />
                 </div>
-                <Field label="Role" value={p.role} onChange={(v) => setP({ role: v })} />
-                <AreaField label="Project Description" value={p.description} onChange={(v) => setP({ description: v })} />
+                <Field label="Role" optional value={p.role} onChange={(v) => setP({ role: v })} />
+                <AreaField label="Project Description" optional value={p.description} onChange={(v) => setP({ description: v })} />
                 <StringListEditor
                   label="Responsibilities (bullets)"
                   items={p.responsibilities}
@@ -129,6 +114,7 @@ export default function ExternalForm({
 
       <Section
         title="Experience"
+        empty={!data.experience.some((e) => hasContent(e.company, e.position, e.duration, e.highlights))}
         actions={
           <AddButton
             label="Add employer"
@@ -150,8 +136,8 @@ export default function ExternalForm({
             >
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Company Name" value={e.company} onChange={(v) => setE({ company: v })} />
-                <Field label="Role" value={e.position} onChange={(v) => setE({ position: v })} />
-                <Field label="Duration" value={e.duration} onChange={(v) => setE({ duration: v })} />
+                <Field label="Role" optional value={e.position} onChange={(v) => setE({ position: v })} />
+                <Field label="Duration" optional value={e.duration} onChange={(v) => setE({ duration: v })} />
               </div>
               <StringListEditor
                 label="Responsibilities (bullets)"

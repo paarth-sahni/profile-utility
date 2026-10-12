@@ -322,4 +322,48 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
   }
 });
 
+await t.scenario("optional sections: 'left out of the document' notes, and only the required fields are enough", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "review form");
+  /** Types into the field whose label text is exactly `label` (ignoring "(optional)"), input or textarea. */
+  const fill = (label, value) =>
+    ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>(l.querySelector('span')?.textContent??'').replace('(optional)','').trim()===${JSON.stringify(label)}); const i=l?.querySelector('input,textarea'); if(!i) return false; const proto=i.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement; Object.getOwnPropertyDescriptor(proto.prototype,'value').set.call(i,${JSON.stringify(value)}); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`);
+  const notes = () =>
+    ev(`JSON.stringify([...document.querySelectorAll('h3')].filter(h=>h.textContent.includes('left out of the document')).map(h=>h.textContent.replace('— left out of the document','').trim()))`);
+
+  const blank = JSON.parse(await notes());
+  check("a blank form marks every optional section as left out", JSON.stringify(blank) === JSON.stringify(["Projects", "Certifications", "Tools", "Managerial Experience", "Domains", "Languages"]), JSON.stringify(blank));
+  check("required sections never show the note", !blank.some((n) => /Profile|Education|Skills/i.test(n)));
+
+  // required fields only
+  await fill("Name", "E2E Required Only");
+  await fill("Job title", "Engineer");
+  await fill("Overview", "Only the overview.");
+  await fill("Year", "2014");
+  await fill("Qualification", "B.E.");
+  await fill("Skill", "Java");
+  await fill("Rating (e.g. 3.8)", "4");
+  await sleep(300);
+  await click("DOCX ↓");
+  await waitFor("document.body.innerText.includes('DOCX downloaded')", "docx generated with only the required fields");
+  check("a profile with only the required fields generates its DOCX (no validation errors)", !(await bodyText()).includes("Please fix"));
+
+  // filling an optional section removes its note
+  await fill("Certifications", "x"); // not a label: no-op guard
+  const certInput = await ev(`(()=>{const h=[...document.querySelectorAll('h3')].find(h=>h.textContent.startsWith('Certifications')); const i=h?.closest('section')?.querySelector('input'); if(!i) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Sample Cloud Associate'); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`);
+  await sleep(300);
+  const after = JSON.parse(await notes());
+  check("typing in an optional section removes its note", certInput && !after.includes("Certifications") && after.includes("Tools"), JSON.stringify(after));
+
+  // required field cleared again -> clear error, naming the field
+  await fill("Overview", "");
+  await click("DOCX ↓");
+  await waitFor("document.body.innerText.includes('overview')", "overview error");
+  check("a missing required field is still reported", true);
+});
+
 await t.finish();

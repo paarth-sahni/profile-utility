@@ -23,12 +23,31 @@ export const wordCount = (value: string): number => {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 };
 
-/** A required text field capped at `max` words (e.g. specialization: "MAX 5 WORDS"). */
-const maxWords = (label: string, max: number) =>
-  nonEmpty(label).refine((v) => wordCount(v) <= max, `${label} must be at most ${max} words`);
-
 /** A field that's optional in the UI: blank is fine, and "N/A" is left as-is (the UI hints the user to fill it in or clear it). */
 const looseText = () => z.string();
+
+/** True for a value with real content: not blank and not an "N/A"-style placeholder. */
+export const isRealText = (value: string): boolean => value.trim() !== "" && !isNAValue(value);
+
+/** An optional list (certifications, tools, ...): may be empty, and blank / "N/A" items are allowed and ignored. */
+const optionalList = () => z.array(z.string());
+
+/** An optional header line: blank is fine; when filled it is capped at `max` words. */
+const optionalMaxWords = (label: string, max: number) =>
+  z.string().refine((v) => wordCount(v) <= max, `${label} must be at most ${max} words`);
+
+/** True when any of the given values (text or list of text) has real content. */
+const anyReal = (...values: (string | string[])[]): boolean =>
+  values.some((v) => (Array.isArray(v) ? v.some(isRealText) : isRealText(v)));
+
+/*
+ * REQUIRED in every profile: name, job title, overview, education (exactly one entry), at least one skill.
+ * Everything else is OPTIONAL and may be empty: experience summary, specialization, certifications, tools, domains,
+ * languages, managerial experience, projects, and (external) experience entries. An optional section with nothing
+ * real in it is left out of the generated document (heading included); see prepareData in lib/docxData.ts.
+ * A project / experience entry that has any real content must at least be named (project title, client, company);
+ * its other fields are optional and are left out of the document when empty. A completely empty entry is ignored.
+ */
 
 export const educationEntrySchema = z.object({
   year: nonEmpty("year"),
@@ -37,52 +56,73 @@ export const educationEntrySchema = z.object({
 
 /* ---------- External template ---------- */
 
-export const externalProjectSchema = z.object({
-  duration: nonEmpty("duration"),
-  client: nonEmpty("client"),
-  teamSize: looseText(),
-  role: nonEmpty("role"),
-  description: nonEmpty("description"),
-  responsibilities: z.array(nonEmpty("responsibility")).min(1, "at least one responsibility"),
-});
+export const externalProjectSchema = z
+  .object({
+    duration: looseText(),
+    client: looseText(),
+    teamSize: looseText(),
+    role: looseText(),
+    description: looseText(),
+    responsibilities: optionalList(),
+  })
+  .superRefine((p, ctx) => {
+    if (anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities) && !isRealText(p.client)) {
+      ctx.addIssue({ code: "custom", path: ["client"], message: "client is required" });
+    }
+  });
 
-export const externalExperienceSchema = z.object({
-  company: nonEmpty("company"),
-  position: nonEmpty("position"),
-  duration: nonEmpty("duration"),
-  highlights: z.array(nonEmpty("highlight")).min(1, "at least one highlight"),
-});
+export const externalExperienceSchema = z
+  .object({
+    company: looseText(),
+    position: looseText(),
+    duration: looseText(),
+    highlights: optionalList(),
+  })
+  .superRefine((x, ctx) => {
+    if (anyReal(x.company, x.position, x.duration, x.highlights) && !isRealText(x.company)) {
+      ctx.addIssue({ code: "custom", path: ["company"], message: "company is required" });
+    }
+  });
 
 export const externalResumeSchema = z.object({
   name: nonEmpty("name"),
   jobTitle: nonEmpty("jobTitle"),
-  experienceSummary: nonEmpty("experienceSummary"),
-  specialization: maxWords("specialization", 5),
+  experienceSummary: looseText(),
+  specialization: optionalMaxWords("specialization", 5),
   overview: nonEmpty("overview"),
   education: z
     .array(educationEntrySchema)
     .length(1, "exactly one education entry — the highest qualification only"),
   skills: z.array(nonEmpty("skill")).min(1, "at least one skill"),
-  tools: z.array(nonEmpty("tool")).min(1, "at least one tool"),
-  certifications: z.array(nonEmpty("certification")).min(1, "at least one certification"),
+  tools: optionalList(),
+  certifications: optionalList(),
   projects: z.array(externalProjectSchema),
-  experience: z.array(externalExperienceSchema).min(1, "at least one experience entry"),
+  experience: z.array(externalExperienceSchema),
 });
 
 export type ExternalResume = z.infer<typeof externalResumeSchema>;
 
 /* ---------- Internal template ---------- */
 
-export const internalProjectSchema = z.object({
-  duration: nonEmpty("duration"),
-  title: nonEmpty("title"),
-  toolsAndTechnologies: z.array(nonEmpty("tool/technology")).min(1, "at least one tool/technology"),
-  teamSize: looseText(),
-  role: nonEmpty("role"),
-  projectLink: looseText(),
-  description: nonEmpty("description"),
-  responsibilities: z.array(nonEmpty("responsibility")).min(1, "at least one responsibility"),
-});
+export const internalProjectSchema = z
+  .object({
+    duration: looseText(),
+    title: looseText(),
+    toolsAndTechnologies: optionalList(),
+    teamSize: looseText(),
+    role: looseText(),
+    projectLink: looseText(),
+    description: looseText(),
+    responsibilities: optionalList(),
+  })
+  .superRefine((p, ctx) => {
+    if (
+      anyReal(p.duration, p.title, p.toolsAndTechnologies, p.teamSize, p.role, p.projectLink, p.description, p.responsibilities) &&
+      !isRealText(p.title)
+    ) {
+      ctx.addIssue({ code: "custom", path: ["title"], message: "title is required" });
+    }
+  });
 
 export const internalSkillSchema = z.object({
   name: nonEmpty("skill name"),
@@ -92,19 +132,19 @@ export const internalSkillSchema = z.object({
 export const internalResumeSchema = z.object({
   name: nonEmpty("name"),
   jobTitle: nonEmpty("jobTitle"),
-  experienceSummary: nonEmpty("experienceSummary"),
-  specialization: maxWords("specialization", 5),
+  experienceSummary: looseText(),
+  specialization: optionalMaxWords("specialization", 5),
   overview: nonEmpty("overview"),
   education: z
     .array(educationEntrySchema)
     .length(1, "exactly one education entry — the highest qualification only"),
   projects: z.array(internalProjectSchema),
   skills: z.array(internalSkillSchema).min(1, "at least one skill"),
-  certifications: z.array(nonEmpty("certification")).min(1, "at least one certification"),
-  tools: z.array(nonEmpty("tool")).min(1, "at least one tool"),
-  managerialExperience: z.array(nonEmpty("managerial experience item")),
-  domains: z.array(nonEmpty("domain")).min(1, "at least one domain"),
-  languages: z.array(nonEmpty("language")).min(1, "at least one language"),
+  certifications: optionalList(),
+  tools: optionalList(),
+  managerialExperience: optionalList(),
+  domains: optionalList(),
+  languages: optionalList(),
 });
 
 export type InternalResume = z.infer<typeof internalResumeSchema>;
@@ -179,11 +219,22 @@ export function describeFieldPath(path: (string | number)[]): string {
   return labels.join(" → ") || "This field";
 }
 
-/** Field names that are optional in the UI, so a leftover "N/A" there is fine
- *  (the field is simply left out of the final document if not filled in). */
+/** Top-level fields that are optional, so a leftover "N/A" anywhere inside them is fine. */
+const OPTIONAL_TOP_LEVEL = new Set(["experienceSummary", "specialization", "certifications", "tools", "domains", "languages", "managerialExperience"]);
+/** The one field of a project / experience entry that must be real when the entry is used. */
+const ENTRY_NAME_KEYS = new Set(["title", "client", "company"]);
+
+/** Optional places where a leftover "N/A" is fine: the optional top-level fields, and everything inside a project
+ *  or experience entry except its name (the document simply leaves the field or section out). Required fields
+ *  (name, job title, overview, education, skills) and entry names are still checked. */
 const isOptionalNAPath = (path: (string | number)[]): boolean => {
-  const key = path[path.length - 1];
-  return key === "teamSize" || key === "projectLink";
+  const top = path[0];
+  if (typeof top === "string" && OPTIONAL_TOP_LEVEL.has(top)) return true;
+  if (top === "projects" || top === "experience") {
+    const key = path[path.length - 1];
+    return !(typeof key === "string" && ENTRY_NAME_KEYS.has(key));
+  }
+  return false;
 };
 
 /** Scans a resume for mandatory fields the LLM left as "N/A" (or the user typed by hand).

@@ -3,6 +3,9 @@
 import { createContext, ReactNode, useContext, useId, useState } from "react";
 import { isNAValue } from "@/lib/schemas";
 
+/** Wording shown wherever an optional section has nothing in it: the generated document leaves it out entirely. */
+export const LEFT_OUT_NOTE = "— left out of the document";
+
 /** Lets "Expand all / Collapse all" (and "expand on error") reach every Section inside an Accordion. */
 const AccordionContext = createContext<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
 
@@ -43,12 +46,15 @@ export function Section({
   actions,
   onRemove,
   defaultOpen = false,
+  empty = false,
 }: {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
   onRemove?: () => void;
   defaultOpen?: boolean;
+  /** True for an OPTIONAL section with nothing real in it: shows that it will be left out of the document. */
+  empty?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
@@ -82,7 +88,10 @@ export function Section({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <h3 className="truncate text-sm font-medium uppercase tracking-wide text-gray-700">{title}</h3>
+          <h3 className="truncate text-sm font-medium uppercase tracking-wide text-gray-700">
+            {title}
+            {empty && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-gray-400">{LEFT_OUT_NOTE}</span>}
+          </h3>
         </button>
         {open && (
           <div className="flex items-center gap-2">
@@ -183,15 +192,21 @@ export function AreaField({
   value,
   onChange,
   rows = 4,
+  optional = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   rows?: number;
+  /** Marks the field "(optional)": when empty it is left out of the document. */
+  optional?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-600">
+        {label}
+        {optional && <span className="font-normal text-gray-400">(optional)</span>}
+      </span>
       <textarea
         value={value}
         rows={rows}
@@ -316,6 +331,21 @@ export function ItemCard({
         <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
       </div>
       <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Collapsed bar for an optional section the user removed; "Restore" brings the editor back. */
+export function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
+      <span className="text-sm text-gray-400">
+        <span className="font-medium uppercase tracking-wide">{title}</span>
+        <span className="ml-2">{LEFT_OUT_NOTE}</span>
+      </span>
+      <button type="button" onClick={onRestore} className="text-xs font-medium text-brand-600 hover:underline">
+        Restore
+      </button>
     </div>
   );
 }

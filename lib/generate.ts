@@ -1,53 +1,8 @@
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { saveAs } from "file-saver";
-import { isNAValue, type ExternalResume, type InternalResume, type ResumeData, type TemplateId } from "./schemas";
-
-/** An optional field is only worth showing if it has real content — blank AND
- *  "N/A"-style placeholders both count as "not provided". */
-const hasRealValue = (value: string) => !!value.trim() && !isNAValue(value);
-
-/** Map the validated form data onto the tag names used inside the .docx templates
- *  (arrays of strings become comma-joined text where the template shows inline lists,
- *  and projects get their display number). */
-export function prepareData(id: TemplateId, data: ResumeData): Record<string, unknown> {
-  if (id === "external") {
-    const d = data as ExternalResume;
-    return {
-      ...d,
-      skills: d.skills.join(", "),
-      tools: d.tools.join(", "),
-      certifications: d.certifications.join(", "),
-      // hasTeamSize lets the template drop a cleared or "N/A" team size entirely. Year is mandatory.
-      projects: d.projects.map((p, i) => ({
-        ...p,
-        number: i + 1,
-        teamSize: hasRealValue(p.teamSize) ? p.teamSize : "",
-        hasTeamSize: hasRealValue(p.teamSize),
-      })),
-    };
-  }
-  const d = data as InternalResume;
-  return {
-    ...d,
-    tools: d.tools.join(", "),
-    // drives the conditional "Projects" heading in the template (omitted when empty)
-    hasProjects: d.projects.length > 0,
-    // drives the conditional "Managerial Experience" heading + list (omitted when nothing real to show)
-    hasManagerialExperience: d.managerialExperience.some((item) => item.trim() !== ""),
-    projects: d.projects.map((p, i) => ({
-      ...p,
-      number: i + 1,
-      toolsAndTechnologies: p.toolsAndTechnologies.join(", "),
-      // hasTeamSize/hasProjectLink/hasDuration let the template drop a cleared or "N/A" field entirely.
-      teamSize: hasRealValue(p.teamSize) ? p.teamSize : "",
-      hasTeamSize: hasRealValue(p.teamSize),
-      projectLink: hasRealValue(p.projectLink) ? p.projectLink : "",
-      hasProjectLink: hasRealValue(p.projectLink),
-      hasDuration: !!p.duration.trim(),
-    })),
-  };
-}
+import { prepareData } from "./docxData";
+import type { ResumeData, TemplateId } from "./schemas";
 
 interface DocxTemplaterError extends Error {
   properties?: {
