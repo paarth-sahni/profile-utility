@@ -11,6 +11,7 @@ import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { defaultLabel, resolveLabel } from "@/lib/versionLabel";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
+import { useStepHistory } from "@/lib/useStepHistory";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
@@ -185,6 +186,19 @@ export default function ProfileWorkflow({
   // Warn before leaving (refresh, close, in-app links) while the work is unsaved and not yet downloaded.
   const unsaved = hasUnsavedWork({ hasProfile: data !== null, saved: lastVersionId !== null, dirty, downloaded });
   const leaveGuard = useUnsavedChangesWarning(unsaved);
+  // Browser Back from Review (or Upload / Submit) returns to the Start page instead of leaving the app,
+  // asking first when there is unsaved work.
+  const stepBack = useStepHistory({
+    enabled: initial == null,
+    step,
+    askBeforeLeaving: unsaved && step > 0,
+    goStart: () => {
+      setStep(0);
+      setGenerateError(null);
+      setGenerated(null);
+      setErrors(null);
+    },
+  });
 
   // Offer a draft left behind by an ended session (same user, same template, still fresh).
   useEffect(() => {
@@ -393,6 +407,12 @@ export default function ProfileWorkflow({
     }
   };
 
+  // When generating fails, open every section so the user can find the fields that need fixing.
+  const [expandTick, setExpandTick] = useState(0);
+  useEffect(() => {
+    if (errors && errors.length > 0) setExpandTick((t) => t + 1);
+  }, [errors]);
+
   const handleFormChange = (d: ResumeData) => {
     setData(d);
     setEdited(true);
@@ -511,15 +531,20 @@ export default function ProfileWorkflow({
 
   return (
     <div className="w-full text-ink">
-      {/* hero — same heading for both routes, subtext is per-audience */}
-      <section className="bg-cream">
-        <div className="mx-auto max-w-6xl px-4 py-12 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-ink-dark sm:text-4xl">InfoBeans Profile Generator</h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm text-ink-light sm:text-base">{HERO_SUBTEXT[templateId]}</p>
-        </div>
-      </section>
+      {/* hero — only on the start page; title and subtext are per-audience. The subtext stays on one line on wide
+          screens (font scales with the viewport) and wraps normally on narrow ones. */}
+      {step === 0 && (
+        <section className="bg-cream">
+          <div className="mx-auto max-w-[110rem] px-4 py-7 text-center">
+            <h1 className="text-3xl font-medium tracking-tight text-ink-dark sm:text-4xl">InfoBeans Profile Generator</h1>
+            <p className="mx-auto mt-3 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
+              {HERO_SUBTEXT[templateId]}
+            </p>
+          </div>
+        </section>
+      )}
 
-      <main className="mx-auto max-w-6xl px-4 py-10">
+      <main className="mx-auto max-w-6xl px-4 pb-10 pt-5">
         {leaveGuard.pendingHref && (
           <ConfirmDialog
             title="Leave without saving?"
@@ -528,6 +553,16 @@ export default function ProfileWorkflow({
             cancelLabel="Stay"
             onConfirm={leaveGuard.leave}
             onCancel={leaveGuard.stay}
+          />
+        )}
+        {stepBack.pendingBack && (
+          <ConfirmDialog
+            title="Leave without saving?"
+            message="Your profile has changes that are not saved and have not been downloaded. If you go back to the start page now, they will be lost."
+            confirmLabel="Leave anyway"
+            cancelLabel="Stay"
+            onConfirm={stepBack.leave}
+            onCancel={stepBack.stay}
           />
         )}
         {discardAsk && (
@@ -544,7 +579,7 @@ export default function ProfileWorkflow({
         {session && data && (
           <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} error={saveError} />
         )}
-        <div className="mb-10">
+        <div className="mb-6">
           <Stepper
             current={step}
             onNavigate={goTo}
@@ -749,9 +784,9 @@ export default function ProfileWorkflow({
             )}
 
             {templateId === "external" ? (
-              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} />
+              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} expandTick={expandTick} />
             ) : (
-              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} />
+              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} expandTick={expandTick} />
             )}
 
             {errors && (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { wordCount, type ExternalResume } from "@/lib/schemas";
-import { AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
+import { Accordion, AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
 
 function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
   return (
@@ -29,9 +29,12 @@ const BLANK_PROJECT: ExternalResume["projects"][number] = {
 export default function ExternalForm({
   data,
   onChange,
+  expandTick = 0,
 }: {
   data: ExternalResume;
   onChange: (data: ExternalResume) => void;
+  /** Bumped by the parent to open every section (e.g. when generating fails). */
+  expandTick?: number;
 }) {
   const [projectsRemoved, setProjectsRemoved] = useState(false);
 
@@ -42,8 +45,8 @@ export default function ExternalForm({
   const restoreProjects = () => { set("projects", [{ ...BLANK_PROJECT }]); setProjectsRemoved(false); };
 
   return (
-    <div className="space-y-5">
-      <Section title="Profile">
+    <Accordion expandTick={expandTick}>
+      <Section title="Profile" defaultOpen>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" value={data.name} onChange={(v) => set("name", v)} />
           <Field label="Job title" value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
@@ -161,6 +164,6 @@ export default function ExternalForm({
           );
         })}
       </Section>
-    </div>
+    </Accordion>
   );
 }

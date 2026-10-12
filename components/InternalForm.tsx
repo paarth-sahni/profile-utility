@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatYearsExperience, wordCount, type InternalResume } from "@/lib/schemas";
-import { AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
+import { Accordion, AddButton, AreaField, Field, ItemCard, Section, StringListEditor, moveItem } from "./fields";
 
 function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
   return (
@@ -30,9 +30,12 @@ export default function InternalForm({
   data,
   onChange,
   fromScratch = false,
+  expandTick = 0,
 }: {
   data: InternalResume;
   onChange: (data: InternalResume) => void;
+  /** Bumped by the parent to open every section (e.g. when generating fails). */
+  expandTick?: number;
   /** The blank-form ("Create a Profile from Scratch") route captures the experience
    *  summary as a plain number of years; the LLM route supplies the full string. */
   fromScratch?: boolean;
@@ -49,8 +52,8 @@ export default function InternalForm({
   const restoreManagerial = () => { set("managerialExperience", [""]); setManagerialRemoved(false); };
 
   return (
-    <div className="space-y-5">
-      <Section title="Profile">
+    <Accordion expandTick={expandTick}>
+      <Section title="Profile" defaultOpen>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" value={data.name} onChange={(v) => set("name", v)} />
           <Field label="Job title" value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
@@ -189,6 +192,6 @@ export default function InternalForm({
       <Section title="Languages">
         <StringListEditor items={data.languages} onChange={(v) => set("languages", v)} addLabel="Add language" />
       </Section>
-    </div>
+    </Accordion>
   );
 }

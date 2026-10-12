@@ -83,9 +83,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="border-t border-hairline py-4 font-light text-ink-light">
-        Copyright &copy; 2026 InfoBeans Technologies Limited.
-        <br />
-        All rights reserved.
+        &copy; 2026 InfoBeans Technologies Limited. All rights reserved.
       </div>
     </footer>
   );

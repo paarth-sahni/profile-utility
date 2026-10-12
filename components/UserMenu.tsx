@@ -108,6 +108,16 @@ export default function UserMenu({ user }: { user: NavUser }) {
             >
               My Profiles
             </Link>
+            {(user.role === "manager" || user.role === "admin") && (
+              <Link
+                href="/manage"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-600"
+              >
+                Manage
+              </Link>
+            )}
             <form action="/auth/signout" method="post" onSubmit={() => clearDraftsOnSignOut(getSessionStorage())}>
               <button
                 type="submit"

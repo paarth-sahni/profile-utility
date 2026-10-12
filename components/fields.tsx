@@ -1,38 +1,109 @@
 "use client";
 
-import { ReactNode } from "react";
+import { createContext, ReactNode, useContext, useId, useState } from "react";
 import { isNAValue } from "@/lib/schemas";
 
+/** Lets "Expand all / Collapse all" (and "expand on error") reach every Section inside an Accordion. */
+const AccordionContext = createContext<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
+
+/** Wraps the form sections: adds an Expand all / Collapse all control and shares it with each Section. */
+export function Accordion({ children, expandTick = 0 }: { children: ReactNode; expandTick?: number }) {
+  const [signal, setSignal] = useState<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
+  // A parent (e.g. "can't generate yet") can ask for everything to open so the user can find the problem fields.
+  const [lastExpand, setLastExpand] = useState(expandTick);
+  if (expandTick !== lastExpand) {
+    setLastExpand(expandTick);
+    setSignal((s) => ({ mode: "open", tick: s.tick + 1 }));
+  }
+  const bump = (mode: "open" | "closed") => setSignal((s) => ({ mode, tick: s.tick + 1 }));
+  return (
+    <AccordionContext.Provider value={signal}>
+      <div className="space-y-3">
+        <div className="flex justify-end gap-3 text-xs font-medium">
+          <button type="button" onClick={() => bump("open")} className="text-brand-600 hover:underline">
+            Expand all
+          </button>
+          <span className="text-gray-300" aria-hidden>
+            |
+          </span>
+          <button type="button" onClick={() => bump("closed")} className="text-brand-600 hover:underline">
+            Collapse all
+          </button>
+        </div>
+        {children}
+      </div>
+    </AccordionContext.Provider>
+  );
+}
+
+/** A collapsible form section. Collapsed by default; pass `defaultOpen` for the first one. */
 export function Section({
   title,
   children,
   actions,
   onRemove,
+  defaultOpen = false,
 }: {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
   onRemove?: () => void;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
+  const signal = useContext(AccordionContext);
+  const [seenTick, setSeenTick] = useState(signal.tick);
+  if (signal.tick !== seenTick) {
+    setSeenTick(signal.tick);
+    setOpen(signal.mode === "open");
+  }
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700">{title}</h3>
-        <div className="flex items-center gap-2">
-          {actions}
-          {onRemove && (
-            <button
-              type="button"
-              title="Remove section"
-              onClick={onRemove}
-              className="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+    <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 px-5 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`shrink-0 text-ink-light transition-transform ${open ? "rotate-90" : ""}`}
+            aria-hidden
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <h3 className="truncate text-sm font-medium uppercase tracking-wide text-gray-700">{title}</h3>
+        </button>
+        {open && (
+          <div className="flex items-center gap-2">
+            {actions}
+            {onRemove && (
+              <button
+                type="button"
+                title="Remove section"
+                onClick={onRemove}
+                className="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      <div className="space-y-4">{children}</div>
+      {/* kept mounted (just hidden) so nothing typed inside is ever lost */}
+      <div id={bodyId} hidden={!open} className="space-y-4 border-t border-hairline px-5 pb-5 pt-4">
+        {children}
+      </div>
     </section>
   );
 }
