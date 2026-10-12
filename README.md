@@ -1,20 +1,50 @@
 # Resume Generator
 
-Frontend-only Next.js app that generates a styled resume `.docx` from one of two
-Word templates, using JSON produced by an external LLM. No backend — everything
-(validation, editing, rendering, download) happens in the browser.
+Next.js app that turns a resume (or a blank form) into a branded InfoBeans profile `.docx`, from one of two Word
+templates. Sign-in is with an InfoBeans Google account; the resume is read by an LLM on the server (`/api/extract`),
+and **internal** profiles can be saved per user in Supabase (My Profiles). **External** (client-facing) profiles are
+never stored.
 
 ## How it works
 
-1. **Template selection** — pick *External Profile* or *Internal Profile*, then
-   **Copy LLM Prompt**. Paste that prompt into any LLM together with a resume
-   file; it replies with JSON matching the template's schema.
-2. **Paste JSON** — the JSON is validated with Zod; field-level errors are shown.
-3. **Review & edit** — all fields are editable (array items can be added,
-   removed and reordered). **Preview** shows the exact PDF in an iframe.
-   Download as **DOCX** (docxtemplater + pizzip, original Word template),
-   **PDF** (built natively in the browser with pdf-lib using the template's
-   Lexend fonts + logo from `public/fonts` / `public/img`), or both.
+The generator (`/internal`, `/external`) is one workflow with these steps:
+
+1. **Start** — upload a resume / existing profile, or start from a blank form.
+2. **Upload resume** — the file is read and pre-fills the form; anything that had to be estimated is flagged in a
+   *Please double-check* panel (grouped when the same thing applies to many fields).
+3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
+   (name, job title, overview, one education entry, one skill) are marked in red when missing. Internal profiles can
+   also be saved here (*Save to My Profiles*, version labels, role-specific versions).
+4. **Preview** — pressing *Preview →* first validates the profile; if anything is missing you stay on (or return to)
+   Edit details with the fields marked. Otherwise the **exact generated DOCX** is rendered in the page with
+   `docx-preview`: the same `Blob` is what *Download DOCX* saves and *Open in Google Docs* uploads. Buttons:
+   - **← Back to edit** — keeps every edit.
+   - **Download DOCX** — all users.
+   - **Open in Google Docs** — managers and admins only (see below).
+   - **Submit** — internal profiles only (see below).
+
+   A **required consent checkbox** — "I confirm the information in this profile is accurate and may be shared" — must
+   be ticked before Submit, Download or Google Docs. Each use is written to `audit_log` (`consent_submit`,
+   `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
+   content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
+5. **Submit** (internal only) — shown after **Submit** on Preview. Submit saves the profile as a new version in
+   My Profiles first (if nothing changed since the last save, that version is reused), then this step shows the
+   Google Form link where the DOCX is uploaded for HR.
+
+### Internal vs external
+
+| | Internal | External |
+|---|---|---|
+| Saved in the database | yes: My Profiles, version history, role-specific versions | **never** |
+| Edit details | save controls (version label, role-specific) | no save controls |
+| Preview | Back to edit, Download DOCX, Submit, (Google Docs) | Back to edit, Download DOCX, (Google Docs) |
+| Session-expiry banner | "save your profile now" + Save button | "download your DOCX now", no Save button |
+| Listed in My Profiles / Manage | yes | n/a |
+
+The server enforces it: `POST /api/profiles` answers **400 `EXTERNAL_NOT_SAVED`** for template `external`
+(`lib/profilePayload.ts` only accepts `internal`, and `saveVersionAs` refuses it as well). `My Profiles` and `/manage`
+(search function `search_profiles_by_name`) list internal profiles only. Older external rows, if any exist from before
+this rule, are not deleted, just not listed.
 
 Additional pages: **/instructions** (step-by-step generation process for each
 template) and **/style-guide** (the typography Style Guide PDF, embedded as-is
@@ -44,8 +74,12 @@ checks for leftover tags (writes outputs to `/tmp/out-*.docx`).
 - `lib/generate.ts` — docxtemplater rendering, data mapping, error explanation
 - `lib/pdf.ts` — native PDF layout engine + both template renderers (pure, node-testable)
 - `lib/pdfClient.ts` — browser asset loading, PDF blob/download helpers
-- `components/ExternalForm.tsx`, `components/InternalForm.tsx` — step-3 editors
-- `components/DocPreview.tsx` — PDF preview pane with refresh/stale indicator
+- `components/ProfileWorkflow.tsx` — the steps, validation, saving and Submit
+- `components/ExternalForm.tsx`, `components/InternalForm.tsx` — the Edit details editors
+- `components/PreviewStep.tsx` — Preview step: consent checkbox, Download / Google Docs / Submit
+- `components/usePreviewDocx.ts` — builds the DOCX once; the preview, the download and Google Docs all use that Blob
+- `components/DocPreview.tsx` — renders a DOCX Blob in the page (`docx-preview`)
+- `lib/consent.ts`, `lib/consentClient.ts`, `app/api/consent/route.ts` — the consent wording and its audit record
 
 `npx tsx test-pdf.mts` builds sample PDFs for both templates to `/tmp` for
 visual inspection.
@@ -69,7 +103,7 @@ npm run dev
 
 ### End-to-end browser checks (optional)
 
-`npm run test:e2e` drives a real headless Chrome through the Review screen: draft recovery in `sessionStorage`,
+`npm run test:e2e` drives a real headless Chrome through the generator: draft recovery in `sessionStorage`,
 the 401-then-restore path, the session-expiry banner, Discard, the "Discard your unsaved draft?" dialog, sign-out
 clearing drafts, and another user never seeing a draft. It runs only against the **local stack and the seeded
 users** (`member@example.test`, ... `password123`) and signs them in by setting a session cookie, so Google sign-in
@@ -82,8 +116,12 @@ npm run dev                              # in another terminal; development mode
 npm run test:e2e
 ```
 
-`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs` (Open in Google Docs on
-Review, My Profiles and Manage; previews hiding empty sections; version label defaults; the unsaved-changes dialog). Google is **stubbed** in the page (a fake token client;
+`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs`: the Preview step (exact
+DOCX rendered, the downloaded file matches what was previewed, validation gate, consent before Download / Submit /
+Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version (and reusing it when unchanged),
+external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
+and admins only (Preview, My Profiles, Manage), previews hiding empty sections, version label defaults, the
+unsaved-changes dialog, optional-section notes, brand rules and the grouped review flags. Google is **stubbed** in the page (a fake token client;
 Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
 `npm run dev` starts, otherwise they are skipped.
@@ -131,8 +169,12 @@ which is safe to import from `proxy.ts`, client components and tests.
 
 ## Open in Google Docs
 
-An **Open in Google Docs** button sits next to *Download DOCX* on Review, on `/profiles/[id]` (every version) and on
-`/manage/[id]` (read-only; the manager view also has *Download DOCX*). It works entirely in the browser:
+An **Open in Google Docs** button sits next to *Download DOCX* on Preview, on `/profiles/[id]` (every version) and on
+`/manage/[id]` (read-only; the manager view also has *Download DOCX*). It is offered to **managers and admins only**
+(`canUseGoogleDocs()` in `lib/authRules.ts`; the pages read the role on the server and do not render the button for
+anyone else). It is a product rule enforced by the pages: the export runs in the browser with the user's own Google
+token, so there is no server call to refuse. On Preview it uploads the very DOCX that is previewed, after the consent
+box is ticked and recorded. It works entirely in the browser:
 
 1. On click, Google Identity Services opens Google's own consent popup and returns a short-lived **access token**
    for the single scope `https://www.googleapis.com/auth/drive.file` (only files this app creates).
@@ -166,3 +208,32 @@ In Google Cloud (the same project as the sign-in is fine):
 Note for the sign-in code: `components/LoginCard.tsx` still requests `drive.file` when signing in (an earlier plan that
 read `session.provider_token` on the server). Open in Google Docs no longer uses it, so that scope can be dropped from
 the sign-in to keep it to the minimum.
+
+## Roles and saving
+
+Only `team_member` and `admin` accounts can create profiles (Row Level Security: `profiles_insert_own`); managers and
+checkers can read everything but cannot save. A manager who presses *Submit* on an internal profile therefore gets the
+"could not save" message; they can still Download and use Google Docs from Preview.
+
+## Manual test list
+
+Everything below is also covered by `npm test`, `npm run test:db`, `npm run test:rls` and `npm run test:e2e`; run it by
+hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.test` (password `password123`).
+
+1. **Preview gate** (member, `/internal`): *Create a Profile from Scratch* → *Preview →* with nothing filled → stays on
+   Edit details, fields marked red. Fill name, job title, overview, year, qualification, one skill + rating → *Preview →*
+   → the DOCX appears in the page.
+2. **Back keeps edits**: *← Back to edit* → everything typed is still there.
+3. **Consent**: on Preview press *Download DOCX* and *Submit* without the box → a message, nothing happens. Tick it →
+   Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
+   with `{"template": "internal", "consentVersion": "1"}`.
+4. **Same file**: open the downloaded DOCX in Word; it matches the preview.
+5. **Submit (internal)**: tick, *Submit* → *Submit your profile* step with "Saved to My Profiles · v1" and the form
+   link; *My Profiles* lists it. Back → Preview → Submit again without edits → still v1. Edit, Preview, Submit → v2.
+6. **External**: `/external` → blank form → no *Save* / *Version label*; steps are Start, Upload resume, Edit details,
+   Preview; Preview has *Back to edit* and *Download DOCX* only. Nothing appears in `profiles`. From a signed-in tab:
+   `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
+   → `EXTERNAL_NOT_SAVED` (400).
+7. **Google Docs**: as `member@example.test` it is on neither Preview nor *My Profiles*; as `admin@example.test` or
+   `manager@example.test` it is on Preview, and on `/manage/[id]`; admins also see it on *My Profiles*.
+8. **Manage**: `/manage` as `manager@example.test` lists internal profiles only.
