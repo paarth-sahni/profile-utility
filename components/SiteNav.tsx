@@ -14,12 +14,9 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
   // Resolve the "home" for whichever route is currently browsing. Each route only
   // links to its own flow; the other is reachable only by knowing its URL.
   const home = pathname.startsWith("/external") ? "/external" : "/internal";
-  // Link visibility is cosmetic: /manage checks the role on the server and the database enforces it too.
-  const canManage = user?.role === "manager" || user?.role === "admin";
-  const LINKS: { href: string; label: string; external?: boolean; section?: boolean }[] = [
+  // My Profiles and Manage are in the avatar menu, not the header.
+  const LINKS: { href: string; label: string; external?: boolean }[] = [
     { href: home, label: "Generator" },
-    ...(user ? [{ href: "/profiles", label: "My Profiles", section: true }] : []),
-    ...(user && canManage ? [{ href: "/manage", label: "Manage", section: true }] : []),
     { href: `${home}/instructions`, label: "Instructions" },
     { href: "/style-guide", label: "Style Guide" },
     // The submission form only applies to the internal profile workflow.
@@ -31,7 +28,7 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <Link href={home} className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${BASE}/img/logo.png`} alt="InfoBeans" width={240} height={76} className="h-[26px] w-auto sm:h-9" />
+          <img src={`${BASE}/img/logo.png`} alt="InfoBeans" width={240} height={76} className="h-9 w-auto sm:h-12" />
         </Link>
         <div className="flex items-center gap-1">
           {!onLogin && LINKS.map((link) => {
@@ -48,8 +45,7 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
                 </a>
               );
             }
-            // Section links (My Profiles, Manage) stay active on their sub-pages, e.g. /profiles/<id>.
-            const active = pathname === link.href || (link.section === true && pathname.startsWith(`${link.href}/`));
+            const active = pathname === link.href;
             return (
               <Link
                 key={link.href}
