@@ -6,7 +6,8 @@ docs/template-backups/*.before-optional-sections.docx and writes public/template
 
 How: docxtemplater loop tags ({#flag} ... {/flag}) are inserted as their own paragraphs around a block of paragraphs
 (the same way hasProjects / hasTeamSize already work); with paragraphLoop on, the tag paragraphs vanish and so does the
-whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). Two heading lines get an inline
+whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). One spacer paragraph is added after the
+internal Managerial Experience block (SPACERS). Two heading lines get an inline
 condition so no dangling " - " is left. Paragraph numbers below are positions in the ORIGINAL document.xml (the two
 printed listings in the commit message of the templates commit show them). Run: python3 scripts/patch-optional-sections.py
 """
@@ -55,6 +56,13 @@ INLINE = {
     "external": [("Project {number} - {duration}", "Project {number}{#hasDuration} - {duration}{/hasDuration}")],
 }
 
+# Extra blank paragraphs: template -> list of (paragraph to insert AFTER, xml). The internal sidebar's Managerial Experience
+# block had no spacer (its items ran straight into the next heading); this one sits inside the existing
+# {#hasManagerialExperience} (paragraphs 54-59), after the last item (58 = {/managerialExperience}), so it goes with the section.
+# Same form as the Certifications spacer (plain, no list numbering), without its rsid / paraId attributes.
+SPACER = '<w:p><w:pPr><w:jc w:val="left"/><w:rPr><w:color w:val="231f20"/></w:rPr></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
+SPACERS = {"internal": [(58, SPACER)], "external": []}
+
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 
 
@@ -84,7 +92,8 @@ def patch(name: str) -> bytes:
                     text = text.replace(old, new)
             opens = "".join(m for _, m in sorted(before.get(i, []), key=lambda t: -t[0]))  # outermost first
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
-            return opens + text + closes
+            extra = "".join(xml_ for at, xml_ in SPACERS[name] if at == i)  # still inside any condition that closes here
+            return opens + text + extra + closes
 
         new_xml = PARA.sub(rebuild, xml)
         out = OUT / f"{name}.docx"

@@ -211,6 +211,17 @@ const e = checkTemplate("external", external, EXTERNAL_SECTIONS, EXTERNAL_PROJEC
 }
 console.log("external: every optional section / field shows when filled and is completely left out when empty, blank or N/A");
 
+// internal sidebar: the Managerial Experience block ends with ONE spacer paragraph that goes away with the section
+{
+  const blankLines = (t) => t.split("\n").filter((l) => l.trim() === "").length;
+  const withMgr = blankLines(textOf("internal", internal));
+  const withoutMgr = blankLines(textOf("internal", { ...internal, managerialExperience: [] }));
+  assert(withMgr - withoutMgr === 1, `internal: the Managerial Experience block must own exactly one blank spacer paragraph (found ${withMgr - withoutMgr})`);
+  const lines = textOf("internal", internal).split("\n");
+  const last = lines.findIndex((l) => /MGR-MARK/.test(l));
+  assert(last >= 0 && lines[last + 1].trim() === "" && /Domain/.test(lines[last + 2]), "internal: the spacer sits between the last managerial item and the Domain heading");
+}
+
 // internal: the other cases the old test covered
 {
   const noProjects = textOf("internal", { ...internal, projects: [] });
