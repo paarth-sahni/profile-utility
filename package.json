@@ -14,7 +14,8 @@
     "test:rls": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -At -v ON_ERROR_STOP=1 -f supabase/tests/002_rls_catalog.sql && tsx --env-file=.env.local --experimental-websocket --test supabase/tests/rls.test.ts",
     "db:smoke": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -v ON_ERROR_STOP=1 -f supabase/tests/001_schema_smoke.sql",
     "test:db": "tsx --conditions=react-server --env-file=.env.local --experimental-websocket --test supabase/tests/db.test.ts",
-    "test:e2e": "node --env-file=.env.local --experimental-websocket scripts/e2e-drafts.mjs && node --env-file=.env.local --experimental-websocket scripts/e2e-ui.mjs"
+    "test:e2e": "node --env-file=.env.local --experimental-websocket scripts/e2e-drafts.mjs && node --env-file=.env.local --experimental-websocket scripts/e2e-ui.mjs",
+    "test:render": "tsx test-render.mjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

@@ -1,156 +1,251 @@
+/**
+ * Purpose: renders the REAL Word templates (public/templates/{internal,external}.docx) with the REAL prepareData
+ * (lib/docxData.ts) and checks the optional-section behaviour:
+ *   - every optional section / field is present when filled and COMPLETELY gone (heading, content, spacer) when it is
+ *     empty, blank or "N/A"; required sections never disappear;
+ *   - with every optional section empty only the required content is left;
+ *   - no {tag} is left over, none is split across Word runs, nothing renders as "undefined".
+ * Run: npm run test:render   (it uses tsx so it can import the TypeScript module). Add --pdf to also convert the
+ * full and the all-optional-empty renders with LibreOffice into /tmp/render-check/ for a visual check.
+ */
 import fs from "node:fs";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { prepareData } from "./lib/docxData.ts";
+
+const assert = (cond, msg) => {
+  if (!cond) {
+    console.error(`FAIL: ${msg}`);
+    process.exit(1);
+  }
+};
+
+// ---------------------------------------------------------------------------------------------- sample profiles
+// Marker words (UPPER-CASE) make each piece of content easy to find and cannot collide with a heading.
+const internal = {
+  name: "NAME-MARK Jane Doe",
+  jobTitle: "JOBTITLE-MARK",
+  experienceSummary: "EXPSUM-MARK 8+ years",
+  specialization: "SPEC-MARK Cloud",
+  overview: "OVERVIEW-MARK engineer.",
+  education: [{ year: "2015", qualification: "EDU-MARK M.Tech" }],
+  projects: [
+    { duration: "Jan 2023 - Dec 2023", title: "Payments Platform", toolsAndTechnologies: ["Go", "Postgres"], teamSize: "6", role: "ROLE-MARK Lead", projectLink: "NDA", description: "DESC-MARK payments.", responsibilities: ["RESP-MARK one", "RESP-MARK two"] },
+    { duration: "Feb 2022 - Nov 2022", title: "Analytics Hub", toolsAndTechnologies: ["Python"], teamSize: "3", role: "ROLE-MARK Dev", projectLink: "https://example.com", description: "DESC-MARK analytics.", responsibilities: ["RESP-MARK three"] },
+  ],
+  skills: [{ name: "SKILL-MARK Go", rating: "4.5" }, { name: "AWS", rating: "4" }],
+  certifications: ["CERT-MARK AWS SA", "CKA"],
+  tools: ["TOOL-MARK JIRA", "GIT"],
+  managerialExperience: ["MGR-MARK Team Building"],
+  domains: ["DOMAIN-MARK Fintech"],
+  languages: ["LANG-MARK English", "Hindi"],
+};
 
 const external = {
-  name: "Jane Doe",
-  jobTitle: "Lead Engineer",
-  experienceSummary: "8+ years of Industry Experience",
-  specialization: "Cloud Platforms",
-  overview: "Seasoned engineer with broad platform experience.",
-  education: [
-    { year: "2015", qualification: "M.Tech (CS), IIT Delhi" },
-    { year: "2012", qualification: "B.E. (IT), Riverside University" },
-  ],
-  skills: "AWS, Terraform, Go",
-  tools: "JIRA, GIT",
-  certifications: "AWS SA Pro, CKA",
+  name: "NAME-MARK Jane Doe",
+  jobTitle: "JOBTITLE-MARK",
+  experienceSummary: "EXPSUM-MARK 8+ years",
+  specialization: "SPEC-MARK Cloud",
+  overview: "OVERVIEW-MARK engineer.",
+  education: [{ year: "2015", qualification: "EDU-MARK M.Tech" }],
+  skills: ["SKILL-MARK AWS", "Go"],
+  tools: ["TOOL-MARK JIRA", "GIT"],
+  certifications: ["CERT-MARK AWS SA", "CKA"],
   projects: [
-    { number: 1, duration: "Jan 2022 - Dec 2022", client: "Acme Corp", teamSize: "6", role: "Tech Lead", description: "Migrated workloads to AWS.", responsibilities: ["Led migration.", "Cut costs 30%."] },
-    { number: 2, duration: "Mar 2021 - Nov 2021", client: "Globex", teamSize: "4", role: "Developer", description: "Built data pipeline.", responsibilities: ["Designed ETL.", "Automated reports."] },
+    { duration: "Jan 2022 - Dec 2022", client: "Acme Corp", teamSize: "6", role: "ROLE-MARK Lead", description: "DESC-MARK migration.", responsibilities: ["RESP-MARK one", "RESP-MARK two"] },
+    { duration: "Mar 2021 - Nov 2021", client: "Globex", teamSize: "4", role: "ROLE-MARK Dev", description: "DESC-MARK pipeline.", responsibilities: ["RESP-MARK three"] },
   ],
   experience: [
-    { company: "Accenture", position: "Senior Engineer", duration: "2020 - Present", highlights: ["Shipped platform v2.", "Mentored 5 engineers."] },
-    { company: "Infosys", position: "Engineer", duration: "2015 - 2020", highlights: ["Built APIs.", "Improved uptime."] },
+    { company: "Accenture", position: "POS-MARK Senior Engineer", duration: "2020 - Present", highlights: ["HIGH-MARK one", "HIGH-MARK two"] },
+    { company: "Infosys", position: "POS-MARK Engineer", duration: "2015 - 2020", highlights: ["HIGH-MARK three"] },
   ],
 };
 
-const internal = {
-  name: "Jane Doe",
-  jobTitle: "Lead Engineer",
-  experienceSummary: "8+ years of Industry Experience",
-  specialization: "Cloud Platforms",
-  overview: "Seasoned engineer with broad platform experience.",
-  education: [
-    { year: "2015", qualification: "M.Tech (CS), IIT Delhi" },
-    { year: "2012", qualification: "B.E. (IT), Riverside University" },
-  ],
-  projects: [
-    { number: 1, duration: "Jan 2023 - Dec 2023", title: "Payments Platform", toolsAndTechnologies: "Go, Postgres, K8s", teamSize: "6", role: "Tech Lead", projectLink: "NDA", description: "Built a payments platform.", responsibilities: ["Led design.", "Shipped v1."] },
-    { number: 2, duration: "Feb 2022 - Nov 2022", title: "Analytics Hub", toolsAndTechnologies: "Python, Spark", teamSize: "3", role: "Developer", projectLink: "https://example.com", description: "Built analytics hub.", responsibilities: ["Built ETL.", "Created dashboards."] },
-  ],
-  skills: [
-    { name: "Go", rating: "4.5" },
-    { name: "AWS", rating: "4" },
-    { name: "React", rating: "3.5" },
-  ],
-  certifications: ["AWS SA Pro", "CKA"],
-  tools: "JIRA, GIT",
-  managerialExperience: ["Project Management", "Team Building"],
-  domains: ["Fintech", "Healthcare"],
-  languages: ["English", "Hindi"],
-};
-
-// mirror prepareData: hasProjects hides the internal "Projects" heading; hasYear/hasTeamSize/
-// hasProjectLink let the templates drop a blank OR "N/A" optional field (title + value + gap).
-const isNA = (v) => /^n\/?a$/i.test(String(v).trim());
-const hasReal = (v) => !!String(v).trim() && !isNA(v);
-const prep = (id, data) => {
-  if (id === "internal") {
-    return {
-      ...data,
-      hasProjects: data.projects.length > 0,
-      hasManagerialExperience: data.managerialExperience.some((m) => String(m).trim() !== ""),
-      projects: data.projects.map((p) => ({
-        ...p,
-        teamSize: hasReal(p.teamSize) ? p.teamSize : "",
-        hasTeamSize: hasReal(p.teamSize),
-        projectLink: hasReal(p.projectLink) ? p.projectLink : "",
-        hasProjectLink: hasReal(p.projectLink),
-        hasDuration: !!String(p.duration).trim(),
-      })),
-    };
-  }
-  return {
-    ...data,
-    projects: data.projects.map((p) => ({ ...p, teamSize: hasReal(p.teamSize) ? p.teamSize : "", hasTeamSize: hasReal(p.teamSize) })),
-  };
-};
-
+// ------------------------------------------------------------------------------------------------- rendering
+const templateXml = {};
 function render(id, data) {
   const zip = new PizZip(fs.readFileSync(`public/templates/${id}.docx`));
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
   try {
-    doc.render(prep(id, data));
+    doc.render(prepareData(id, data));
   } catch (e) {
     console.error(`${id}: RENDER FAILED`);
     console.error(JSON.stringify(e.properties?.errors?.map((x) => x.properties) ?? e.message, null, 2));
     process.exit(1);
   }
   const xml = doc.getZip().file("word/document.xml").asText();
-  const leftover = xml.replace(/<[^>]+>/g, "").match(/\{[^}]*\}/g);
-  if (leftover) {
-    console.error(`${id}: leftover tags: ${leftover}`);
-    process.exit(1);
+  const text = xml
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+  const leftover = text.match(/\{[^}]*\}/g);
+  assert(!leftover, `${id}: leftover tags in the output: ${leftover}`);
+  assert(!/undefined/.test(text), `${id}: something rendered as "undefined"`);
+  assert(!/\bN\/?A\b/i.test(text), `${id}: an "N/A" placeholder reached the document`);
+  fs.mkdirSync("/tmp/render-check", { recursive: true });
+  const out = doc.getZip().generate({ type: "nodebuffer" });
+  return { text, out };
+}
+const textOf = (id, data) => render(id, data).text;
+
+// ------------------------------------------------- 1. static check: no {tag} is split across Word runs
+for (const id of ["internal", "external"]) {
+  const xml = new PizZip(fs.readFileSync(`public/templates/${id}.docx`)).file("word/document.xml").asText();
+  templateXml[id] = xml;
+  for (const para of xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? []) {
+    const runs = [...para.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]);
+    for (const t of runs) {
+      const open = (t.match(/\{/g) ?? []).length;
+      const close = (t.match(/\}/g) ?? []).length;
+      assert(open === close, `${id}: a {tag} is split across Word runs near "${t.slice(0, 40)}"`);
+    }
   }
-  fs.writeFileSync(`/tmp/out-${id}.docx`, doc.getZip().generate({ type: "nodebuffer" }));
-  return xml.replace(/<[^>]+>/g, "");
+}
+console.log("templates: no {tag} is split across runs");
+
+// ------------------------------------------------- 2. sections: [name, regex that finds it, how to empty it]
+const NA = "N/A";
+/** Each optional piece: `found` must match when filled and must NOT match when emptied (blank, [] and "N/A" alike). */
+const INTERNAL_SECTIONS = [
+  ["experience line", /EXPSUM-MARK/, (d, v) => ({ ...d, experienceSummary: v ?? "" })],
+  ["specialization", /SPEC-MARK/, (d, v) => ({ ...d, specialization: v ?? "" })],
+  ["projects (heading + all entries)", /\bProjects\b|Payments Platform|Analytics Hub|DESC-MARK/, (d, v) => ({ ...d, projects: v === undefined ? [] : [{ duration: v, title: v, toolsAndTechnologies: [v], teamSize: v, role: v, projectLink: v, description: v, responsibilities: [v] }] })],
+  ["certifications", /Certifications|CERT-MARK/, (d, v) => ({ ...d, certifications: v === undefined ? [] : ["", v] })],
+  ["tools", /\bTools\b(?! &)|TOOL-MARK/, (d, v) => ({ ...d, tools: v === undefined ? [] : [v] })],
+  ["managerial experience", /Managerial Experience|MGR-MARK/, (d, v) => ({ ...d, managerialExperience: v === undefined ? [] : [v, ""] })],
+  ["domains", /Domain|DOMAIN-MARK/, (d, v) => ({ ...d, domains: v === undefined ? [] : [v] })],
+  ["languages", /Languages|LANG-MARK/, (d, v) => ({ ...d, languages: v === undefined ? [] : [v] })],
+];
+const INTERNAL_PROJECT_FIELDS = [
+  ["project duration", /Jan 2023 - Dec 2023|Feb 2022 - Nov 2022|Project 1 - |Project 2 - /, "duration", ""],
+  ["project tools & technologies", /Tools & Technologies/, "toolsAndTechnologies", []],
+  ["project team size", /Team Size/, "teamSize", ""],
+  ["project role", /\bRole\b|ROLE-MARK/, "role", ""],
+  ["project link", /Project Link/, "projectLink", ""],
+  ["project description", /DESC-MARK/, "description", ""],
+  ["project responsibilities", /RESP-MARK/, "responsibilities", []],
+];
+const REQUIRED_INTERNAL = [/NAME-MARK/, /JOBTITLE-MARK/, /\bOverview\b/, /OVERVIEW-MARK/, /Education & Training/, /EDU-MARK/, /\bSkills\b/, /SKILL-MARK/];
+
+const EXTERNAL_SECTIONS = [
+  ["experience line", /EXPSUM-MARK/, (d, v) => ({ ...d, experienceSummary: v ?? "" })],
+  ["specialization", /SPEC-MARK/, (d, v) => ({ ...d, specialization: v ?? "" })],
+  ["tools", /\bTools\b|TOOL-MARK/, (d, v) => ({ ...d, tools: v === undefined ? [] : ["", v] })],
+  ["certifications", /Certifications|CERT-MARK/, (d, v) => ({ ...d, certifications: v === undefined ? [] : [v] })],
+  ["employers (heading + all entries)", /(?<!Projects\/)\bExperience\b|Accenture|Infosys|POS-MARK|HIGH-MARK/, (d, v) => ({ ...d, experience: v === undefined ? [] : [{ company: v, position: v, duration: v, highlights: [v] }] })],
+];
+const EXTERNAL_PROJECT_FIELDS = [
+  ["project duration", /Jan 2022 - Dec 2022|Mar 2021 - Nov 2021|Project 1 - |Project 2 - /, "duration", ""],
+  ["project team size", /Team Size/, "teamSize", ""],
+  ["project role", /\bRole\b|ROLE-MARK/, "role", ""],
+  ["project description", /DESC-MARK/, "description", ""],
+  ["project responsibilities", /RESP-MARK/, "responsibilities", []],
+];
+const EXTERNAL_EXPERIENCE_FIELDS = [
+  ["employer position", /POS-MARK/, "position", ""],
+  ["employer duration", /2020 - Present|2015 - 2020/, "duration", ""],
+  ["employer highlights", /HIGH-MARK/, "highlights", []],
+];
+const REQUIRED_EXTERNAL = [/NAME-MARK/, /JOBTITLE-MARK/, /\bOverview\b/, /OVERVIEW-MARK/, /Education & Training/, /EDU-MARK/, /\bSkills\b/, /SKILL-MARK/];
+
+function checkTemplate(id, base, sections, projectFields, experienceFields, required) {
+  const full = textOf(id, base);
+  for (const [name, found] of sections) assert(found.test(full), `${id}: "${name}" must show when filled`);
+  for (const [name, found] of [...projectFields, ...experienceFields]) assert(found.test(full), `${id}: "${name}" must show when filled`);
+  for (const re of required) assert(re.test(full), `${id}: required content ${re} must show when everything is filled`);
+
+  // each optional section on its own, emptied in every way: [] / "" and "N/A"
+  for (const [name, found, empty] of sections) {
+    for (const how of [undefined, NA, "  "]) {
+      const text = textOf(id, empty(base, how));
+      assert(!found.test(text), `${id}: "${name}" must be completely left out when empty (${JSON.stringify(how ?? "[]")}) but ${found} was found`);
+      for (const re of required) assert(re.test(text), `${id}: required content ${re} vanished when "${name}" was emptied`);
+      for (const [other, otherFound] of sections.filter(([n]) => n !== name)) {
+        if (other.startsWith("employers") && name.startsWith("projects")) continue; // shared heading text is checked below
+        assert(otherFound.test(text), `${id}: emptying "${name}" must not remove "${other}"`);
+      }
+    }
+  }
+  // per-entry fields, emptied on every project / employer
+  const entryLists = [["projects", projectFields], ["experience", experienceFields]];
+  for (const [listKey, fields] of entryLists) {
+    if (!fields.length || !base[listKey]) continue;
+    for (const [name, found, key, emptyValue] of fields) {
+      for (const how of [emptyValue, Array.isArray(emptyValue) ? [NA] : NA]) {
+        const mutated = { ...base, [listKey]: base[listKey].map((e) => ({ ...e, [key]: how })) };
+        const text = textOf(id, mutated);
+        assert(!found.test(text), `${id}: "${name}" must be left out when empty (${JSON.stringify(how)}) but ${found} was found`);
+        for (const re of required) assert(re.test(text), `${id}: required content ${re} vanished when "${name}" was emptied`);
+        // the entry itself must remain
+        const entryMarker = listKey === "projects" ? (id === "internal" ? /Payments Platform/ : /Acme Corp/) : /Accenture/;
+        assert(entryMarker.test(text), `${id}: emptying "${name}" must not remove the entry itself`);
+      }
+    }
+  }
+  // every optional section empty at once: only the required content is left
+  let bare = base;
+  for (const [, , empty] of sections) bare = empty(bare, undefined);
+  const bareText = textOf(id, bare);
+  for (const [name, found] of sections) assert(!found.test(bareText), `${id}: with everything optional empty, "${name}" is still there`);
+  for (const re of required) assert(re.test(bareText), `${id}: required content ${re} vanished in the all-optional-empty render`);
+  return { full, bareText };
 }
 
-for (const [id, data] of [["external", external], ["internal", internal]]) {
-  render(id, data);
-  console.log(`${id}: rendered OK, leftover tags: none`);
-}
+const i = checkTemplate("internal", internal, INTERNAL_SECTIONS, INTERNAL_PROJECT_FIELDS, [], REQUIRED_INTERNAL);
+console.log("internal: every optional section / field shows when filled and is completely left out when empty, blank or N/A");
 
-// empty-projects case: the internal "Projects" heading must be fully omitted
-const internalText = render("internal", { ...internal, projects: [] });
-if (/Projects/.test(internalText)) {
-  console.error("internal(empty projects): 'Projects' heading should be omitted but was found");
-  process.exit(1);
-}
-render("external", { ...external, projects: [] }); // must still render (shared Projects/Experience heading)
-
-console.log("empty-projects: internal heading omitted, external OK");
-
-// optional-field omission: a blank / "N/A" optional field must drop its title too, not just the value.
-const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); } };
-
-// empty managerial experience: the heading must be omitted; present: shown with its items
-assert(!/Managerial Experience/.test(render("internal", { ...internal, managerialExperience: [] })), "internal: empty 'Managerial Experience' heading must be omitted");
-assert(/Managerial Experience/.test(render("internal", internal)) && /Team Building/.test(render("internal", internal)), "internal: 'Managerial Experience' + items must show when present");
-
-// external: Tools and Certifications must be two separate sections with their own data
-// (regression: the source's combined "Tools/Certifications" section rendered "undefined").
+const e = checkTemplate("external", external, EXTERNAL_SECTIONS, EXTERNAL_PROJECT_FIELDS, EXTERNAL_EXPERIENCE_FIELDS, REQUIRED_EXTERNAL);
+// external projects live in the same block as the employers: removing them is checked separately
 {
-  const t = render("external", external);
-  assert(/Tools/.test(t) && /Certifications/.test(t), "external: 'Tools' and 'Certifications' headings must both render");
-  assert(!/Tools\/Certifications/.test(t), "external: combined 'Tools/Certifications' heading must be gone");
-  assert(/JIRA, GIT/.test(t), "external: tools data must render under Tools");
-  assert(/AWS SA Pro, CKA/.test(t), "external: certifications data must render under Certifications");
-  assert(!/undefined/.test(t), "external: no field should render as 'undefined'");
+  const noProjects = textOf("external", { ...external, projects: [] });
+  assert(!/Acme Corp|Globex|DESC-MARK|RESP-MARK|Team Size|ROLE-MARK|Project 1/.test(noProjects), "external: projects must be completely left out when empty");
+  assert(/Projects\/Experience/.test(noProjects) && /Accenture/.test(noProjects), "external: with employers but no projects the shared heading and the employers stay");
+  const noEmployers = textOf("external", { ...external, experience: [] });
+  assert(/Projects\/Experience/.test(noEmployers) && /Acme Corp/.test(noEmployers) && !/Accenture|(?<!Projects\/)\bExperience\b|POS-MARK|HIGH-MARK/.test(noEmployers), "external: with projects but no employers, the Experience block is left out");
+  const neither = textOf("external", { ...external, projects: [], experience: [] });
+  assert(!/Projects\/Experience|Acme Corp|Accenture/.test(neither), "external: with neither projects nor employers the shared heading is left out too");
+  const emptyEntries = textOf("external", { ...external, projects: [{ duration: "", client: "", teamSize: "", role: "N/A", description: "", responsibilities: [""] }], experience: [{ company: "", position: "", duration: "", highlights: ["N/A"] }] });
+  assert(!/Projects\/Experience/.test(emptyEntries), "external: completely empty project / employer entries are ignored");
 }
+console.log("external: every optional section / field shows when filled and is completely left out when empty, blank or N/A");
 
-// external: project duration appears in the heading, like internal ("Project N - <duration>")
-assert(/Project 1 - Jan 2022 - Dec 2022/.test(render("external", external)), "external: project heading must include the duration");
-
-// present-case sanity: labels show when the values are real
-assert(/Team Size/.test(render("external", external)), "external: 'Team Size' should show when provided");
+// internal: the other cases the old test covered
 {
-  const t = render("internal", internal);
-  assert(/Team Size/.test(t), "internal: 'Team Size' should show when provided");
-  assert(/Project Link/.test(t), "internal: 'Project Link' should show when provided");
+  const noProjects = textOf("internal", { ...internal, projects: [] });
+  assert(!/Projects/.test(noProjects), "internal: 'Projects' heading must be omitted with no projects");
+  const emptyEntry = textOf("internal", { ...internal, projects: [{ duration: "", title: "", toolsAndTechnologies: [""], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [""] }] });
+  assert(!/Projects/.test(emptyEntry), "internal: a completely empty project entry is ignored (no 'Projects' heading)");
+  assert(/Project 1 - Jan 2023 - Dec 2023/.test(i.full), "internal: project heading shows the duration");
+  assert(/Project 1\s*\n/.test(textOf("internal", { ...internal, projects: internal.projects.map((p) => ({ ...p, duration: "" })) })), "internal: with no duration the heading is just 'Project 1' (no dangling dash)");
+  assert(!/Project \d+ -\s*\n/.test(textOf("internal", { ...internal, projects: internal.projects.map((p) => ({ ...p, duration: NA })) })), "internal: no dangling ' - ' with an N/A duration");
 }
+{
+  assert(/Project 1 - Jan 2022 - Dec 2022/.test(e.full), "external: project heading shows the duration");
+  assert(!/Project \d+ -\s*\n/.test(textOf("external", { ...external, projects: external.projects.map((p) => ({ ...p, duration: "" })) })), "external: no dangling ' - ' without a duration");
+  assert(/Tools/.test(e.full) && /Certifications/.test(e.full) && !/Tools\/Certifications/.test(e.full), "external: Tools and Certifications are separate sections");
+  assert(/TOOL-MARK JIRA, GIT/.test(e.full) && /CERT-MARK AWS SA, CKA/.test(e.full), "external: tools and certifications render as comma-separated text");
+}
+console.log("project / employer headings: no dangling dashes, shared headings behave");
 
-// external: teamSize "N/A" and blank both drop the "Team Size" heading
-for (const v of ["N/A", "  ", "na"]) {
-  const t = render("external", { ...external, projects: external.projects.map((p) => ({ ...p, teamSize: v })) });
-  assert(!/Team Size/.test(t), `external: 'Team Size' heading must be omitted when teamSize is ${JSON.stringify(v)}`);
+// ------------------------------------------------- 3. optional: PDFs through LibreOffice for a visual check
+if (process.argv.includes("--pdf")) {
+  const { execFileSync } = await import("node:child_process");
+  const dir = "/tmp/render-check";
+  fs.mkdirSync(dir, { recursive: true });
+  const cases = [];
+  for (const [id, base, sections] of [["internal", internal, INTERNAL_SECTIONS], ["external", external, EXTERNAL_SECTIONS]]) {
+    let bare = base;
+    for (const [, , empty] of sections) bare = empty(bare, undefined);
+    if (id === "external") bare = { ...bare, projects: [] };
+    if (id === "internal") bare = { ...bare, projects: [] };
+    cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare]);
+  }
+  for (const [file, id, data] of cases) {
+    fs.writeFileSync(`${dir}/${file}.docx`, render(id, data).out);
+    execFileSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", dir, `${dir}/${file}.docx`], { stdio: "ignore" });
+    console.log(`pdf: ${dir}/${file}.pdf`);
+  }
 }
-// internal: teamSize + projectLink "N/A"/blank drop their headings
-for (const v of ["N/A", "", "na"]) {
-  const t = render("internal", { ...internal, projects: internal.projects.map((p) => ({ ...p, teamSize: v, projectLink: v })) });
-  assert(!/Team Size/.test(t), `internal: 'Team Size' heading must be omitted when teamSize is ${JSON.stringify(v)}`);
-  assert(!/Project Link/.test(t), `internal: 'Project Link' heading must be omitted when projectLink is ${JSON.stringify(v)}`);
-}
-console.log("optional-field omission: titles dropped for blank/N/A, shown when provided");
 console.log("done");
