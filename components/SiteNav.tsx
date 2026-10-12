@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { INTERNAL_FORM_URL } from "@/lib/constants";
 import MobileMenu, { type NavLink } from "@/components/MobileMenu";
 import ProfileGeneratorMark from "@/components/ProfileGeneratorMark";
 import UserMenu, { type NavUser } from "@/components/UserMenu";
@@ -21,8 +20,6 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
     { href: home, label: "Generator" },
     { href: `${home}/instructions`, label: "Instructions" },
     { href: "/style-guide", label: "Style Guide" },
-    // The submission form only applies to the internal profile workflow.
-    ...(home === "/internal" ? [{ href: INTERNAL_FORM_URL, label: "Submit Profile", external: true }] : []),
   ];
 
   return (

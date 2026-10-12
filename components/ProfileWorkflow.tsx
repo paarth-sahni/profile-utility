@@ -8,9 +8,8 @@ import ProfileGeneratorMark from "@/components/ProfileGeneratorMark";
 import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
-import PreviewStep from "@/components/PreviewStep";
+import PreviewStep, { type SubmittedVersion } from "@/components/PreviewStep";
 import { docxFileName } from "@/lib/docxReady";
-import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { defaultLabel, resolveLabel } from "@/lib/versionLabel";
@@ -61,7 +60,6 @@ type UploadStatus = "idle" | "reading" | "structuring" | "finishing";
 const STEP_UPLOAD = 1;
 const STEP_REVIEW = 2; // "Edit details"
 const STEP_PREVIEW = 3;
-const STEP_SUBMIT = 4; // internal only
 
 /** Per-template copy for the "get started" experience (the two choice cards and the upload screen). */
 const START: Record<
@@ -114,7 +112,7 @@ const HERO_SUBTEXT: Record<TemplateId, string> = {
 
 const STEP_LABELS: Record<TemplateId, string[]> = {
   external: ["Start", "Upload resume", "Edit details", "Preview"],
-  internal: ["Start", "Upload resume", "Edit details", "Preview", "Submit"],
+  internal: ["Start", "Upload resume", "Edit details", "Preview"],
 };
 
 /** Shown next to the Save button when required information is missing. */
@@ -264,7 +262,6 @@ export default function ProfileWorkflow({
     let target = requested;
     if (target >= STEP_REVIEW && !data) target = 0;
     if (target === STEP_UPLOAD && source === "scratch") target = 0;
-    if (target === STEP_SUBMIT && templateId !== "internal") target = STEP_REVIEW;
     if (target === STEP_PREVIEW) {
       enterPreview();
       return;
@@ -447,14 +444,15 @@ export default function ProfileWorkflow({
 
   /**
    * Saves the current form as a new immutable version in My Profiles (internal profiles only). Validation is the
-   * caller's job. Returns null on success, or the message to show. Updates the saved-version state on success.
+   * caller's job. Returns the saved version, or the message to show. Updates the saved-version state on success.
    */
-  const persist = async (): Promise<string | null> => {
-    if (!data || templateId !== "internal") return "This profile cannot be saved.";
+  const persist = async (): Promise<{ ok: true; profileId: string; versionNo: number } | { ok: false; message: string }> => {
+    const fail = (message: string) => ({ ok: false as const, message });
+    if (!data || templateId !== "internal") return fail("This profile cannot be saved.");
     const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
     // A role-specific version must be named; a normal one falls back to "Base" / "v<next>".
     const resolved = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: kind === "role_specific" });
-    if (!resolved.ok) return resolved.message;
+    if (!resolved.ok) return fail(resolved.message);
     const label = resolved.label;
     setSaving(true);
     const effective: ResumeData = fromScratch
@@ -480,7 +478,7 @@ export default function ProfileWorkflow({
       });
       if (res.status === 401) {
         endSession();
-        return "Your session has ended. Please sign in again; your work is kept in this tab.";
+        return fail("Your session has ended. Please sign in again; your work is kept in this tab.");
       }
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "We could not save your profile. Please try again.");
@@ -495,9 +493,9 @@ export default function ProfileWorkflow({
         setData(effective);
         setSource("saved");
       }
-      return null;
+      return { ok: true, profileId: json.profileId, versionNo: json.versionNo };
     } catch (e) {
-      return e instanceof Error ? e.message : "We could not save your profile. Please try again.";
+      return fail(e instanceof Error ? e.message : "We could not save your profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -512,21 +510,20 @@ export default function ProfileWorkflow({
       setSaveError(MISSING_MSG);
       return;
     }
-    const failure = await persist();
-    if (failure) setSaveError(failure);
+    const result = await persist();
+    if (!result.ok) setSaveError(result.message);
   };
 
   /**
-   * "Submit" on Preview (internal only): saves the version to My Profiles, then shows the Submit step (the HR form
-   * link). When this exact content is already saved (nothing edited since), that version is reused instead of
-   * creating an identical new one. Throws with a message to show on Preview if saving fails.
+   * "Submit" on Preview (internal only): saves the version to My Profiles and stays on Preview, which then shows the
+   * success message. When this exact content is already saved (nothing edited since), that version is reused instead
+   * of creating an identical new one. Throws with a message to show on Preview if saving fails.
    */
-  const submitProfile = async (): Promise<void> => {
-    if (!(savedInfo && lastVersionId && !dirty)) {
-      const failure = await persist();
-      if (failure) throw new Error(failure);
-    }
-    setStep(STEP_SUBMIT);
+  const submitProfile = async (): Promise<SubmittedVersion> => {
+    if (savedInfo && savedProfileId && lastVersionId && !dirty) return { profileId: savedProfileId, versionNo: savedInfo.no };
+    const result = await persist();
+    if (!result.ok) throw new Error(result.message);
+    return { profileId: result.profileId, versionNo: result.versionNo };
   };
 
   /** What Submit will do, shown above the Preview buttons. */
@@ -536,7 +533,7 @@ export default function ProfileWorkflow({
       return `This profile is already saved in My Profiles as v${savedInfo.no}${savedInfo.label ? ` (${savedInfo.label})` : ""}. Submit uses that version.`;
     }
     const r = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: roleSpecific && !!lastVersionId });
-    return r.ok ? `Submit saves this profile to My Profiles${r.label ? ` as “${r.label}”` : ""}, then shows the submission form.` : null;
+    return r.ok ? `Submit saves this profile to My Profiles${r.label ? ` as “${r.label}”` : ""}.` : null;
   };
 
   /** Puts the form back exactly as the draft had it. */
@@ -908,43 +905,6 @@ export default function ProfileWorkflow({
               note={submitNote()}
               onSessionEnded={endSession}
             />
-          </div>
-        )}
-
-        {/* ---------- STEP 4: submit (internal only) ---------- */}
-        {step === STEP_SUBMIT && templateId === "internal" && (
-          <div className="animate-fade-up space-y-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-2 font-semibold text-ink-dark">Submit your profile</h2>
-              {savedInfo && savedProfileId && (
-                <p className="mb-3 text-sm text-ink" data-saved-line>
-                  Saved to My Profiles &middot; v{savedInfo.no}
-                  {savedInfo.label ? ` \u00b7 ${savedInfo.label}` : ""} &middot;{" "}
-                  <a href={`/profiles/${savedProfileId}`} className="font-medium text-brand-600 hover:underline">
-                    View in My Profiles
-                  </a>
-                </p>
-              )}
-              <p className="mb-4 text-sm text-ink-light">
-                Once you&apos;ve downloaded your profile, upload the generated DOCX file through the Google Form
-                below to complete your profile submission.
-              </p>
-              <a
-                href={INTERNAL_FORM_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
-              >
-                Open submission form →
-              </a>
-            </div>
-            <button
-              type="button"
-              onClick={() => goTo(STEP_PREVIEW)}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
-            >
-              ← Back
-            </button>
           </div>
         )}
       </main>

@@ -16,6 +16,12 @@ import { ConsentError, recordConsent } from "@/lib/consentClient";
 import { saveDocxBlob } from "@/lib/generate";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
 
+/** The version Submit saved (or reused). */
+export interface SubmittedVersion {
+  profileId: string;
+  versionNo: number;
+}
+
 const CONSENT_REQUIRED = "Please tick the box to confirm before you continue.";
 
 export interface PreviewStepProps {
@@ -31,8 +37,8 @@ export interface PreviewStepProps {
   onBack: () => void;
   /** Called once the DOCX was handed to the browser. */
   onDownloaded: () => void;
-  /** Internal profiles only: saves the profile and moves on. Resolves when done (it shows its own errors via `submitError`). */
-  onSubmit?: () => Promise<void>;
+  /** Internal profiles only: saves the profile (or reuses the saved version) and returns it; throws a readable error if it fails. */
+  onSubmit?: () => Promise<SubmittedVersion>;
   submitError?: string | null;
   /** Shown above the buttons, e.g. what Submit will save. */
   note?: string | null;
@@ -58,6 +64,7 @@ export default function PreviewStep({
   const [consentError, setConsentError] = useState<string | null>(null);
   const [busy, setBusy] = useState<ConsentAction | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [submitted, setSubmitted] = useState<SubmittedVersion | null>(null);
   const checkbox = useRef<HTMLInputElement>(null);
 
   const ready = docx.status === "ready";
@@ -99,10 +106,11 @@ export default function PreviewStep({
   const submit = async () => {
     if (!onSubmit || !ready || busy || !requireConsent()) return;
     setMessage(null);
+    setSubmitted(null);
     setBusy("submit");
     try {
       await record("submit");
-      await onSubmit();
+      setSubmitted(await onSubmit());
     } catch (e) {
       setMessage({ kind: "error", text: e instanceof Error ? e.message : "We could not submit your profile." });
     } finally {
@@ -160,7 +168,16 @@ export default function PreviewStep({
         )}
       </div>
 
-      {note && <p className="text-sm text-ink-light">{note}</p>}
+      {submitted && (
+        <div role="status" data-submitted className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-ink shadow-sm">
+          Submitted &middot; saved to My Profiles &middot; v{submitted.versionNo} &middot;{" "}
+          <a href={`/profiles/${submitted.profileId}`} className="font-medium text-brand-600 hover:underline">
+            View in My Profiles
+          </a>
+        </div>
+      )}
+
+      {note && !submitted && <p className="text-sm text-ink-light">{note}</p>}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button type="button" onClick={onBack} disabled={busy !== null} className={outline}>

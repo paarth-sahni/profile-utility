@@ -431,7 +431,8 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   const consents = (action) => Number(sql(`select count(*) from audit_log where action='consent_${action}' and at >= '${since}' and actor_id=(select id from auth.users where email='member@example.test')`));
   const labels = () => ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
 
-  check("the steps are Start, Upload resume, Edit details, Preview, Submit", (await labels()) === "Start|Upload resume|Edit details|Preview|Submit", await labels());
+  check("the steps are Start, Upload resume, Edit details, Preview (no Submit step)", (await labels()) === "Start|Upload resume|Edit details|Preview", await labels());
+  check("there is no 'Submit Profile' link in the top menu", !(await ev("[...document.querySelectorAll('header a')].some(a=>/submit profile/i.test(a.textContent))")));
   const bodyBefore = await bodyText();
   check("Edit details no longer offers DOCX or Google Docs buttons", !bodyBefore.includes("DOCX ↓") && !bodyBefore.includes("Open in Google Docs"));
 
@@ -456,7 +457,7 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   check("nothing was downloaded and nothing was recorded", (await ev("window.__blobs.length")) === 0 && consents("download") === 0);
   await click("Submit", "[data-preview-step] button");
   await sleep(400);
-  check("Submit without the consent box does not go on", !(await bodyText()).includes("Submit your profile") && consents("submit") === 0);
+  check("Submit without the consent box saves nothing", !(await ev("!!document.querySelector('[data-submitted]')")) && consents("submit") === 0);
 
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await sleep(200);
@@ -478,31 +479,28 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   await waitFor("!!document.querySelector('label input')", "back on edit");
   check("Back to edit keeps everything that was typed", (await t.getName()) === "E2E Preview Person");
 
-  // Submit: consent first, then the existing Submit step
+  // Submit: consent first, then the version is saved and the success message appears ON Preview (no other step)
   await click("Preview →");
   await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview again");
   check("the consent box is ticked fresh each time Preview is entered", (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
-  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step");
-  check("Submit records the consent and shows the existing Submit step with the form link", consents("submit") === 1 && (await bodyText()).includes("Open submission form"));
+  await waitFor("!!document.querySelector('[data-submitted]')", "success message");
   const versionsOf = () => Number(sql("select count(*) from profile_versions v join profiles p on p.id=v.profile_id where p.candidate_name='E2E Preview Person'"));
-  check("Submit saved the version to My Profiles first", versionsOf() === 1 && (await bodyText()).includes("Saved to My Profiles · v1 · Base") && (await ev("document.querySelector('[data-saved-line] a')?.getAttribute('href')"))?.startsWith("/profiles/"));
-  await click("← Back");
-  await waitFor("!!document.querySelector('[data-preview-step]')", "back to preview from submit");
-  check("Back on the Submit step returns to Preview", true);
+  const okText = () => ev("document.querySelector('[data-submitted]')?.innerText.replace(/\\s+/g,' ').trim() ?? ''");
+  check("Submit records the consent and saves the version", consents("submit") === 1 && versionsOf() === 1);
+  check("Preview shows 'Submitted · saved to My Profiles · v1' with a View in My Profiles link", (await okText()).startsWith("Submitted · saved to My Profiles · v1") && (await ev("document.querySelector('[data-submitted] a')?.getAttribute('href')"))?.startsWith("/profiles/"));
+  const after = await bodyText();
+  check("there is no redirect and no form step: still on Preview, Download DOCX still there", (await ev("!!document.querySelector('[data-preview-step]')")) && after.includes("Download DOCX") && !after.includes("Submit your profile") && !after.includes("Open submission form"));
 
-  // Submitting again without editing reuses the saved version; after an edit it saves v2
-  check("Preview says the profile is already saved and Submit will use that version", (await bodyText()).includes("already saved in My Profiles as v1"));
-  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  // Submitting again without editing reuses the saved version
   await click("Submit", "[data-preview-step] button");
-  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step (again)");
-  check("submitting an unchanged profile does not create another version", versionsOf() === 1);
-  await click("← Back");
-  await waitFor("!!document.querySelector('[data-preview-step]')", "preview (again)");
+  await sleep(800);
+  check("submitting an unchanged profile does not create another version", versionsOf() === 1 && (await okText()).includes("v1"));
+
+  // After an edit, Submit saves v2
   await click("← Back to edit");
   await waitFor("!!document.querySelector('label input')", "edit (again)");
-  await t.fillRequired("E2E Preview Person"); // same name, edits the form again
   await t.fill("Job title", "Staff Engineer");
   await sleep(200);
   await click("Preview →");
@@ -510,10 +508,8 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   check("after an edit the note says Submit will save a new version", (await bodyText()).includes("Submit saves this profile to My Profiles"));
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
-  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step (edited)");
-  check("an edited profile is saved as v2 on Submit", versionsOf() === 2 && (await bodyText()).includes("Saved to My Profiles · v2 · v2"));
-  await click("← Back");
-  await waitFor("!!document.querySelector('[data-preview-step]')", "preview (after v2)");
+  await waitFor("!!document.querySelector('[data-submitted]')", "success message (v2)");
+  check("an edited profile is saved as v2 on Submit", versionsOf() === 2 && (await okText()).startsWith("Submitted · saved to My Profiles · v2"));
 
   // The consent API refuses anything but an explicit accept
   const bad = await ev(`fetch('/api/consent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',action:'download',accepted:false})}).then(r=>r.status)`);

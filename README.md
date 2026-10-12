@@ -27,9 +27,11 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    be ticked before Submit, Download or Google Docs. Each use is written to `audit_log` (`consent_submit`,
    `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
    content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
-5. **Submit** (internal only) — shown after **Submit** on Preview. Submit saves the profile as a new version in
-   My Profiles first (if nothing changed since the last save, that version is reused), then this step shows the
-   Google Form link where the DOCX is uploaded for HR.
+
+**Submit** (internal only, on Preview) validates, records the consent and saves the profile as a new version in
+My Profiles (if nothing changed since the last save, that version is reused). Preview stays on screen and shows
+"Submitted · saved to My Profiles · v3" with a *View in My Profiles* link; *Download DOCX* remains available. There is
+no further step and no external form link.
 
 ### Internal vs external
 
@@ -37,7 +39,7 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 |---|---|---|
 | Saved in the database | yes: My Profiles, version history, role-specific versions | **never** |
 | Edit details | save controls (version label, role-specific) | no save controls |
-| Preview | Back to edit, Download DOCX, Submit, (Google Docs) | Back to edit, Download DOCX, (Google Docs) |
+| Preview | Back to edit, Download DOCX, Submit (stays on Preview), (Google Docs) | Back to edit, Download DOCX, (Google Docs) |
 | Session-expiry banner | "save your profile now" + Save button | "download your DOCX now", no Save button |
 | Listed in My Profiles / Manage | yes | n/a |
 
@@ -118,7 +120,7 @@ npm run test:e2e
 
 `npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs`: the Preview step (exact
 DOCX rendered, the downloaded file matches what was previewed, validation gate, consent before Download / Submit /
-Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version (and reusing it when unchanged),
+Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
 external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
 and admins only (Preview, My Profiles, Manage), previews hiding empty sections, version label defaults, the
 unsaved-changes dialog, optional-section notes and brand rules. Google is **stubbed** in the page (a fake token client;
@@ -228,8 +230,9 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
 4. **Same file**: open the downloaded DOCX in Word; it matches the preview.
-5. **Submit (internal)**: tick, *Submit* → *Submit your profile* step with "Saved to My Profiles · v1" and the form
-   link; *My Profiles* lists it. Back → Preview → Submit again without edits → still v1. Edit, Preview, Submit → v2.
+5. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
+   *View in My Profiles* link (no new step, no form link); Download DOCX still works. *My Profiles* lists it. Submit
+   again without edits → still v1. Edit, Preview, Submit → v2. The top and mobile menus have no "Submit Profile" link.
 6. **External**: `/external` → blank form → no *Save* / *Version label*; steps are Start, Upload resume, Edit details,
    Preview; Preview has *Back to edit* and *Download DOCX* only. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`

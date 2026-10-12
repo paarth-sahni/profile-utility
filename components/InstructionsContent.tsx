@@ -210,21 +210,8 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             <strong>Preview</strong> shows the exact document that will be generated. If something is missing, you are
             taken back to Edit details with the fields marked. Do a final review, tick the confirmation (&ldquo;I confirm
             the information in this profile is accurate and may be shared&rdquo;), then choose <strong>Submit</strong> to save the
-            profile to My Profiles and continue, or <strong>Download DOCX</strong> to keep a copy. <strong>← Back to
+            profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link> (a confirmation with its version number appears on the same screen), and <strong>Download DOCX</strong> to keep a copy. <strong>← Back to
             edit</strong> keeps your changes.
-          </Step>
-          <Step n={5} title="Submit">
-            Submitting saves your profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link>. Then
-            upload the generated DOCX (download it from Preview if you have not yet) through the{" "}
-            <a
-              href="https://forms.gle/AkoYDhnMvyxyXFP5A"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand-500 underline"
-            >
-              Google Form
-            </a>{" "}
-            to complete your profile submission.
           </Step>
         </ol>
       </Card>
@@ -250,7 +237,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
           </li>
           <li>
             <strong>Formatting adjustments</strong> – If the downloaded DOCX requires any formatting changes, upload
-            it to Google Docs, update the formatting, and share the Google Docs link while submitting the form.
+            it to Google Docs and update the formatting there.
           </li>
           <li>
             <strong>Style Guide</strong> – Use the predefined{" "}
