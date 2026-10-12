@@ -157,6 +157,20 @@ export async function startHarness(title) {
       while (Date.now() - t0 < 4000 && !(await ev(`(()=>{const i=${input}; return !!i && Object.keys(i).some(k=>k.startsWith('__reactProps'))})()`))) await sleep(100);
       return ev(`(()=>{const i=${input}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     },
+    /** Types into the field whose label text is exactly `label` (ignoring "(optional)"), input or textarea. */
+    fill: (label, value) =>
+      ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>(l.querySelector('span')?.textContent??'').replace('(optional)','').trim()===${JSON.stringify(label)}); const i=l?.querySelector('input,textarea'); if(!i) return false; const proto=i.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement; Object.getOwnPropertyDescriptor(proto.prototype,'value').set.call(i,${JSON.stringify(value)}); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`),
+    /** Fills the internal blank form with only the required fields (name, job title, overview, education, one skill). */
+    async fillRequired(name) {
+      await h.setName(name);
+      await h.fill("Job title", "Engineer");
+      await h.fill("Overview", "Only the overview.");
+      await h.fill("Year", "2014");
+      await h.fill("Qualification", "B.E.");
+      await h.fill("Skill", "Java");
+      await h.fill("Rating out of 5 (e.g. 4)", "4");
+      await sleep(300);
+    },
     getName: () => ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); return l?.querySelector('input')?.value ?? null})()`),
     draftOf: (template = "internal") => ev(`sessionStorage.getItem('profile-draft:v1:${template}')`),
     /** Presses a key in the page. */

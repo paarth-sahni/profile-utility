@@ -7,7 +7,7 @@
 import { startHarness } from "./e2e-lib.mjs";
 
 const t = await startHarness("e2e-drafts");
-const { check, goto, click, bodyText, setName, getName, draftOf, waitFor, ev, sleep, sql, signIn, ageSession, key } = t;
+const { check, goto, click, bodyText, setName, fillRequired, getName, draftOf, waitFor, ev, sleep, sql, signIn, ageSession, key } = t;
 
 /** A clean slate for one scenario: signed in as `who`, nothing in this tab's storage, on the start screen. */
 async function fresh(who = "member") {
@@ -36,7 +36,7 @@ await t.scenario("draft is written while there is unsaved work (and only in sess
 await t.scenario("session ends: 401 on save, restore after re-login, save clears the draft, expiry banner", async () => {
   await fresh();
   await openBlankForm();
-  await setName("E2E Draft Test");
+  await fillRequired("E2E Draft Test"); // saving needs the required fields
   await sleep(700);
   ageSession("member", "2 hours 1 minute");
   await click("Save to My Profiles");

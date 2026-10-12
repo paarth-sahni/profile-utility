@@ -200,7 +200,7 @@ await t.scenario("version labels default to Base, then v2, v3...; role-specific 
   await goto("/internal");
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "review form");
-  await t.setName("E2E Label Test");
+  await t.fillRequired("E2E Label Test"); // saving needs the required fields
   const label = () => ev("document.getElementById('save-label').value");
   const setLabel = (v) => ev(`(()=>{const i=document.getElementById('save-label'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   const saved = (text) => waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`, text);
@@ -247,14 +247,20 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   await goto("/internal");
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "review form");
-  await t.setName("E2E Leave Test");
+  await t.fillRequired("E2E Leave Test");
   const nativeBefore = t.dialogs.length;
   const dialogOpen = () => ev("!!document.querySelector('dialog[open]')");
+  /** My Profiles is in the avatar menu (not the header row): open the menu, then click the link. */
+  const clickMyProfiles = async () => {
+    if (!(await ev("!!document.querySelector('a[role=menuitem]')"))) await ev("document.querySelector('header button[aria-haspopup]')?.click()");
+    await sleep(200);
+    await click("My Profiles", "a[role=menuitem]");
+  };
   const beforeUnloadPrevented = () => ev("(()=>{const e=new Event('beforeunload',{cancelable:true}); window.dispatchEvent(e); return e.defaultPrevented})()");
 
   check("the browser's own beforeunload prompt stays active for refresh and close", await beforeUnloadPrevented());
 
-  await click("My Profiles", "header a");
+  await clickMyProfiles();
   await waitFor("!!document.querySelector('dialog[open]')", "leave dialog");
   check("clicking a nav link asks 'Leave without saving?' in the branded dialog", (await bodyText()).includes("Leave without saving?") && (await ev("location.pathname")) === "/internal");
   check("the buttons are Stay and Leave anyway, and focus starts on Stay", (await ev("[...document.querySelectorAll('dialog[open] button')].map(b=>b.textContent.trim()).join('|')")) === "Stay|Leave anyway" && (await ev("document.activeElement?.textContent?.trim()")) === "Stay");
@@ -263,7 +269,7 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   await sleep(300);
   check("Esc = Stay: the dialog closes and the form is untouched", !(await dialogOpen()) && (await ev("location.pathname")) === "/internal" && (await t.getName()) === "E2E Leave Test");
 
-  await click("My Profiles", "header a");
+  await clickMyProfiles();
   await waitFor("!!document.querySelector('dialog[open]')", "dialog again");
   await click("Stay");
   await sleep(300);
@@ -278,18 +284,20 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   // typing again brings it back; Leave anyway goes through
   await t.setName("E2E Leave Test 2");
   await sleep(200);
-  await click("My Profiles", "header a");
+  await clickMyProfiles();
   await waitFor("!!document.querySelector('dialog[open]')", "dialog (leave)");
   await click("Leave anyway");
   await waitFor("location.pathname === '/profiles'", "navigated to My Profiles");
   check("Leave anyway navigates to the link", true);
   check("it was an in-app navigation (no native prompt)", t.dialogs.length === nativeBefore);
 
-  // a clean page never asks
+  // a clean page never asks (leaving anyway kept a draft in this tab: clear it so no restore prompt interferes)
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
   await goto("/internal");
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "form");
-  await click("My Profiles", "header a");
+  await clickMyProfiles();
   await sleep(500);
   check("a blank form nobody typed into still counts as unsaved work, so it asks", await dialogOpen());
   await click("Leave anyway");
@@ -346,7 +354,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await fill("Year", "2014");
   await fill("Qualification", "B.E.");
   await fill("Skill", "Java");
-  await fill("Rating (e.g. 3.8)", "4");
+  await fill("Rating out of 5 (e.g. 4)", "4");
   await sleep(300);
   await click("DOCX ↓");
   await waitFor("document.body.innerText.includes('DOCX downloaded')", "docx generated with only the required fields");
@@ -354,7 +362,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
 
   // filling an optional section removes its note
   await fill("Certifications", "x"); // not a label: no-op guard
-  const certInput = await ev(`(()=>{const h=[...document.querySelectorAll('h3')].find(h=>h.textContent.startsWith('Certifications')); const i=h?.closest('section')?.querySelector('input'); if(!i) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Sample Cloud Associate'); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`);
+  const certInput = await ev(`(()=>{const h=[...document.querySelectorAll('h3')].find(h=>h.textContent.startsWith('Certifications')); const i=h?.closest('section')?.querySelector('input'); if(!i) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Sample Cloud Associate,'); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`);
   await sleep(300);
   const after = JSON.parse(await notes());
   check("typing in an optional section removes its note", certInput && !after.includes("Certifications") && after.includes("Tools"), JSON.stringify(after));
@@ -362,7 +370,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   // required field cleared again -> clear error, naming the field
   await fill("Overview", "");
   await click("DOCX ↓");
-  await waitFor("document.body.innerText.includes('overview')", "overview error");
+  await waitFor("document.body.innerText.toLowerCase().includes('overview')", "overview error");
   check("a missing required field is still reported", true);
 });
 

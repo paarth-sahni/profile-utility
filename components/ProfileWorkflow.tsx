@@ -162,6 +162,7 @@ export default function ProfileWorkflow({
   // extraction result shown on Review
   const [extraction, setExtraction] = useState<ExtractResult | null>(null);
   const [edited, setEdited] = useState(false);
+  const [flagsDismissed, setFlagsDismissed] = useState(false);
 
   // saving to My Profiles
   const [savedProfileId, setSavedProfileId] = useState<string | null>(initial?.profileId ?? null);
@@ -294,6 +295,7 @@ export default function ProfileWorkflow({
     setDirty(false);
     setDownloaded(false);
     setRestored(null);
+    setFlagsDismissed(false);
     setEdited(false);
     setStep(STEP_REVIEW);
     setGenerateError(null);
@@ -335,6 +337,7 @@ export default function ProfileWorkflow({
       setDirty(false);
       setDownloaded(false);
       setRestored(null);
+      setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
       setGenerateError(null);
@@ -531,6 +534,7 @@ export default function ProfileWorkflow({
     setErrors(null);
     setGenerateError(null);
     setGenerated(null);
+    setFlagsDismissed(false);
     setEdited(true);
     setDirty(true);
     setDownloaded(false);
@@ -555,6 +559,8 @@ export default function ProfileWorkflow({
   };
 
   const flags = flagsNow;
+  const issues = extraction?.issues ?? [];
+  const showFlagsPanel = (source === "upload" || source === "saved") && !flagsDismissed && (flags.length > 0 || issues.length > 0);
 
   return (
     <div className="w-full text-ink">
@@ -759,6 +765,35 @@ export default function ProfileWorkflow({
         {step === STEP_REVIEW && data && (
           <div className="animate-fade-up space-y-5">
             {source === "upload" && extraction && <ExtractionSummary fileName={fileName} />}
+
+            {showFlagsPanel && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-4">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-amber-800">Please double-check</p>
+                  <button
+                    type="button"
+                    onClick={() => setFlagsDismissed(true)}
+                    aria-label="Dismiss"
+                    className="rounded px-1 text-sm text-amber-700 hover:bg-amber-100"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {flags.length > 0 && <FlagList flags={flags} />}
+                {issues.length > 0 && (
+                  <>
+                    <p className="mb-1 mt-3 text-sm font-semibold text-amber-800">Still needed before you can generate</p>
+                    <ul className="space-y-1 text-sm text-amber-900">
+                      {issues.map((f, i) => (
+                        <li key={i}>
+                          <span className="font-medium">{f.path}</span> — {f.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
 
             {templateId === "external" ? (
               <ExternalForm data={data as ExternalResume} onChange={handleFormChange} fieldErrors={fieldErrors} />
