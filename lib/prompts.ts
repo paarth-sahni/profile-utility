@@ -41,11 +41,19 @@ TRUTHFULNESS (highest priority)
 - Every value you had to estimate or infer (not stated outright) must be listed in reviewFlags with its dot path (e.g. "projects.0.duration", "skills.2.rating") and a short reason. Paths index the arrays in YOUR OUTPUT (after any re-ordering), not the order in the source.
 
 WRITING STANDARD
-- Overview: 3-5 sentences, third person, restating only facts found in the resume (experience, core expertise, domains, achievements). Start with the role or profile (e.g. "Computer Science graduate specializing in…", "Cloud engineer with…"); never with "The candidate" or any pronoun.
+- Overview: 3-5 sentences, third person, using only facts found in the resume (the kind of work, domains, strongest expertise, achievements). The header (name, job title, experience line, specialization) is printed directly above the overview, so the overview must NOT restate any of them, verbatim or near-verbatim, and must NOT open with the job title or the years of experience. Open with substance instead. Never open with "The candidate" or any pronoun. Fictional example: header "Data Engineer" and "6+ Years of Industry Experience" — do not write "Data Engineer with 6+ years of experience building pipelines…"; write "Builds batch and streaming pipelines for retail analytics…". The overview summarises; it does not list every skill or tool (the Skills and Tools sections show them), so name at most three or four that define the profile, and never a long comma-separated list of tools.
 - Never use gendered pronouns (he, she, his, her) or guess gender from a name; write without pronouns.
 - Bullets: one sentence each, start with a past-tense verb (present tense only for the current role), 10-25 words, no trailing period inconsistency, no first person.
 - Keep technology names in their official casing (JavaScript, ReactJS, Node.js, AWS, ServiceNow, PostgreSQL).
 - Deduplicate skills/tools case-insensitively. Skills = capabilities/languages/frameworks/methodologies; tools = software products used to do the work (JIRA, Git, Postman, Jenkins).
+
+NO REPETITION (truthfulness still wins: never add, upgrade or invent a fact just to avoid repeating something)
+- Every field adds something the others do not. Do not say the same thing twice across the header, the overview, a project description and its bullets.
+- A project description must not repeat or start with the project title (the title is printed right above it); describe what the project is or does. If the source sentence begins with the title, drop the title and keep the rest of the sentence (a grammar edit, not a new claim). Fictional example: title "Store Locator", source "Store Locator is a web app that lets shoppers find nearby stores." — write "Web app that lets shoppers find nearby stores." Never begin a description with the title, even when the source does.
+- Bullets must not repeat the description. No two bullets in one entry may say the same thing: if the source states one action twice in different words, output it once (keep the more specific wording).
+- Vary the opening verb across consecutive bullets when the source allows it (e.g. Designed / Built / Migrated rather than Designed / Designed / Designed), using only synonyms that keep the meaning and add no claim.
+- Do not repeat a phrase within one field (for example the same clause twice in the overview, or the same tool list twice in one bullet).
+- Removing repetition must never add anything: when the resume has less to say, a shorter overview or fewer bullets is correct. Do not fill the gap with connecting claims the resume does not state (such as "ensuring …", "across multiple …", "driving …").
 
 DERIVED FIELDS
 - experienceSummary: with 1 or more years of full-time professional experience, exactly "<N>+ Years of Industry Experience". N = whole years from the earliest full-time professional role to today ({TODAY}), merging overlapping periods, excluding internships, training and education, rounded down.
@@ -61,7 +69,7 @@ FIELD HANDLING
 - Team size: keep ranges exactly as written (e.g. "2-3", "10-12"). Do not collapse them to one number.
 - Project text — never invent actions and never move content:
   * Keep each project's content in that project. Never move content between projects, and never move content from the overview or any other section into a project.
-  * DESCRIPTION comes from the project's own text in the resume, lightly edited for grammar only. NEVER leave it empty when the source has text for that project, and never drop a sentence that describes the product or platform (what it is, who it is for, what it does).
+  * DESCRIPTION comes from the project's own text in the resume, lightly edited for grammar only (and without a leading project title: see NO REPETITION). NEVER leave it empty when the source has text for that project, and never drop a sentence that describes the product or platform (what it is, who it is for, what it does).
   * Split into description + bullets ONLY when the source has a paragraph containing several distinct actions by the person. Then "description" = the opening sentence(s) that describe the project, and EVERY remaining action sentence becomes exactly one responsibilities bullet. Do not drop, merge or add any action. Before answering, check that each action in the source maps to a bullet.
   * If the project text states no actions by the person (it only says what the product or platform does, including a single sentence), do NOT turn the features into personal action bullets. The responsibilities list MUST contain exactly ONE bullet, built from the stated role and project name (e.g. "Contributed as Data Engineer to the Orders Analytics platform"), with a reviewFlag (path "projects.<index>.responsibilities") and the reason "no responsibilities stated in source". Never return an empty list when a role is stated; if no role is stated either, leave it empty and flag it.
   * Never repeat the same sentence in both the description and a bullet.
@@ -135,7 +143,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   } else if (a.seniority === "senior" || a.seniority === "leadership") {
     m.push({
       name: "senior-leadership",
-      text: "Lead the overview with scope: years, team sizes managed, delivery/ownership, domains, if stated. Prioritise bullets showing ownership, architecture, stakeholder management and outcomes. Older roles (10+ years ago) may be condensed to 2-3 bullets.",
+      text: "Lead the overview with scope: team sizes managed, delivery/ownership and domains, if stated (the job title and the years of experience are already in the header: do not repeat them). Prioritise bullets showing ownership, architecture, stakeholder management and outcomes. Older roles (10+ years ago) may be condensed to 2-3 bullets.",
     });
   }
   if (a.density === "sparse") {
@@ -166,7 +174,7 @@ export function describePromptPlan(analysis: ResumeAnalysis): string[] {
 }
 
 const DESC_COMMENT =
-  "The project's own text, lightly edited for grammar (see the project text rules); never empty if the source has text";
+  "What the project is or does, from the project's own text, lightly edited for grammar (see the project text rules); must NOT start with or repeat the project title (drop a leading title from the source sentence); never empty if the source has text";
 
 const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
@@ -174,7 +182,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "jobTitle": string,              // Current/target designation, e.g. "Senior QA Engineer"
   "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "12+ Years of Industry Experience"; freshers: see the experienceSummary rule
   "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "Cloud Infrastructure & DevOps"
-  "overview": string,              // 3-5 sentence professional summary paragraph
+  "overview": string,              // 3-5 sentence professional summary; must not restate the header fields (job title, experience line, specialization)
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
     { "year": string,              // Completion year, e.g. "2016"
       "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (Computer Science), Riverside University"
@@ -205,7 +213,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const EXTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Cloud platform engineer with 9+ years of experience in infrastructure automation and CI/CD. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 - Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"2019 - Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
+{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 - Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"2019 - Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
 
 const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
@@ -213,7 +221,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "jobTitle": string,              // Current/target designation, e.g. "Senior QA Engineer"
   "experienceSummary": string,     // "<N>+ Years of Industry Experience" (1+ years), e.g. "12+ Years of Industry Experience"; freshers: see the experienceSummary rule
   "specialization": string,        // Primary specialization, MAX 5 WORDS, e.g. "Cloud Infrastructure & DevOps"
-  "overview": string,              // 3-5 sentence professional summary paragraph
+  "overview": string,              // 3-5 sentence professional summary; must not restate the header fields (job title, experience line, specialization)
   "education": [                   // EXACTLY ONE entry: the highest qualification only ([] if none stated)
     { "year": string,              // Completion year, e.g. "2016"
       "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (Computer Science), Riverside University"
@@ -245,7 +253,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const INTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Daniel Ortiz","jobTitle":"Mobile Application Developer","experienceSummary":"4+ Years of Industry Experience","specialization":"Mobile App Development","overview":"Mobile developer with 4+ years of experience building Android and cross-platform apps for retail and logistics clients. Experienced in offline-first design and payment integrations.","education":[{"year":"2020","qualification":"Bachelor of Technology (Electronics), Lakeshore University"}],"projects":[{"duration":"Aug 2022 - Mar 2023","title":"Store Associate Companion App","toolsAndTechnologies":["Kotlin","Room","Firebase","Jetpack Compose"],"teamSize":"6","role":"Android Developer","projectLink":"NDA","description":"Mobile app that gives retail store associates stock lookup, order tracking and task lists on the shop floor.","responsibilities":["Built the stock lookup and order tracking screens with Jetpack Compose.","Implemented offline caching with Room so the app works without connectivity.","Integrated Firebase push notifications for task assignments."]}],"skills":[{"name":"Kotlin","rating":"4"},{"name":"Android SDK","rating":"4.2"}],"certifications":["Google Associate Android Developer"],"tools":["Android Studio","Git","JIRA"],"managerialExperience":[],"domains":["Retail","Logistics"],"languages":["English","Spanish"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
+{"name":"Daniel Ortiz","jobTitle":"Mobile Application Developer","experienceSummary":"4+ Years of Industry Experience","specialization":"Mobile App Development","overview":"Builds Android and cross-platform apps for retail and logistics clients. Experienced in offline-first design and payment integrations.","education":[{"year":"2020","qualification":"Bachelor of Technology (Electronics), Lakeshore University"}],"projects":[{"duration":"Aug 2022 - Mar 2023","title":"Store Associate Companion App","toolsAndTechnologies":["Kotlin","Room","Firebase","Jetpack Compose"],"teamSize":"6","role":"Android Developer","projectLink":"NDA","description":"Mobile app that gives retail store associates stock lookup, order tracking and task lists on the shop floor.","responsibilities":["Built the stock lookup and order tracking screens with Jetpack Compose.","Implemented offline caching with Room so the app works without connectivity.","Integrated Firebase push notifications for task assignments."]}],"skills":[{"name":"Kotlin","rating":"4"},{"name":"Android SDK","rating":"4.2"}],"certifications":["Google Associate Android Developer"],"tools":["Android Studio","Git","JIRA"],"managerialExperience":[],"domains":["Retail","Logistics"],"languages":["English","Spanish"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
 
 /** Description of the JSON shape for the template (also useful on its own in tests). */
 export const schemaDescription = (id: TemplateId): string => (id === "external" ? EXTERNAL_SCHEMA : INTERNAL_SCHEMA);
