@@ -51,13 +51,13 @@ export type Database = {
                   ]
                 },"audit_log": {
                   Row: {
-                    "action": string,"actor_id": string | null,"at": string,"entity": string,"entity_id": string | null,"id": number
+                    "action": string,"actor_id": string | null,"at": string,"detail": Json | null,"entity": string,"entity_id": string | null,"id": number
                   }
                   Insert: {
-                    "action": string,"actor_id"?: string | null,"at"?: string,"entity": string,"entity_id"?: string | null,"id"?: never
+                    "action": string,"actor_id"?: string | null,"at"?: string,"detail"?: Json | null,"entity": string,"entity_id"?: string | null,"id"?: never
                   }
                   Update: {
-                    "action"?: string,"actor_id"?: string | null,"at"?: string,"entity"?: string,"entity_id"?: string | null,"id"?: never
+                    "action"?: string,"actor_id"?: string | null,"at"?: string,"detail"?: Json | null,"entity"?: string,"entity_id"?: string | null,"id"?: never
                   }
                   Relationships: [
                     
@@ -351,6 +351,11 @@ isOneToOne: false
 "save_profile_version":
 { Args: { "p_analysis": Json,"p_flags": Json,"p_kind": Database["public"]['Enums']["version_kind"],"p_label": string,"p_parent": string,"p_profile": Json,"p_profile_id": string,"p_prompt_plan": (string)[],"p_source": string,"p_template": Database["public"]['Enums']["template_kind"] }; Returns: {
               "new_version_id": string,"new_version_no": number
+            }[]
+                           },
+"search_profiles_by_name":
+{ Args: { "p_query": string }; Returns: {
+              "candidate_name": string,"id": string,"owner_email": string,"owner_id": string,"owner_name": string,"score": number,"template": Database["public"]['Enums']["template_kind"],"updated_at": string,"version_count": number
             }[]
                            }
           }

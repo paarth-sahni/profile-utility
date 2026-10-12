@@ -44,7 +44,10 @@ async function saveProfile(data, label = "Base", reviewFlags = []) {
 
 // ---- Google stub: a fake GIS token client in the page, and Drive requests answered by the test
 await send("Page.addScriptToEvaluateOnNewDocument", {
-  source: `window.__gis = { calls: 0, scope: null, mode: 'ok' };
+  // every DOCX blob given to URL.createObjectURL (file-saver does that for a download) is kept for inspection
+  source: `window.__blobs = []; { const make = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (o) => { if (o instanceof Blob && o.type.includes('wordprocessingml')) window.__blobs.push(o); return make(o); }; }
+    window.__gis = { calls: 0, scope: null, mode: 'ok' };
     window.google = { accounts: { oauth2: { initTokenClient(cfg) { return { requestAccessToken() {
       window.__gis.calls++; window.__gis.scope = cfg.scope;
       const m = window.__gis.mode;
@@ -135,15 +138,15 @@ await t.scenario("Open in Google Docs", async () => {
   await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", "incomplete message");
   check("an incomplete profile is refused before any Google popup", (await statusText()).includes("Incomplete:") && (await gisCalls()) === before);
 
-  // Review screen
+  // Edit details: an incomplete form cannot reach Preview, so Google is never contacted
   await goto("/internal");
   await click("Get started");
-  await waitFor("!!document.querySelector('label input')", "review form");
-  check("the button shows on Review", await googleButton());
+  await waitFor("!!document.querySelector('label input')", "edit form");
   const calls = await gisCalls();
-  await clickGoogle();
+  await click("Preview →");
   await sleep(500);
-  check("on Review, an incomplete form shows the errors and contacts no Google popup", (await statusText()).includes("fix the highlighted fields") && (await gisCalls()) === calls);
+  check("an incomplete form stays on Edit details with the errors shown", (await bodyText()).includes("before continuing") && !(await ev("!!document.querySelector('[data-preview-step]')")));
+  check("and no Google popup was opened", (await gisCalls()) === calls);
 
   // Manager: read-only page with both export buttons
   await signIn("manager");
@@ -356,9 +359,11 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await fill("Skill", "Java");
   await fill("Rating out of 5 (e.g. 4)", "4");
   await sleep(300);
-  await click("DOCX ↓");
-  await waitFor("document.body.innerText.includes('DOCX downloaded')", "docx generated with only the required fields");
-  check("a profile with only the required fields generates its DOCX (no validation errors)", !(await bodyText()).includes("Please fix"));
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview of a profile with only the required fields");
+  check("a profile with only the required fields reaches Preview (no validation errors)", !(await bodyText()).includes("before continuing"));
+  await click("← Back to edit");
+  await waitFor("!!document.querySelector('label input')", "back on Edit details");
 
   // filling an optional section removes its note
   await fill("Certifications", "x"); // not a label: no-op guard
@@ -369,9 +374,84 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
 
   // required field cleared again -> clear error, naming the field
   await fill("Overview", "");
-  await click("DOCX ↓");
+  await click("Preview →");
   await waitFor("document.body.innerText.toLowerCase().includes('overview')", "overview error");
-  check("a missing required field is still reported", true);
+  check("a missing required field is reported and Preview is not entered", !(await ev("!!document.querySelector('[data-preview-step]')")));
+});
+
+await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Back keeps edits", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "edit form");
+  const since = sql("select now()");
+  const consents = (action) => Number(sql(`select count(*) from audit_log where action='consent_${action}' and at >= '${since}' and actor_id=(select id from auth.users where email='member@example.test')`));
+  const labels = () => ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
+
+  check("the steps are Start, Upload resume, Edit details, Preview, Submit", (await labels()) === "Start|Upload resume|Edit details|Preview|Submit", await labels());
+  const bodyBefore = await bodyText();
+  check("Edit details no longer offers DOCX or Google Docs buttons", !bodyBefore.includes("DOCX ↓") && !bodyBefore.includes("Open in Google Docs"));
+
+  // validation runs before Preview: an empty form stays on Edit
+  await click("Preview →");
+  await sleep(500);
+  check("an incomplete profile does not enter Preview; the errors are shown on Edit details", (await bodyText()).includes("before continuing") && !(await ev("!!document.querySelector('[data-preview-step]')")));
+
+  await t.fillRequired("E2E Preview Person");
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview rendered");
+  const shown = await ev("document.querySelector('[data-doc-preview] section.docx, [data-doc-preview] .docx-wrapper')?.innerText ?? ''");
+  check("the DOCX itself is rendered in the page (docx-preview) with the candidate's name", shown.includes("E2E Preview Person"), shown.slice(0, 80));
+  const body = await bodyText();
+  check("Preview offers Back to edit, Download DOCX and Submit", ["← Back to edit", "Download DOCX", "Submit"].every((x) => body.includes(x)));
+  check("the consent checkbox has the agreed wording and starts unticked", body.includes("I confirm the information in this profile is accurate and may be shared") && (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
+
+  // consent is required, and recorded, before each action
+  await click("Download DOCX");
+  await sleep(400);
+  check("Download without the consent box shows a message and focuses the box", (await bodyText()).includes("Please tick the box to confirm") && (await ev("document.activeElement?.type")) === "checkbox");
+  check("nothing was downloaded and nothing was recorded", (await ev("window.__blobs.length")) === 0 && consents("download") === 0);
+  await click("Submit", "[data-preview-step] button");
+  await sleep(400);
+  check("Submit without the consent box does not go on", !(await bodyText()).includes("Submit your profile") && consents("submit") === 0);
+
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await sleep(200);
+  check("ticking the box clears the message", !(await bodyText()).includes("Please tick the box to confirm"));
+  await click("Download DOCX");
+  await waitFor("document.body.innerText.includes('DOCX downloaded')", "downloaded");
+  check("the consent was recorded in audit_log (metadata only) before the download", consents("download") === 1 && sql(`select detail::text from audit_log where action='consent_download' and at >= '${since}' order by id desc limit 1`).includes('"template": "internal"'));
+  const dl = JSON.parse(await ev(`(async()=>{const b=window.__blobs.at(-1); if(!b) return 'null'; const buf=new Uint8Array(await b.arrayBuffer()); let s=''; for(const x of buf) s+=String.fromCharCode(x); return JSON.stringify({size:b.size,b64:btoa(s)})})()`));
+  check("exactly one DOCX was handed to the browser", dl && dl.size > 1000);
+  if (dl) {
+    const { default: PizZip } = await import("pizzip");
+    const xml = new PizZip(Buffer.from(dl.b64, "base64")).file("word/document.xml").asText();
+    const text = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(" ");
+    check("the downloaded file contains the same content that was previewed (name, job title, overview)", ["E2E Preview Person", "Engineer", "Only the overview."].every((x) => text.includes(x) && shown.includes(x)), text.slice(0, 120));
+  }
+
+  // Back keeps the edits
+  await click("← Back to edit");
+  await waitFor("!!document.querySelector('label input')", "back on edit");
+  check("Back to edit keeps everything that was typed", (await t.getName()) === "E2E Preview Person");
+
+  // Submit: consent first, then the existing Submit step
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview again");
+  check("the consent box is ticked fresh each time Preview is entered", (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await click("Submit", "[data-preview-step] button");
+  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step");
+  check("Submit records the consent and shows the existing Submit step with the form link", consents("submit") === 1 && (await bodyText()).includes("Open submission form"));
+  await click("← Back");
+  await waitFor("!!document.querySelector('[data-preview-step]')", "back to preview from submit");
+  check("Back on the Submit step returns to Preview", true);
+
+  // The consent API refuses anything but an explicit accept
+  const bad = await ev(`fetch('/api/consent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',action:'download',accepted:false})}).then(r=>r.status)`);
+  check("POST /api/consent without accepted:true is a 400", bad === 400);
 });
 
 await t.scenario("review flags: same reason + same kind of field become one expandable line", async () => {

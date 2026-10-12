@@ -1,125 +1,90 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ResumeData, TemplateId } from "@/lib/schemas";
-import { renderPdfBlob } from "@/lib/pdfClient";
-import { renderDocxBlob } from "@/lib/generate";
+/**
+ * Purpose: shows a generated DOCX in the browser (docx-preview). It is given the finished Blob — the same object the
+ * Download button saves and Google Docs receives — so the preview is of the exact file, not a re-render. Shows its own
+ * loading and error states. On narrow screens the page is scaled down to fit instead of scrolling sideways.
+ * Rendering is approximate where Word and the browser differ (e.g. fonts the device does not have).
+ */
+import { useEffect, useRef, useState } from "react";
 
-export default function DocPreview({
-  templateId,
-  data,
-  onClose,
-  format = "pdf",
-}: {
-  templateId: TemplateId;
-  data: ResumeData;
-  onClose: () => void;
-  format?: "pdf" | "docx";
-}) {
-  const [url, setUrl] = useState<string | null>(null); // PDF object URL
-  const [rendering, setRendering] = useState(false);
+type RenderState = "loading" | "ready" | "error";
+
+export default function DocPreview({ blob }: { blob: Blob }) {
+  const frame = useRef<HTMLDivElement>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<RenderState>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
-  const docxRef = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(async () => {
-    setRendering(true);
+  // render the blob into the host element
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
     setError(null);
-    try {
-      if (format === "docx") {
-        // Render the exact .docx that downloads, straight into the DOM.
-        const blob = await renderDocxBlob(templateId, data);
+    (async () => {
+      try {
         const { renderAsync } = await import("docx-preview");
-        const container = docxRef.current;
-        if (container) {
-          container.innerHTML = "";
-          await renderAsync(blob, container, undefined, {
-            className: "docx",
-            inWrapper: true,
-            breakPages: true,
-            renderHeaders: true,
-            renderFooters: true,
-          });
-        }
-      } else {
-        const blob = await renderPdfBlob(templateId, data);
-        setUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return URL.createObjectURL(blob);
+        if (cancelled || !host.current) return;
+        host.current.innerHTML = "";
+        await renderAsync(blob, host.current, undefined, {
+          className: "docx",
+          inWrapper: true,
+          breakPages: true,
+          renderHeaders: true,
+          renderFooters: true,
+          ignoreLastRenderedPageBreak: true,
         });
+        const wrapper = host.current.querySelector<HTMLElement>(".docx-wrapper");
+        if (wrapper) wrapper.style.background = "transparent"; // docx-preview's default grey is off-brand
+        if (!cancelled) setState("ready");
+      } catch (e) {
+        console.error("[preview] could not render the DOCX", e);
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+          setState("error");
+        }
       }
-      setStale(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRendering(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, data, format]);
-
-  // render once on mount; afterwards mark stale when data changes
-  const mounted = useRef(false);
-  useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      refresh();
-    } else {
-      setStale(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, data]);
-
-  // revoke the object URL on unmount
-  useEffect(() => {
+    })();
     return () => {
-      setUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
+      cancelled = true;
     };
-  }, []);
+  }, [blob]);
 
-  const label = format === "docx" ? "DOCX preview" : "PDF preview";
+  // scale the (fixed-width) pages down to the available width
+  useEffect(() => {
+    const el = frame.current;
+    const content = host.current;
+    if (!el || !content || state !== "ready") return;
+    const fit = () => {
+      const page = content.querySelector<HTMLElement>("section.docx");
+      if (!page) return;
+      const wrapper = content.querySelector<HTMLElement>(".docx-wrapper");
+      if (wrapper) wrapper.style.padding = "0";
+      const wanted = page.offsetWidth;
+      const scale = wanted > 0 ? Math.min(1, (el.clientWidth - 16) / wanted) : 1;
+      content.style.setProperty("zoom", String(scale));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [state]);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-gray-700">{label}</h3>
-          {stale && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">edits not reflected — refresh</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={rendering}
-            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-          >
-            {rendering ? "Rendering…" : "Refresh"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-      {error && <div className="whitespace-pre-wrap p-4 text-sm text-red-700">{error}</div>}
-      {format === "docx" ? (
-        <div className="max-h-[75vh] overflow-auto rounded-b-xl bg-gray-200 p-4">
-          <div ref={docxRef} />
-          {!error && rendering && <div className="p-8 text-center text-sm text-gray-400">Rendering preview…</div>}
-        </div>
-      ) : (
-        <>
-          {url && !error && (
-            <iframe src={url} title="Resume PDF preview" className="h-[75vh] w-full rounded-b-xl bg-gray-200" />
-          )}
-          {!url && !error && <div className="p-8 text-center text-sm text-gray-400">Rendering preview…</div>}
-        </>
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm" data-doc-preview={state}>
+      {state === "loading" && (
+        <p role="status" className="px-4 py-10 text-center text-sm text-ink-light">
+          Building your preview…
+        </p>
       )}
+      {state === "error" && (
+        <p role="alert" className="whitespace-pre-wrap px-4 py-6 text-sm text-brand-700">
+          We could not show the preview{error ? `: ${error}` : "."} You can still go back and edit, or try again.
+        </p>
+      )}
+      <div ref={frame} className={`bg-cream p-2 ${state === "ready" ? "" : "hidden"}`}>
+        <div ref={host} aria-label="Document preview" />
+      </div>
     </div>
   );
 }

@@ -8,7 +8,8 @@ import ProfileGeneratorMark from "@/components/ProfileGeneratorMark";
 import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
-import { generateDocx } from "@/lib/generate";
+import PreviewStep from "@/components/PreviewStep";
+import { docxFileName } from "@/lib/docxReady";
 import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
@@ -18,8 +19,6 @@ import { useStepHistory } from "@/lib/useStepHistory";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import FlagList from "@/components/FlagList";
-import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
-import type { DocxReady } from "@/lib/docxReady";
 import DraftRestoreBanner from "@/components/DraftRestoreBanner";
 import { type Draft, readDraft, shouldKeepDraft, writeDraft } from "@/lib/draft";
 import { clearDraft, getSessionStorage } from "@/lib/draftStorage";
@@ -61,8 +60,9 @@ export interface SavedInitial {
 type UploadStatus = "idle" | "reading" | "structuring" | "finishing";
 
 const STEP_UPLOAD = 1;
-const STEP_REVIEW = 2;
-const STEP_SUBMIT = 3;
+const STEP_REVIEW = 2; // "Edit details"
+const STEP_PREVIEW = 3;
+const STEP_SUBMIT = 4; // internal only
 
 /** Per-template copy for the "get started" experience (the two choice cards and the upload screen). */
 const START: Record<
@@ -114,8 +114,8 @@ const HERO_SUBTEXT: Record<TemplateId, string> = {
 };
 
 const STEP_LABELS: Record<TemplateId, string[]> = {
-  external: ["Start", "Upload resume", "Review & Generate"],
-  internal: ["Start", "Upload resume", "Review & Generate", "Submit"],
+  external: ["Start", "Upload resume", "Edit details", "Preview"],
+  internal: ["Start", "Upload resume", "Edit details", "Preview", "Submit"],
 };
 
 /** Shown next to the Save button when required information is missing. */
@@ -132,10 +132,13 @@ export default function ProfileWorkflow({
   audience,
   initial,
   session,
+  canGoogleDocs = true,
 }: {
   audience: Audience;
   initial?: SavedInitial | null;
   session?: WorkflowSession | null;
+  /** Whether "Open in Google Docs" is offered on the Preview step (managers and admins only). */
+  canGoogleDocs?: boolean;
 }) {
   const templateId = audience; // the route fixes the template
   const start = START[templateId];
@@ -147,9 +150,8 @@ export default function ProfileWorkflow({
   // field key ("name", "education.0.year") -> message, to mark the fields in red
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [scrollTick, setScrollTick] = useState(0);
-  const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<string | null>(null);
+  // the validated profile shown on the Preview step (set when entering it)
+  const [previewData, setPreviewData] = useState<ResumeData | null>(null);
 
   // upload screen
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
@@ -198,8 +200,6 @@ export default function ProfileWorkflow({
     askBeforeLeaving: unsaved && step > 0,
     goStart: () => {
       setStep(0);
-      setGenerateError(null);
-      setGenerated(null);
       setErrors(null);
     },
   });
@@ -267,9 +267,11 @@ export default function ProfileWorkflow({
     if (target >= STEP_REVIEW && !data) target = 0;
     if (target === STEP_UPLOAD && source === "scratch") target = 0;
     if (target === STEP_SUBMIT && templateId !== "internal") target = STEP_REVIEW;
+    if (target === STEP_PREVIEW) {
+      enterPreview();
+      return;
+    }
     setStep(target);
-    setGenerateError(null);
-    setGenerated(null);
     setErrors(null);
   };
 
@@ -298,8 +300,6 @@ export default function ProfileWorkflow({
     setFlagsDismissed(false);
     setEdited(false);
     setStep(STEP_REVIEW);
-    setGenerateError(null);
-    setGenerated(null);
     setErrors(null);
   };
 
@@ -340,8 +340,6 @@ export default function ProfileWorkflow({
       setFlagsDismissed(false);
       setEdited(false);
       setStep(STEP_REVIEW);
-      setGenerateError(null);
-      setGenerated(null);
       setErrors(null);
     } catch (e) {
       setUploadError(e instanceof UploadError ? e.message : "Something went wrong. Please try again.");
@@ -388,9 +386,9 @@ export default function ProfileWorkflow({
   };
 
   /**
-   * Re-validates the form right before an export (DOCX or Google Docs): covers the uploaded-profile path and the
-   * blank-form path, plus any edits made in the review step; the "N/A" check only runs here. Shows the problems
-   * in the form and returns null, or returns the validated data.
+   * Re-validates the form right before Preview and Save: covers the uploaded-profile path and the blank-form path,
+   * plus any edits made in the edit step; the "N/A" check only runs here. Shows the problems in the form and
+   * returns null, or returns the validated data.
    */
   const validateForExport = (): ResumeData | null => {
     if (!data) return null;
@@ -402,29 +400,23 @@ export default function ProfileWorkflow({
     }
     setErrors(r.list);
     setFieldErrors(r.byPath);
-    setGenerateError(null);
-    setGenerated(null);
     setScrollTick((t) => t + 1);
     return null;
   };
 
-  const handleGenerate = async () => {
+  /**
+   * Moves to the Preview step. The profile is validated first (required fields, "N/A" placeholders); if anything is wrong
+   * the user stays on (or returns to) Edit details with the problems marked, and nothing is generated.
+   */
+  const enterPreview = () => {
     const valid = validateForExport();
-    if (!valid || !data) return;
-
-    setGenerating(true);
-    setGenerateError(null);
-    setGenerated(null);
-    try {
-      const candidate = (data as { name?: string }).name?.trim().replace(/\s+/g, "_") || "resume";
-      await generateDocx(templateId, valid, `${candidate}_${templateId}_profile.docx`);
-      setGenerated("DOCX downloaded — check your downloads.");
-      setDownloaded(true);
-    } catch (e) {
-      setGenerateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGenerating(false);
+    if (!valid) {
+      setStep(STEP_REVIEW);
+      return;
     }
+    setPreviewData(valid);
+    setStep(STEP_PREVIEW);
+    setErrors(null);
   };
 
   // After a failed check, bring the first marked field into view (its section opens itself first).
@@ -449,11 +441,19 @@ export default function ProfileWorkflow({
     }
   };
 
+  /** The sign-in ended: keep the work in this tab (never sent anywhere) so it can be restored after signing in again. */
+  const endSession = () => {
+    const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    const storage = getSessionStorage();
+    if (storage && draftRef.current) writeDraft(storage, draftRef.current);
+    window.location.assign(`${BASE}/login?error=session&next=${encodeURIComponent(window.location.pathname)}`);
+  };
+
   /** Saves the current form as a new immutable version in My Profiles (drafts with blanks are allowed). */
   const handleSave = async () => {
     if (!data || saving) return;
     setSaveError(null);
-    // required information must be there before anything is saved (same rules as Generate)
+    // required information must be there before anything is saved (same rules as Preview)
     if (!validateForExport()) {
       setSaveError(MISSING_MSG);
       return;
@@ -490,10 +490,7 @@ export default function ProfileWorkflow({
         }),
       });
       if (res.status === 401) {
-        // The session ended: keep the work in this tab (never sent anywhere) so it can be restored after sign-in.
-        const storage = getSessionStorage();
-        if (storage && draftRef.current) writeDraft(storage, draftRef.current);
-        window.location.assign(`${BASE}/login?error=session&next=${encodeURIComponent(window.location.pathname)}`);
+        endSession();
         return;
       }
       const json = await res.json();
@@ -532,8 +529,6 @@ export default function ProfileWorkflow({
     setRoleSpecific(false);
     setSaveError(null);
     setErrors(null);
-    setGenerateError(null);
-    setGenerated(null);
     setFlagsDismissed(false);
     setEdited(true);
     setDirty(true);
@@ -761,7 +756,7 @@ export default function ProfileWorkflow({
           </div>
         )}
 
-        {/* ---------- STEP 2: review & generate ---------- */}
+        {/* ---------- STEP 2: edit details ---------- */}
         {step === STEP_REVIEW && data && (
           <div className="animate-fade-up space-y-5">
             {source === "upload" && extraction && <ExtractionSummary fileName={fileName} />}
@@ -782,7 +777,7 @@ export default function ProfileWorkflow({
                 {flags.length > 0 && <FlagList flags={flags} />}
                 {issues.length > 0 && (
                   <>
-                    <p className="mb-1 mt-3 text-sm font-semibold text-amber-800">Still needed before you can generate</p>
+                    <p className="mb-1 mt-3 text-sm font-semibold text-amber-800">Still needed before you can preview</p>
                     <ul className="space-y-1 text-sm text-amber-900">
                       {issues.map((f, i) => (
                         <li key={i}>
@@ -814,14 +809,6 @@ export default function ProfileWorkflow({
                   ))}
                 </ul>
               </div>
-            )}
-            {generateError && (
-              <div className="whitespace-pre-wrap rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {generateError}
-              </div>
-            )}
-            {generated && !generateError && (
-              <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{generated}</div>
             )}
 
             <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -892,38 +879,35 @@ export default function ProfileWorkflow({
               >
                 ← Back
               </button>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
-                >
-                  {generating ? "Generating…" : "DOCX ↓"}
-                </button>
-                <OpenInGoogleDocsButton
-                  template={templateId}
-                  title={`${(data as { name?: string }).name?.trim() || "Profile"} — ${templateId} profile`}
-                  prepare={(): DocxReady => {
-                    const valid = validateForExport();
-                    return valid ? { ok: true, data: valid } : { ok: false, message: "Please fix the highlighted fields first." };
-                  }}
-                />
-                {templateId === "internal" && generated && !generateError && (
-                  <button
-                    type="button"
-                    onClick={() => goTo(STEP_SUBMIT)}
-                    className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
-                  >
-                    Continue to Submit →
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={enterPreview}
+                className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+              >
+                Preview →
+              </button>
             </div>
           </div>
         )}
 
-        {/* ---------- STEP 3: submit (internal only) ---------- */}
+        {/* ---------- STEP 3: preview ---------- */}
+        {step === STEP_PREVIEW && previewData && (
+          <div className="animate-fade-up">
+            <PreviewStep
+              template={templateId}
+              data={previewData}
+              fileName={docxFileName(templateId, previewData)}
+              docTitle={`${(previewData as { name?: string }).name?.trim() || "Profile"} — ${templateId} profile`}
+              canGoogleDocs={canGoogleDocs}
+              onBack={() => goTo(STEP_REVIEW)}
+              onDownloaded={() => setDownloaded(true)}
+              onSubmit={templateId === "internal" ? async () => setStep(STEP_SUBMIT) : undefined}
+              onSessionEnded={endSession}
+            />
+          </div>
+        )}
+
+        {/* ---------- STEP 4: submit (internal only) ---------- */}
         {step === STEP_SUBMIT && templateId === "internal" && (
           <div className="animate-fade-up space-y-4">
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -943,7 +927,7 @@ export default function ProfileWorkflow({
             </div>
             <button
               type="button"
-              onClick={() => goTo(STEP_REVIEW)}
+              onClick={() => goTo(STEP_PREVIEW)}
               className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
             >
               ← Back
