@@ -201,13 +201,13 @@ const e = checkTemplate("external", external, EXTERNAL_SECTIONS, EXTERNAL_PROJEC
 {
   const noProjects = textOf("external", { ...external, projects: [] });
   assert(!/Acme Corp|Globex|DESC-MARK|RESP-MARK|Team Size|ROLE-MARK|Project 1/.test(noProjects), "external: projects must be completely left out when empty");
-  assert(/Projects\/Experience/.test(noProjects) && /Accenture/.test(noProjects), "external: with employers but no projects the shared heading and the employers stay");
+  assert(!/Projects\/Experience/.test(noProjects) && /Accenture/.test(noProjects) && /\bExperience\b/.test(noProjects), "external: with employers but no projects the shared heading is left out and the Experience heading stays alone");
   const noEmployers = textOf("external", { ...external, experience: [] });
   assert(/Projects\/Experience/.test(noEmployers) && /Acme Corp/.test(noEmployers) && !/Accenture|(?<!Projects\/)\bExperience\b|POS-MARK|HIGH-MARK/.test(noEmployers), "external: with projects but no employers, the Experience block is left out");
   const neither = textOf("external", { ...external, projects: [], experience: [] });
-  assert(!/Projects\/Experience|Acme Corp|Accenture/.test(neither), "external: with neither projects nor employers the shared heading is left out too");
+  assert(!/Projects\/Experience|\bExperience\b|Acme Corp|Accenture/.test(neither.replace(/EXPSUM-MARK/g, "")), "external: with neither projects nor employers both headings are left out");
   const emptyEntries = textOf("external", { ...external, projects: [{ duration: "", client: "", teamSize: "", role: "N/A", description: "", responsibilities: [""] }], experience: [{ company: "", position: "", duration: "", highlights: ["N/A"] }] });
-  assert(!/Projects\/Experience/.test(emptyEntries), "external: completely empty project / employer entries are ignored");
+  assert(!/Projects\/Experience|\bExperience\b/.test(emptyEntries), "external: completely empty project / employer entries are ignored");
 }
 console.log("external: every optional section / field shows when filled and is completely left out when empty, blank or N/A");
 
@@ -237,15 +237,40 @@ if (process.argv.includes("--pdf")) {
   const cases = [];
   for (const [id, base, sections] of [["internal", internal, INTERNAL_SECTIONS], ["external", external, EXTERNAL_SECTIONS]]) {
     let bare = base;
-    for (const [, , empty] of sections) bare = empty(bare, undefined);
-    if (id === "external") bare = { ...bare, projects: [] };
-    if (id === "internal") bare = { ...bare, projects: [] };
-    cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare]);
+    for (const [, , empty] of sections) bare = empty(bare, undefined); // every optional section empty
+    bare = { ...bare, projects: [] }; // (external projects are not in its section list: they share a block with employers)
+    // entries that only have their name: every optional sub-field of every project / employer is empty
+    const sparse = {
+      ...base,
+      projects: base.projects.map((p) => ({ ...p, duration: "", toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [] })),
+      ...(base.experience ? { experience: base.experience.map((x) => ({ ...x, position: "", duration: "", highlights: [] })) } : {}),
+      certifications: [], tools: [], domains: [], languages: [], managerialExperience: [], experienceSummary: "", specialization: "",
+    };
+    // partial combinations: the sidebar / shared heading are most likely to misbehave when only SOME sections are there
+    const mixed =
+      id === "internal"
+        ? { ...base, experienceSummary: "", certifications: [], tools: [], domains: [], projects: base.projects.slice(0, 1) } // keeps managerial + languages
+        : { ...base, specialization: "", tools: [], projects: [] }; // keeps certifications + employers only
+    cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed]);
   }
   for (const [file, id, data] of cases) {
     fs.writeFileSync(`${dir}/${file}.docx`, render(id, data).out);
-    execFileSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", dir, `${dir}/${file}.docx`], { stdio: "ignore" });
+    // A private profile directory keeps this headless run separate from a LibreOffice window you may have open
+    // (otherwise the request is handed to that window and no PDF is written).
+    execFileSync("soffice", [`-env:UserInstallation=file://${dir}/lo-profile`, "--headless", "--convert-to", "pdf", "--outdir", dir, `${dir}/${file}.docx`], { stdio: "ignore" });
+    assert(fs.existsSync(`${dir}/${file}.pdf`), `LibreOffice did not write ${file}.pdf`);
     console.log(`pdf: ${dir}/${file}.pdf`);
+    // automatic layout checks on what LibreOffice actually laid out
+    const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
+    assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
+    if (id === "external") {
+      // single column: a heading must be followed by content, never by another heading or by nothing
+      const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"]);
+      const body = lines.map((l) => l.trim()).filter((l) => l && !/^\d+$/.test(l)); // drop blanks and page numbers
+      body.forEach((l, n) => {
+        if (HEADINGS.has(l)) assert(n + 1 < body.length && !HEADINGS.has(body[n + 1]), `${file}: orphan heading "${l}" (followed by ${body[n + 1] ?? "nothing"})`);
+      });
+    }
   }
 }
 console.log("done");

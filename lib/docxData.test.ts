@@ -70,13 +70,15 @@ test("projects: completely empty entries are dropped and the rest are numbered f
   assert.equal((prepareData("internal", { ...FULL_INTERNAL, projects: [blank] }) as { hasProjects: boolean }).hasProjects, false);
 });
 
-test("external: flags true with content, false when empty (including the shared Projects/Experience heading)", () => {
+test("external: flags true with content, false when empty", () => {
   const full = prepareData("external", FULL_EXTERNAL);
-  for (const flag of ["hasExperienceSummary", "hasSpecialization", "hasTools", "hasCertifications", "hasProjects", "hasExperience", "hasProjectsOrExperience"]) assert.equal(full[flag], true, flag);
+  for (const flag of ["hasExperienceSummary", "hasSpecialization", "hasTools", "hasCertifications", "hasProjects", "hasExperience"]) assert.equal(full[flag], true, flag);
   const empty = prepareData("external", EMPTY_EXTERNAL);
-  for (const flag of ["hasExperienceSummary", "hasSpecialization", "hasTools", "hasCertifications", "hasProjects", "hasExperience", "hasProjectsOrExperience"]) assert.equal(empty[flag], false, flag);
-  assert.equal((prepareData("external", { ...FULL_EXTERNAL, projects: [] }) as { hasProjectsOrExperience: boolean }).hasProjectsOrExperience, true, "employers alone keep the shared heading");
-  assert.equal((prepareData("external", { ...FULL_EXTERNAL, experience: [] }) as { hasProjectsOrExperience: boolean }).hasProjectsOrExperience, true, "projects alone keep it too");
+  for (const flag of ["hasExperienceSummary", "hasSpecialization", "hasTools", "hasCertifications", "hasProjects", "hasExperience"]) assert.equal(empty[flag], false, flag);
+  const employersOnly = prepareData("external", { ...FULL_EXTERNAL, projects: [] }) as { hasProjects: boolean; hasExperience: boolean };
+  assert.deepEqual([employersOnly.hasProjects, employersOnly.hasExperience], [false, true], "employers alone: the shared Projects/Experience heading (hasProjects) is off, the Experience block is on");
+  const projectsOnly = prepareData("external", { ...FULL_EXTERNAL, experience: [] }) as { hasProjects: boolean; hasExperience: boolean };
+  assert.deepEqual([projectsOnly.hasProjects, projectsOnly.hasExperience], [true, false]);
 });
 
 test("external: per-entry flags and cleaned lists", () => {

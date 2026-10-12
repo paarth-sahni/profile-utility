@@ -64,6 +64,7 @@ npm run dev
 | `npm test` | unit tests (`lib/*.test.ts`) | nothing |
 | `npm run test:db` | the data layer as seeded users (round trips, ownership, search) | local Supabase + seed |
 | `npm run test:rls` | Row Level Security per role and table | local Supabase + seed |
+| `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags (add `-- --pdf` to also convert full / empty / sparse / mixed renders with LibreOffice into `/tmp/render-check/` and check them) | nothing (`--pdf`: LibreOffice + poppler) |
 | `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
 
 ### End-to-end browser checks (optional)

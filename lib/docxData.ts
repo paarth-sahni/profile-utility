@@ -10,7 +10,7 @@
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
  *             hasRole, hasProjectLink, hasDescription
- *   external  hasExperience, hasProjectsOrExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
+ *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities; per employer: hasPosition, hasDuration, hasHighlights
  * Required content (name, job title, overview, education, skills) has no flag.
  */
@@ -82,7 +82,6 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
     hasProjects: projects.length > 0,
     experience,
     hasExperience: experience.length > 0,
-    hasProjectsOrExperience: projects.length > 0 || experience.length > 0,
   };
 }
 

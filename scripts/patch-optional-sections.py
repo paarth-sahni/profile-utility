@@ -38,7 +38,7 @@ WRAPS = {
         (4, 4, "hasSpecialization"),
         (19, 21, "hasTools"),  # heading + value + spacer
         (22, 24, "hasCertifications"),  # heading + value + spacer
-        (25, 25, "hasProjectsOrExperience"),  # the shared "Projects/Experience" heading
+        (25, 25, "hasProjects"),  # the shared "Projects/Experience" heading: only when there ARE projects (with employers only, the "Experience" heading below stands alone)
         (34, 36, "hasRole"),  # project: spacer + "Role" heading + value
         (37, 38, "hasDescription"),  # project: spacer + description
         (39, 42, "hasResponsibilities"),  # project: spacer + bullets
