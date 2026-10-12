@@ -7,13 +7,13 @@ import InternalForm from "@/components/InternalForm";
 import { generateDocx } from "@/lib/generate";
 import { INTERNAL_FORM_URL } from "@/lib/constants";
 import { UploadError, uploadResume } from "@/lib/extractClient";
-import { describeFlagPath } from "@/lib/reviewFlags";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { defaultLabel, resolveLabel } from "@/lib/versionLabel";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import { useStepHistory } from "@/lib/useStepHistory";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import FlagList from "@/components/FlagList";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
 import type { DocxReady } from "@/lib/docxReady";
 import DraftRestoreBanner from "@/components/DraftRestoreBanner";
@@ -757,17 +757,7 @@ export default function ProfileWorkflow({
                     ✕
                   </button>
                 </div>
-                {flags.length > 0 && (
-                  <ul className="space-y-1 text-sm text-amber-900">
-                    {flags.map((f, i) => (
-                      <li key={i}>
-                        {f.path && <span className="font-medium">{describeFlagPath(f.path)}</span>}
-                        {f.path && " — "}
-                        {f.reason}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {flags.length > 0 && <FlagList flags={flags} />}
                 {issues.length > 0 && (
                   <>
                     <p className="mb-1 mt-3 text-sm font-semibold text-amber-800">Still needed before you can generate</p>

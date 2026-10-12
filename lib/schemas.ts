@@ -202,6 +202,12 @@ const SECTION_LABELS: Record<string, string> = {
 // Sections that always contain exactly one entry, so numbering it ("Education 1") would be noise.
 const SINGULAR_SECTIONS = new Set(["education"]);
 
+/** The label for one path key ("rating" -> "Rating", "skills" -> "Skill"); unknown keys are returned as they are. */
+export const labelForSegment = (key: string): string => FIELD_LABELS[key] ?? SECTION_LABELS[key] ?? key;
+
+/** True for sections that always hold exactly one entry (education), where numbering would be noise. */
+export const isSingularSection = (key: string): boolean => SINGULAR_SECTIONS.has(key);
+
 /** Turns a zod/JSON path like ["projects", 0, "duration"] into "Project 1 → Duration". */
 export function describeFieldPath(path: (string | number)[]): string {
   const labels: string[] = [];

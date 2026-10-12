@@ -34,8 +34,8 @@ const COMPLETE = {
 };
 
 /** Saves a profile through the real API as the signed-in user and returns { profileId, versionId }. */
-async function saveProfile(data, label = "Base") {
-  const saved = await ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:${JSON.stringify(label)},source:'scratch',data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[]})}).then(r=>r.json())`);
+async function saveProfile(data, label = "Base", reviewFlags = []) {
+  const saved = await ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:${JSON.stringify(label)},source:'scratch',data:${JSON.stringify(data)},reviewFlags:${JSON.stringify(reviewFlags)},promptPlan:[]})}).then(r=>r.json())`);
   if (!saved?.profileId) {
     throw new Error(`save failed (${JSON.stringify(saved?.error)}). The save API allows 60 saves per 10 minutes per user (in memory): wait a few minutes or restart \`npm run dev\` before re-running.`);
   }
@@ -364,6 +364,35 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await click("DOCX ↓");
   await waitFor("document.body.innerText.includes('overview')", "overview error");
   check("a missing required field is still reported", true);
+});
+
+await t.scenario("review flags: same reason + same kind of field become one expandable line", async () => {
+  await signIn("member");
+  await goto("/internal");
+  const RATING = "rating estimated from years of use";
+  const skills = Array.from({ length: 12 }, (_, i) => ({ name: `Skill ${i + 1}`, rating: "4" }));
+  const flags = [
+    ...skills.map((_, i) => ({ path: `skills.${i}.rating`, reason: RATING })),
+    { path: "overview", reason: "overview repeats the header" },
+    { path: "projects.0.duration", reason: "Not stated in the resume" },
+  ];
+  const saved = await saveProfile({ ...COMPLETE, name: "E2E Flags Person", skills }, "Base", flags);
+  await goto(`/internal?version=${saved.versionId}`);
+  await waitFor("document.body.innerText.includes('Please double-check')", "flags panel");
+  const info = JSON.parse(await ev(`(()=>{const g=document.querySelector('[data-flag-group]'); const d=g?.querySelector('details');
+    return JSON.stringify({ groups: document.querySelectorAll('[data-flag-group]').length, summary: g?.querySelector('summary')?.innerText,
+      open: d?.open, items: d?.querySelectorAll('li').length, first: d?.querySelector('li')?.textContent, last: [...(d?.querySelectorAll('li')??[])].pop()?.textContent,
+      panel: document.querySelector('.border-amber-300')?.innerText });})()`));
+  const flat = (x) => (x ?? '').split(/\s+/).join(' ').trim(); // innerText has line breaks around the list parts
+  info.summary = flat(info.summary);
+  info.panel = flat(info.panel);
+  check("the 12 rating flags are one group with a count", info.groups === 1 && info.summary === `Skills 1–12 → Rating — ${RATING} (12 skills)`, info.summary);
+  check("the group starts collapsed", info.open === false);
+  check("expanding lists every flag with its own field label", info.items === 12 && info.first === "Skill 1 → Rating" && info.last === "Skill 12 → Rating", JSON.stringify([info.items, info.first, info.last]));
+  check("single flags stay as before (label — reason)", info.panel.includes("Overview — overview repeats the header") && info.panel.includes("Project 1 → Duration — Not stated in the resume"));
+  await click("Skills 1–12", "summary");
+  await sleep(200);
+  check("clicking the summary opens it", await ev("document.querySelector('[data-flag-group] details').open"));
 });
 
 await t.finish();

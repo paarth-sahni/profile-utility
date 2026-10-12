@@ -2,7 +2,7 @@
 
 import { createContext, ReactNode, useContext, useId, useState } from "react";
 import { isNAValue } from "@/lib/schemas";
-
+export const LEFT_OUT_NOTE = "— left out of the document";
 /** Lets "Expand all / Collapse all" (and "expand on error") reach every Section inside an Accordion. */
 const AccordionContext = createContext<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
 
