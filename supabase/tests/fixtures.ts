@@ -75,3 +75,34 @@ export const EXTERNAL_FIXTURE: ExternalResume = {
   tools: ["dbt", "Git"],
   certifications: ["Sample Data Professional"],
 };
+
+/** Only the required fields; every optional section is empty (the shape the DOCX leaves sections out for). */
+export const MINIMAL_INTERNAL_FIXTURE: InternalResume = {
+  name: "Minimal Person",
+  jobTitle: "Engineer",
+  experienceSummary: "",
+  specialization: "",
+  overview: "Just the overview.",
+  education: [{ year: "2014", qualification: "B.E." }],
+  projects: [],
+  skills: [{ name: "Java", rating: "4" }],
+  certifications: [],
+  tools: [],
+  managerialExperience: [],
+  domains: [],
+  languages: [],
+};
+
+export const MINIMAL_EXTERNAL_FIXTURE: ExternalResume = {
+  name: "Minimal Candidate",
+  jobTitle: "Analyst",
+  experienceSummary: "",
+  specialization: "",
+  overview: "Just the overview.",
+  education: [{ year: "2016", qualification: "M.Sc." }],
+  skills: ["SQL"],
+  tools: [],
+  certifications: [],
+  projects: [],
+  experience: [],
+};

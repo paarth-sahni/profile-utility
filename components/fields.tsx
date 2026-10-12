@@ -3,21 +3,30 @@
 import { ReactNode } from "react";
 import { isNAValue } from "@/lib/schemas";
 
+/** Wording shown wherever an optional section has nothing in it: the generated document leaves it out entirely. */
+export const LEFT_OUT_NOTE = "— left out of the document";
+
 export function Section({
   title,
   children,
   actions,
   onRemove,
+  empty = false,
 }: {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
   onRemove?: () => void;
+  /** True for an OPTIONAL section with nothing real in it: shows that it will be left out of the document. */
+  empty?: boolean;
 }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700">{title}</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
+          {title}
+          {empty && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-gray-400">{LEFT_OUT_NOTE}</span>}
+        </h3>
         <div className="flex items-center gap-2">
           {actions}
           {onRemove && (
@@ -112,15 +121,21 @@ export function AreaField({
   value,
   onChange,
   rows = 4,
+  optional = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   rows?: number;
+  /** Marks the field "(optional)": when empty it is left out of the document. */
+  optional?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-600">
+        {label}
+        {optional && <span className="font-normal text-gray-400">(optional)</span>}
+      </span>
       <textarea
         value={value}
         rows={rows}
@@ -245,6 +260,21 @@ export function ItemCard({
         <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
       </div>
       <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Collapsed bar for an optional section the user removed; "Restore" brings the editor back. */
+export function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
+      <span className="text-sm text-gray-400">
+        <span className="font-medium uppercase tracking-wide">{title}</span>
+        <span className="ml-2">{LEFT_OUT_NOTE}</span>
+      </span>
+      <button type="button" onClick={onRestore} className="text-xs font-medium text-brand-600 hover:underline">
+        Restore
+      </button>
     </div>
   );
 }

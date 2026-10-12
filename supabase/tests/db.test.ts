@@ -21,7 +21,7 @@ import {
   type DbContext,
 } from "../../lib/db/profilesCore";
 import type { SavePayload } from "../../lib/profilePayload";
-import { EXTERNAL_FIXTURE, INTERNAL_FIXTURE } from "./fixtures";
+import { EXTERNAL_FIXTURE, INTERNAL_FIXTURE, MINIMAL_EXTERNAL_FIXTURE, MINIMAL_INTERNAL_FIXTURE } from "./fixtures";
 
 const PASSWORD = "password123";
 type RoleName = "member" | "member2" | "admin" | "manager" | "checker";
@@ -223,6 +223,16 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     assert.ok(loaded, "version must load");
     assert.equal(loaded.template, "external");
     assert.deepEqual(loaded.data, EXTERNAL_FIXTURE);
+  });
+
+  test("a minimal profile (required fields only, every optional section empty) round-trips for both templates", async () => {
+    const internal = await saveVersionAs(ctx.member, internalPayload({ data: MINIMAL_INTERNAL_FIXTURE }));
+    const external = await saveVersionAs(ctx.member, {
+      template: "external", kind: "base", label: "Base", source: "scratch", data: MINIMAL_EXTERNAL_FIXTURE, reviewFlags: [], analysis: null, promptPlan: [],
+    });
+    createdProfiles.push(internal.profileId, external.profileId);
+    assert.deepEqual((await getVersionAs(ctx.member, internal.versionId))?.data, MINIMAL_INTERNAL_FIXTURE);
+    assert.deepEqual((await getVersionAs(ctx.member, external.versionId))?.data, MINIMAL_EXTERNAL_FIXTURE);
   });
 
   test("a later version and a role-specific version round-trip too, and older versions stay unchanged", async () => {

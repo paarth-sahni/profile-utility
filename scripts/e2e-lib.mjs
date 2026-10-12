@@ -150,9 +150,13 @@ export async function startHarness(title) {
       return ev(`(()=>{const b=${find}; if(!b) return false; b.focus(); b.click(); return true})()`);
     },
     bodyText: () => ev("document.body.innerText"),
-    /** Types into the "Name" field the way a user would (React sees an input event). */
-    setName: (v) =>
-      ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); const i=l.querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`),
+    /** Types into the "Name" field the way a user would (React sees an input event); waits for hydration first. */
+    async setName(v) {
+      const input = `(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); return l?.querySelector('input')})()`;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 4000 && !(await ev(`(()=>{const i=${input}; return !!i && Object.keys(i).some(k=>k.startsWith('__reactProps'))})()`))) await sleep(100);
+      return ev(`(()=>{const i=${input}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    },
     getName: () => ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); return l?.querySelector('input')?.value ?? null})()`),
     draftOf: (template = "internal") => ev(`sessionStorage.getItem('profile-draft:v1:${template}')`),
     /** Presses a key in the page. */
