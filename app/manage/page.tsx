@@ -36,7 +36,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="Manage profiles" subtitle="Search every saved profile by candidate name. Read-only." />
+      <PageHero title="Manage profiles" subtitle="Search every saved internal profile by candidate name. Read-only." />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">

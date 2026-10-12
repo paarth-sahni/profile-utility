@@ -10,12 +10,14 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
+  ExternalNotSavedError,
   ForbiddenError,
   ProfileNotFoundError,
   getMyProfileAs,
   getProfileForManagerAs,
   getVersionAs,
   getVersionForManagerAs,
+  listMyProfilesAs,
   saveVersionAs,
   searchProfilesByNameAs,
   type DbContext,
@@ -99,7 +101,9 @@ describe("saveVersion: ownership", () => {
 });
 
 describe("manager/admin name search and read-only views", () => {
+  // Riley Example is an EXTERNAL seeded profile (used by the RLS tests): external profiles are no longer listed or searchable.
   const SEEDED = ["Alex Sample", "Jamie Placeholder", "Riley Example"];
+  const LISTED = ["Alex Sample", "Jamie Placeholder"];
 
   for (const who of ["manager", "admin"] as const) {
     test(`${who} finds a seeded profile by a partial name`, async () => {
@@ -111,7 +115,8 @@ describe("manager/admin name search and read-only views", () => {
 
     test(`${who}: an empty query lists every seeded profile`, async () => {
       const names = (await searchProfilesByNameAs(ctx[who], "")).map((h) => h.candidateName);
-      for (const n of SEEDED) assert.ok(names.includes(n), `${n} missing`);
+      for (const n of LISTED) assert.ok(names.includes(n), `${n} missing`);
+      assert.ok(!names.includes("Riley Example"), "an external profile must not be listed");
     });
   }
 
@@ -137,7 +142,7 @@ describe("manager/admin name search and read-only views", () => {
 
   test("a short typo of another name finds that person only", async () => {
     assert.deepEqual((await names("jmie")).filter((n) => SEEDED.includes(n)), ["Jamie Placeholder"]);
-    assert.deepEqual((await names("riley")).filter((n) => SEEDED.includes(n)), ["Riley Example"]);
+    assert.deepEqual((await names("riley")).filter((n) => SEEDED.includes(n)), [], "the external Riley Example is not searchable");
   });
 
   for (const q of ["zzz", "bob", "xavier", "michael", "qwerty"]) {
@@ -207,32 +212,37 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     assert.equal(loaded.meta.label, "Base");
   });
 
-  test("external profile with every field filled", async () => {
-    const saved = await saveVersionAs(ctx.member, {
-      template: "external",
-      kind: "base",
-      label: "Client CV",
-      source: "scratch",
-      data: EXTERNAL_FIXTURE,
-      reviewFlags: [],
-      analysis: null,
-      promptPlan: [],
-    });
-    createdProfiles.push(saved.profileId);
-    const loaded = await getVersionAs(ctx.member, saved.versionId);
-    assert.ok(loaded, "version must load");
-    assert.equal(loaded.template, "external");
-    assert.deepEqual(loaded.data, EXTERNAL_FIXTURE);
+  test("an external profile is never saved: the data layer refuses it before anything is written", async () => {
+    const external = { template: "external", kind: "base", label: "Client CV", source: "scratch", data: EXTERNAL_FIXTURE, reviewFlags: [], analysis: null, promptPlan: [] };
+    await assert.rejects(saveVersionAs(ctx.member, external as unknown as SavePayload), ExternalNotSavedError);
+    await assert.rejects(saveVersionAs(ctx.member, { ...external, data: MINIMAL_EXTERNAL_FIXTURE } as unknown as SavePayload), ExternalNotSavedError);
+    const { count } = await ctx.member.supabase.from("profiles").select("id", { count: "exact", head: true }).eq("owner_id", ctx.member.userId).eq("template", "external");
+    assert.equal(count, 0, "no external profile row may exist");
   });
 
-  test("a minimal profile (required fields only, every optional section empty) round-trips for both templates", async () => {
+  test("a minimal profile (required fields only, every optional section empty) round-trips", async () => {
     const internal = await saveVersionAs(ctx.member, internalPayload({ data: MINIMAL_INTERNAL_FIXTURE }));
-    const external = await saveVersionAs(ctx.member, {
-      template: "external", kind: "base", label: "Base", source: "scratch", data: MINIMAL_EXTERNAL_FIXTURE, reviewFlags: [], analysis: null, promptPlan: [],
-    });
-    createdProfiles.push(internal.profileId, external.profileId);
+    createdProfiles.push(internal.profileId);
     assert.deepEqual((await getVersionAs(ctx.member, internal.versionId))?.data, MINIMAL_INTERNAL_FIXTURE);
-    assert.deepEqual((await getVersionAs(ctx.member, external.versionId))?.data, MINIMAL_EXTERNAL_FIXTURE);
+  });
+
+  test("My Profiles and the manager search list internal profiles only (an old external row stays hidden)", async () => {
+    // Simulates a row saved before the rule: written straight through the SQL function, which still supports it.
+    const legacy = await ctx.member.supabase.rpc("save_profile_version", {
+      p_profile_id: null, p_template: "external", p_kind: "base", p_label: "Legacy", p_parent: null, p_source: "scratch",
+      p_profile: { ...MINIMAL_EXTERNAL_FIXTURE, name: "Zed Legacyexternal" }, p_flags: [], p_analysis: null, p_prompt_plan: [],
+    });
+    assert.ok(!legacy.error, "legacy external row must be creatable for this test");
+    const internal = await saveVersionAs(ctx.member, internalPayload({ data: { ...MINIMAL_INTERNAL_FIXTURE, name: "Zed Legacyinternal" } }));
+    createdProfiles.push(internal.profileId);
+    const mine = await listMyProfilesAs(ctx.member);
+    assert.ok(mine.some((p) => p.id === internal.profileId), "the internal profile is listed");
+    assert.ok(mine.every((p) => p.template === "internal"), "only internal profiles are listed");
+    const found = await searchProfilesByNameAs(ctx.manager, "Zed Legacy");
+    assert.ok(found.some((p) => p.id === internal.profileId), "the manager finds the internal profile");
+    assert.ok(found.every((p) => p.template === "internal"), "the manager search never returns an external profile");
+    const { data: legacyRows } = await ctx.member.supabase.from("profiles").select("id").eq("candidate_name", "Zed Legacyexternal");
+    for (const r of legacyRows ?? []) createdProfiles.push(r.id);
   });
 
   test("a later version and a role-specific version round-trip too, and older versions stay unchanged", async () => {

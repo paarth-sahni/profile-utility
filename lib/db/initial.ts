@@ -1,6 +1,7 @@
 /**
  * Purpose: turns `?version=<id>` on /internal or /external into the `initial` prop of ProfileWorkflow.
- * Returns null (normal upload screen) for a missing id, another user's id, or the wrong template.
+ * Returns null (normal upload screen) for a missing id, another user's id, or the wrong template. Always null for
+ * "external": external profiles are never saved.
  */
 import "server-only";
 import type { SavedInitial } from "@/components/ProfileWorkflow";
@@ -8,7 +9,7 @@ import type { TemplateId } from "@/lib/schemas";
 import { getVersion } from "./profiles";
 
 export async function loadInitial(template: TemplateId, versionId: string | undefined): Promise<SavedInitial | null> {
-  if (!versionId) return null;
+  if (!versionId || template !== "internal") return null; // external profiles are never saved, so there is nothing to open
   try {
     const v = await getVersion(versionId);
     if (!v || v.template !== template) return null;

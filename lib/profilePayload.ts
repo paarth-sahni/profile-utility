@@ -68,8 +68,16 @@ const externalLenient = z.object({
 /** Structural (not completeness) schema for a template. */
 export const lenientSchemaFor = (id: TemplateId) => (id === "external" ? externalLenient : internalLenient);
 
+/** External (client-facing) profiles are never stored: only internal profiles can be saved. */
+export const SAVEABLE_TEMPLATE = "internal" as const;
+
+/** True when a save request asks to store an external profile (answered with 400 EXTERNAL_NOT_SAVED). */
+export function isExternalSave(body: unknown): boolean {
+  return typeof body === "object" && body !== null && (body as { template?: unknown }).template === "external";
+}
+
 const envelope = z.object({
-  template: z.enum(["internal", "external"]),
+  template: z.literal(SAVEABLE_TEMPLATE),
   kind: z.enum(["base", "role_specific"]),
   label: z.string().trim().max(60).default(""),
   profileId: z.string().uuid().nullish(),
@@ -83,7 +91,7 @@ const envelope = z.object({
 
 export type SavePayload = Omit<z.infer<typeof envelope>, "data"> & { data: ResumeData };
 
-/** Parses an untrusted save request body; returns null if anything is off (no details leaked). */
+/** Parses an untrusted save request body; returns null if anything is off (no details leaked), including any template but "internal". */
 export function parseSavePayload(body: unknown): SavePayload | null {
   const env = envelope.safeParse(body);
   if (!env.success) return null;

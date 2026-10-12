@@ -62,3 +62,14 @@ test("expiryMessage: after the end it tells the user to sign in again", () => {
   assert.match(expiryMessage(0, true) ?? "", /session has ended.*restore/);
   assert.equal(expiryMessage(0, false), "Your session has ended. Sign in again to continue.");
 });
+
+test("expiryMessage for external profiles (never saved): asks for a download, never says anything is saved", () => {
+  assert.equal(expiryMessage(30 * MIN, true, false), null);
+  assert.equal(expiryMessage(5 * MIN, true, false), "Your session ends in 5 minutes — download your DOCX now. External profiles are not saved.");
+  assert.equal(expiryMessage(30_000, true, false), "Your session ends in less than a minute — download your DOCX now. External profiles are not saved.");
+  assert.equal(expiryMessage(2 * MIN, false, false), "Your session ends in 2 minutes.");
+  assert.match(expiryMessage(0, true, false) ?? "", /session has ended.*kept in this tab/);
+  for (const [canSave, ms] of [[true, 5 * MIN], [false, 5 * MIN], [true, 0], [false, 0]] as const) {
+    assert.doesNotMatch(expiryMessage(ms, canSave, false) ?? "", /changes are saved|save your profile/i);
+  }
+});

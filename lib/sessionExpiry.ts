@@ -33,10 +33,22 @@ export function minutesLeft(remainingMs: number): number {
 /**
  * The banner text, or null when there is nothing to show. `canSave` is true when there is unsaved work:
  * then the text asks the user to save; otherwise it only says the work is already safe.
+ * `saves` is false for external profiles, which are never saved: the text then asks for a download instead and
+ * never claims anything is saved.
  */
-export function expiryMessage(remainingMs: number, canSave: boolean): string | null {
+export function expiryMessage(remainingMs: number, canSave: boolean, saves: boolean = true): string | null {
   const phase = expiryPhase(remainingMs);
   if (phase === "none") return null;
+  if (!saves) {
+    if (phase === "expired") {
+      return canSave
+        ? "Your session has ended. Sign in again to continue; your work is kept in this tab so you can restore it."
+        : "Your session has ended. Sign in again to continue.";
+    }
+    const m = minutesLeft(remainingMs);
+    const when = remainingMs < 60_000 ? "in less than a minute" : m === 1 ? "in 1 minute" : `in ${m} minutes`;
+    return canSave ? `Your session ends ${when} — download your DOCX now. External profiles are not saved.` : `Your session ends ${when}.`;
+  }
   if (phase === "expired") {
     return canSave
       ? "Your session has ended. Sign in again to continue; your unsaved changes are kept in this tab so you can restore them."

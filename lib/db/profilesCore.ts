@@ -28,6 +28,14 @@ export class ProfileNotFoundError extends Error {
   }
 }
 
+/** Thrown when asked to store an external profile: those are never saved (only internal profiles are). */
+export class ExternalNotSavedError extends Error {
+  constructor() {
+    super("EXTERNAL_NOT_SAVED");
+    this.name = "ExternalNotSavedError";
+  }
+}
+
 /** Thrown when the caller's role may not do this (manager/admin-only features). Maps to HTTP 403. */
 export class ForbiddenError extends Error {
   constructor() {
@@ -69,6 +77,7 @@ export async function saveVersionAs(
   { supabase, userId }: DbContext,
   p: SavePayload,
 ): Promise<{ profileId: string; versionId: string; versionNo: number }> {
+  if ((p.template as string) !== "internal") throw new ExternalNotSavedError(); // second line of defence behind the API route
   if (p.profileId) {
     const { data: owned } = await supabase.from("profiles").select("id").eq("id", p.profileId).eq("owner_id", userId).maybeSingle();
     if (!owned) throw new ProfileNotFoundError();
@@ -92,12 +101,13 @@ export async function saveVersionAs(
   return { profileId: v.profile_id, versionId: row.new_version_id, versionNo: row.new_version_no };
 }
 
-/** The signed-in user's own profiles, newest first. */
+/** The signed-in user's own INTERNAL profiles, newest first. */
 export async function listMyProfilesAs({ supabase, userId }: DbContext): Promise<ProfileSummary[]> {
   const { data, error } = await supabase
     .from("profiles")
     .select("id, template, candidate_name, updated_at, profile_versions!profile_versions_profile_id_fkey(count)")
     .eq("owner_id", userId)
+    .eq("template", "internal") // external profiles are never saved; any old ones are not listed
     .eq("archived", false)
     .order("updated_at", { ascending: false });
   if (error) throw new Error("LIST_FAILED");

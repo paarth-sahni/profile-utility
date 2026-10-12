@@ -73,7 +73,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
               </ul>
               <p className="mt-2">
                 If you select <strong>Start with Blank Profile</strong>, you go straight to{" "}
-                <strong>Step 3: Review &amp; edit</strong>. Step 2 applies only when generating a profile from a
+                <strong>Step 3: Edit details</strong>. Step 2 applies only when generating a profile from a
                 candidate&apos;s resume.
               </p>
             </Step>
@@ -83,8 +83,8 @@ export default function InstructionsContent({ audience }: { audience: Audience }
               skills, tools &amp; certifications, and work experience. This usually takes under a minute. Scanned
               images can&apos;t be read, so use a DOCX or a text-based PDF.
             </Step>
-            <Step n={3} title="Review & edit">
-              Review the generated profile and make any required changes before proceeding. A <strong>Please
+            <Step n={3} title="Edit details">
+              Review the generated profile and make any required changes, then press <strong>Preview</strong>. A <strong>Please
               double-check</strong> panel lists every value that had to be estimated or is still missing. Pay special
               attention to
               the following fields:
@@ -118,8 +118,12 @@ export default function InstructionsContent({ audience }: { audience: Audience }
                 </li>
               </ul>
             </Step>
-            <Step n={4} title="Download">
-              Download the profile in <strong>DOCX</strong> format.
+            <Step n={4} title="Preview & download">
+              <strong>Preview</strong> shows the exact document that will be downloaded. If something is missing, you are
+              taken back to Edit details with the fields marked. Tick the confirmation (&ldquo;I confirm the information
+              in this profile is accurate and may be shared&rdquo;), then choose <strong>Download DOCX</strong>. Managers
+              and admins can also choose <strong>Open in Google Docs</strong>. <strong>← Back to edit</strong> keeps
+              your changes. External profiles are never saved in the tool, so download the DOCX before you leave.
             </Step>
           </ol>
         </Card>
@@ -148,7 +152,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             </ul>
             <p className="mt-2">
               If you select <strong>Create a Profile from Scratch</strong>, you go straight to{" "}
-              <strong>Step 3: Review &amp; edit</strong>. Step 2 applies only when using an existing profile.
+              <strong>Step 3: Edit details</strong>. Step 2 applies only when using an existing profile.
             </p>
           </Step>
           <Step n={2} title="Upload your profile (existing profile only)">
@@ -158,8 +162,8 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             managerial experience, domains, and languages. Scanned images can&apos;t be read, so use a DOCX or a
             text-based PDF.
           </Step>
-          <Step n={3} title="Review & edit">
-            Review and edit profile section details. A <strong>Please double-check</strong> panel lists every value
+          <Step n={3} title="Edit details">
+            Review and edit profile section details, then press <strong>Preview</strong>. A <strong>Please double-check</strong> panel lists every value
             that had to be estimated or is still missing:
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
@@ -202,11 +206,16 @@ export default function InstructionsContent({ audience }: { audience: Audience }
               </li>
             </ul>
           </Step>
-          <Step n={4} title="Download">
-            Download your profile in <strong>DOCX</strong> and do a final review before sharing.
+          <Step n={4} title="Preview">
+            <strong>Preview</strong> shows the exact document that will be generated. If something is missing, you are
+            taken back to Edit details with the fields marked. Do a final review, tick the confirmation (&ldquo;I confirm
+            the information in this profile is accurate and may be shared&rdquo;), then choose <strong>Submit</strong> to save the
+            profile to My Profiles and continue, or <strong>Download DOCX</strong> to keep a copy. <strong>← Back to
+            edit</strong> keeps your changes.
           </Step>
           <Step n={5} title="Submit">
-            Once you&apos;ve downloaded your profile, upload the generated file through the{" "}
+            Submitting saves your profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link>. Then
+            upload the generated DOCX (download it from Preview if you have not yet) through the{" "}
             <a
               href="https://forms.gle/AkoYDhnMvyxyXFP5A"
               target="_blank"
@@ -225,7 +234,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
         <ul className="list-disc space-y-2 pl-5 text-sm text-gray-600">
           <li>
             <strong>Validation errors</strong> – The error list highlights the fields that need attention. Fix them
-            in the form and generate again.
+            in the form and press Preview again.
           </li>
           <li>
             <strong>Template rendering errors</strong> – These usually occur when a required field is empty. Review

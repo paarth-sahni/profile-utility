@@ -486,13 +486,100 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   await click("Submit", "[data-preview-step] button");
   await waitFor("document.body.innerText.includes('Submit your profile')", "submit step");
   check("Submit records the consent and shows the existing Submit step with the form link", consents("submit") === 1 && (await bodyText()).includes("Open submission form"));
+  const versionsOf = () => Number(sql("select count(*) from profile_versions v join profiles p on p.id=v.profile_id where p.candidate_name='E2E Preview Person'"));
+  check("Submit saved the version to My Profiles first", versionsOf() === 1 && (await bodyText()).includes("Saved to My Profiles · v1 · Base") && (await ev("document.querySelector('[data-saved-line] a')?.getAttribute('href')"))?.startsWith("/profiles/"));
   await click("← Back");
   await waitFor("!!document.querySelector('[data-preview-step]')", "back to preview from submit");
   check("Back on the Submit step returns to Preview", true);
 
+  // Submitting again without editing reuses the saved version; after an edit it saves v2
+  check("Preview says the profile is already saved and Submit will use that version", (await bodyText()).includes("already saved in My Profiles as v1"));
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await click("Submit", "[data-preview-step] button");
+  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step (again)");
+  check("submitting an unchanged profile does not create another version", versionsOf() === 1);
+  await click("← Back");
+  await waitFor("!!document.querySelector('[data-preview-step]')", "preview (again)");
+  await click("← Back to edit");
+  await waitFor("!!document.querySelector('label input')", "edit (again)");
+  await t.fillRequired("E2E Preview Person"); // same name, edits the form again
+  await t.fill("Job title", "Staff Engineer");
+  await sleep(200);
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (edited)");
+  check("after an edit the note says Submit will save a new version", (await bodyText()).includes("Submit saves this profile to My Profiles"));
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await click("Submit", "[data-preview-step] button");
+  await waitFor("document.body.innerText.includes('Submit your profile')", "submit step (edited)");
+  check("an edited profile is saved as v2 on Submit", versionsOf() === 2 && (await bodyText()).includes("Saved to My Profiles · v2 · v2"));
+  await click("← Back");
+  await waitFor("!!document.querySelector('[data-preview-step]')", "preview (after v2)");
+
   // The consent API refuses anything but an explicit accept
   const bad = await ev(`fetch('/api/consent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',action:'download',accepted:false})}).then(r=>r.status)`);
   check("POST /api/consent without accepted:true is a 400", bad === 400);
+});
+
+await t.scenario("External profiles are never saved: no save UI, Preview offers Back / Download only, the API refuses them", async () => {
+  await signIn("member");
+  // the session banner for an external profile asks for a download and has no Save button
+  t.ageSession("member", "1 hour 56 minutes");
+  await goto("/external");
+  await ev("sessionStorage.clear()");
+  await goto("/external");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "external edit form");
+  await waitFor("document.body.innerText.includes('Your session ends in')", "expiry banner (external)");
+  const banner = await bodyText();
+  check("the expiry banner asks for a download and never says anything is saved", banner.includes("download your DOCX now. External profiles are not saved.") && !banner.includes("Save now") && !/changes are saved/.test(banner));
+  await signIn("member"); // resets the sign-in time
+
+  const body = await bodyText();
+  check("Edit details has no save controls (no version label, no Save to My Profiles)", !body.includes("Save to My Profiles") && !body.includes("Version label") && !(await ev("!!document.getElementById('save-label')")));
+  const labels = await ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
+  check("the external steps are Start, Upload resume, Edit details, Preview (no Submit)", labels === "Start|Upload resume|Edit details|Preview", labels);
+
+  await t.fill("Name", "E2E External Person");
+  await t.fill("Job title", "Engineer");
+  await t.fill("Overview", "Only the overview.");
+  await t.fill("Year", "2014");
+  await t.fill("Qualification", "B.E.");
+  await ev(`(()=>{const h=[...document.querySelectorAll('h3')].find(h=>h.textContent.startsWith('Skills')); const i=h?.closest('section')?.querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Java,'); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await sleep(300);
+  const since = sql("select now()");
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "external preview");
+  const pbody = await bodyText();
+  check("external Preview offers Back to edit and Download DOCX, and no Submit", pbody.includes("← Back to edit") && pbody.includes("Download DOCX") && !(await ev("[...document.querySelectorAll('[data-preview-step] button')].some(b=>b.textContent.trim()==='Submit')")));
+  check("no 'saved' wording on external Preview", !pbody.includes("My Profiles"));
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await click("Download DOCX");
+  await waitFor("document.body.innerText.includes('DOCX downloaded')", "external downloaded");
+  check("the external consent is recorded (metadata only) and a DOCX was handed to the browser", Number(sql(`select count(*) from audit_log where action='consent_download' and at >= '${since}' and detail->>'template'='external'`)) === 1 && (await ev("window.__blobs.length")) === 1);
+  check("nothing was written to the database for the external profile", Number(sql("select count(*) from profiles where candidate_name='E2E External Person'")) === 0);
+
+  // the API refuses external saves, signed in, with a clear 400; an internal save still works
+  const post = (template) => ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:${JSON.stringify(template)},kind:'base',label:'x',source:'scratch',data:{name:'E2E Api External',jobTitle:'a',experienceSummary:'',specialization:'',overview:'o',education:[{year:'1',qualification:'q'}],projects:[],${template === "external" ? "experience:[]," : "managerialExperience:[],domains:[],languages:[],"}skills:${template === "external" ? "['a']" : "[{name:'a',rating:'1'}]"},certifications:[],tools:[]},reviewFlags:[],promptPlan:[]})}).then(async r=>({status:r.status,code:(await r.json()).error?.code ?? null}))`);
+  const refused = await post("external");
+  check("POST /api/profiles with template external is a 400 EXTERNAL_NOT_SAVED", refused.status === 400 && refused.code === "EXTERNAL_NOT_SAVED", JSON.stringify(refused));
+  check("and still nothing is stored", Number(sql("select count(*) from profiles where candidate_name='E2E Api External'")) === 0);
+
+  // an old external row is not listed in My Profiles or in the manager search; /external ignores ?version=
+  const owner = sql("select id from auth.users where email='member@example.test'");
+  sql(`insert into profiles (owner_id, template, candidate_name) values ('${owner}', 'external', 'E2E Legacy External')`);
+  const acc = await post("internal");
+  await goto("/profiles");
+  await waitFor("document.body.innerText.includes('E2E Api External')", "My Profiles lists the internal profile");
+  const cards = JSON.parse(await ev("JSON.stringify([...document.querySelectorAll('main ul li a')].map(a=>a.innerText.replace(/\\s+/g,' ').trim()))"));
+  check("My Profiles lists internal profiles only", cards.every((c) => c.startsWith("Internal")) && !cards.some((c) => c.includes("E2E Legacy External")), JSON.stringify(cards));
+  await signIn("manager");
+  await goto("/manage?q=E2E");
+  await waitFor("document.body.innerText.includes('E2E')", "manage results");
+  const found = await bodyText();
+  check("Manage lists internal profiles only", found.includes("E2E Api External") && !found.includes("E2E Legacy External"));
+  void acc;
+  await goto("/profiles");
+  await ev("sessionStorage.clear()");
 });
 
 await t.scenario("review flags: same reason + same kind of field become one expandable line", async () => {

@@ -1,12 +1,13 @@
 /**
- * Purpose: POST /api/profiles — saves a new version of the signed-in user's profile.
+ * Purpose: POST /api/profiles — saves a new version of the signed-in user's INTERNAL profile.
+ * External (client-facing) profiles are never stored: template "external" is refused with 400 EXTERNAL_NOT_SAVED.
  * Ownership comes from the session, never from the request body. Errors are generic and nothing about
  * the profile content is logged.
  */
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { ProfileNotFoundError, saveVersion } from "@/lib/db/profiles";
-import { parseSavePayload } from "@/lib/profilePayload";
+import { ExternalNotSavedError, ProfileNotFoundError, saveVersion } from "@/lib/db/profiles";
+import { isExternalSave, parseSavePayload } from "@/lib/profilePayload";
 import { allowRequest } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -28,12 +29,14 @@ export async function POST(request: Request) {
   } catch {
     return err(400, "BAD_REQUEST", "We could not read that request.");
   }
+  if (isExternalSave(body)) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the DOCX instead.");
   const payload = parseSavePayload(body);
   if (!payload) return err(400, "BAD_REQUEST", "That profile could not be saved. Please check it and try again.");
 
   try {
     return NextResponse.json(await saveVersion(payload));
   } catch (e) {
+    if (e instanceof ExternalNotSavedError) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the DOCX instead.");
     if (e instanceof ProfileNotFoundError) return err(404, "NOT_FOUND", "We could not find that profile.");
     console.error("[profiles] save failed");
     return err(500, "SAVE_FAILED", "We could not save your profile. Please try again.");

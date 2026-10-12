@@ -22,7 +22,7 @@ import {
   type VersionSummary,
 } from "./profilesCore";
 
-export { ForbiddenError, ProfileNotFoundError } from "./profilesCore";
+export { ExternalNotSavedError, ForbiddenError, ProfileNotFoundError } from "./profilesCore";
 export type { DbContext, LoadedVersion, ManagedProfileSummary, ProfileSummary, VersionSummary };
 
 async function ctx(): Promise<DbContext> {

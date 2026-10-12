@@ -16,13 +16,15 @@ interface SessionExpiryBannerProps {
   canSave: boolean;
   saving: boolean;
   onSave: () => void;
+  /** False for external profiles, which are never saved: the banner then asks for a download and has no Save button. */
+  saves?: boolean;
   /** Why the last save did not go through (e.g. a role-specific version still needs a name). */
   error?: string | null;
 }
 
 const TICK_MS = 10_000;
 
-export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSave, error }: SessionExpiryBannerProps) {
+export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSave, error, saves = true }: SessionExpiryBannerProps) {
   // The moment the session ends, fixed on mount from the server's measurement.
   const deadline = useRef<number>(Date.now() + remainingMs);
   const [left, setLeft] = useState<number>(remainingMs);
@@ -34,7 +36,7 @@ export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSa
     return () => window.clearInterval(id);
   }, []);
 
-  const message = expiryMessage(left, canSave);
+  const message = expiryMessage(left, canSave, saves);
   if (!message) return null;
   const ended = expiryPhase(left) === "expired";
 
@@ -48,7 +50,7 @@ export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSa
         <p>{message}</p>
         {error && <p className="mt-1 text-brand-700">{error}</p>}
       </div>
-      {canSave && !ended && (
+      {saves && canSave && !ended && (
         <button
           type="button"
           onClick={onSave}

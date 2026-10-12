@@ -14,7 +14,7 @@ export default async function ProfilesPage() {
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="My Profiles" subtitle="Profiles you have saved. Only you can see them." />
+      <PageHero title="My Profiles" subtitle="Internal profiles you have saved. Only you can see them." />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="mb-8 flex justify-end">
@@ -27,8 +27,8 @@ export default async function ProfilesPage() {
           <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
             <p className="text-lg font-medium text-ink-dark">No saved profiles yet</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-ink-light">
-              Upload a resume or start from a blank form, then choose <strong>Save to My Profiles</strong> on the Review
-              step. It will show up here.
+              Upload a resume or start from a blank form, then choose <strong>Submit</strong> on the Preview step (or{" "}
+              <strong>Save to My Profiles</strong> while editing). It will show up here.
             </p>
             <Link href="/internal" className="mt-6 inline-block rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
               Create your first profile
