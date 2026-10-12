@@ -15,6 +15,15 @@ export function sessionExpired(lastSignInAt: string | null | undefined, now: num
   return Number.isNaN(t) || now - t >= SESSION_MAX_AGE_MS;
 }
 
+/**
+ * Who may use "Open in Google Docs" (Preview, My Profiles, Manage): managers and admins only. The export runs in the
+ * browser with the person's own Google token, so this is a product rule applied by the pages, not a server permission.
+ * Takes the role as a plain string so client code and tests need not import the database types.
+ */
+export function canUseGoogleDocs(role: string | null | undefined): boolean {
+  return role === "manager" || role === "admin";
+}
+
 /** Page shown after sign-in when no (valid) `next` is given. */
 export const DEFAULT_AFTER_LOGIN = "/internal";
 

@@ -5,6 +5,7 @@ import DownloadDocxButton from "@/components/DownloadDocxButton";
 import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
+import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { getMyProfile, getVersion } from "@/lib/db/profiles";
 
 export const metadata: Metadata = { title: "Profile — Profile Generator" };
@@ -19,6 +20,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
   if (!mine) notFound(); // missing OR somebody else's: same answer, nothing leaked
 
   const { profile, versions, latestVersionId } = mine;
+  const googleDocs = canUseGoogleDocs((await getCurrentUser())?.role); // managers and admins only
   const loaded = await Promise.all(versions.map((v) => getVersion(v.id)));
   const byId = new Map(versions.map((v, i) => [v.id, loaded[i]]));
   const latest = latestVersionId ? byId.get(latestVersionId) ?? loaded[0] : loaded[0];
@@ -74,7 +76,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
                         Open in Review
                       </Link>
                       {full && <DownloadDocxButton template={full.template} data={full.data} versionId={v.id} />}
-                      {full && <GoogleDocsForVersion template={full.template} data={full.data} />}
+                      {full && googleDocs && <GoogleDocsForVersion template={full.template} data={full.data} />}
                     </div>
                   </li>
                 );

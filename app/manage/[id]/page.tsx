@@ -10,7 +10,7 @@ import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
-import { getCurrentUser } from "@/lib/auth";
+import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, getProfileForManager, getVersionForManager } from "@/lib/db/profiles";
 
 export const metadata: Metadata = { title: "Profile (read-only) — Profile Generator" };
@@ -67,7 +67,7 @@ export default async function ManageProfilePage({
                 {/* Read-only: exports are built in the browser from the version you are viewing; nothing is changed or saved. */}
                 <div className="mb-4 flex flex-wrap items-start gap-2">
                   <DownloadDocxButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
-                  <GoogleDocsForVersion template={shown.template} data={shown.data} />
+                  {canUseGoogleDocs(user.role) && <GoogleDocsForVersion template={shown.template} data={shown.data} />}
                 </div>
                 <ProfilePreview template={shown.template} data={shown.data} />
               </>

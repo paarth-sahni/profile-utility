@@ -90,8 +90,8 @@ const googleButton = () => ev("!!document.querySelector('[data-google-docs] butt
 const clickGoogle = () => click("Open in Google Docs");
 const statusText = () => ev("document.querySelector('[data-google-docs]')?.innerText ?? ''");
 
-await t.scenario("Open in Google Docs", async () => {
-  await signIn("member");
+await t.scenario("Open in Google Docs (managers and admins only)", async () => {
+  await signIn("admin"); // Google Docs is for managers and admins. Admin is used to save: only team members and admins may create profiles (RLS)
   await goto("/internal");
   const saved = await saveProfile(COMPLETE);
   const incomplete = await saveProfile({ ...COMPLETE, name: "E2E Incomplete Person", overview: "" }, "Draft");
@@ -158,6 +158,47 @@ await t.scenario("Open in Google Docs", async () => {
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
   check("a manager can export the version they are viewing", true);
+
+  // Preview: Google Docs uploads the previewed file, after the consent box
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "edit form (manager)");
+  await t.fillRequired("E2E Google Preview");
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (manager)");
+  check("a manager sees Open in Google Docs on Preview", await googleButton());
+  const since = sql("select now()");
+  const popups = await gisCalls();
+  const uploads = driveRequests.length;
+  await clickGoogle();
+  await sleep(500);
+  check("without the consent box: a message, no Google popup, no upload", (await statusText()).includes("Please tick the box") && (await gisCalls()) === popups && driveRequests.length === uploads);
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await clickGoogle();
+  await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "created from Preview");
+  check("with the box ticked the DOCX is uploaded to Google", driveRequests.length === uploads + 1 && driveRequests.at(-1).body.includes("E2E Google Preview"));
+  check("and the consent was recorded for google_docs", Number(sql(`select count(*) from audit_log where action='consent_google_docs' and at >= '${since}'`)) === 1);
+
+  // A plain member never sees Google Docs: not on Preview, not on My Profiles
+  await signIn("member");
+  await goto("/internal");
+  const mine = await saveProfile({ ...COMPLETE, name: "E2E Member Docs Person" });
+  await goto(`/profiles/${mine.profileId}`);
+  await waitFor("document.body.innerText.includes('E2E Member Docs Person')", "member's profile page");
+  check("a member sees Download DOCX but no Open in Google Docs on My Profiles", (await bodyText()).includes("Download DOCX") && !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs"));
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "edit form (member)");
+  await t.fillRequired("E2E Member Preview");
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (member)");
+  check("a member sees no Open in Google Docs on Preview", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download DOCX"));
+  await goto("/profiles"); // leaving flushes the form above as a draft; clear it here so later scenarios start clean
+  await ev("sessionStorage.clear()");
 });
 
 await t.scenario("previews hide empty sections and show ratings as x/5", async () => {

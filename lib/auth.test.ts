@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isAllowedEmail, safeNextPath } from "./authRules";
+import { canUseGoogleDocs, isAllowedEmail, safeNextPath } from "./authRules";
 import { allowRequest, resetRateLimits } from "./rateLimit";
 
 test("isAllowedEmail accepts only infobeans.com", () => {
@@ -42,4 +42,10 @@ test("sessionExpired enforces the 2-hour sign-in limit", async () => {
   assert.equal(sessionExpired("2026-10-09T09:59:59Z", now), true);
   assert.equal(sessionExpired(null, now), true);
   assert.equal(sessionExpired("garbage", now), true);
+});
+
+test("canUseGoogleDocs: managers and admins only", () => {
+  assert.equal(canUseGoogleDocs("manager"), true);
+  assert.equal(canUseGoogleDocs("admin"), true);
+  for (const r of ["member", "checker", "", null, undefined, "Manager", "root"]) assert.equal(canUseGoogleDocs(r), false, String(r));
 });

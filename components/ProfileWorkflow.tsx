@@ -132,7 +132,7 @@ export default function ProfileWorkflow({
   audience,
   initial,
   session,
-  canGoogleDocs = true,
+  canGoogleDocs = false,
 }: {
   audience: Audience;
   initial?: SavedInitial | null;
