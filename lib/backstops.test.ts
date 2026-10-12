@@ -24,6 +24,16 @@ import {
   teamSizeInSource,
   valueInSource,
   VALUE_NOT_FOUND_REASON,
+  BULLET_REPEATS_BULLET_REASON,
+  BULLET_REPEATS_DESCRIPTION_REASON,
+  DESCRIPTION_STARTS_WITH_TITLE_REASON,
+  OVERVIEW_REPEATS_HEADER_REASON,
+  contentTokens,
+  firstSentence,
+  flagDescriptionStartsWithTitle,
+  flagOverviewRepeatsHeader,
+  flagRepeatedBullets,
+  tokenOverlap,
 } from "./backstops";
 import { normalizeToShape } from "./normalize";
 import type { ReviewFlag } from "./extract.types";
@@ -375,4 +385,158 @@ test("applyBackstops runs the header step for InfoBeans profiles only", () => {
   assert.equal((a.data as typeof input).specialization, "Data Platforms");
   const b = applyBackstops("internal", input, [], src, "standard_resume");
   assert.equal((b.data as typeof input).specialization, "Spec");
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// No-repetition backstops (3f-3h). Fictional data only. Each check only FLAGS; the data is never rewritten.
+// ---------------------------------------------------------------------------------------------------------
+
+const hdr = (over: Record<string, string> = {}) => ({
+  jobTitle: "Data Engineer",
+  experienceSummary: "6+ Years of Industry Experience",
+  specialization: "Streaming Analytics",
+  overview: "",
+  ...over,
+});
+const overviewFlags = (over: Record<string, string>) => flagOverviewRepeatsHeader(hdr(over), []);
+
+test("tokens: stop words dropped, plurals and endings stemmed, numbers and C#/C++ kept", () => {
+  assert.deepEqual(contentTokens("The pipelines were migrated to C# and Node.js"), ["pipelin", "migrat", "c#", "node", "js"]);
+  assert.deepEqual(contentTokens("pipeline pipelines migrate migrates migrated migrating"), ["pipelin", "pipelin", "migrat", "migrat", "migrat", "migrat"], "all forms of one word compare equal");
+  assert.equal(tokenOverlap(["a", "b", "c", "d"], ["a", "b", "c", "x"]), 0.75);
+  assert.equal(tokenOverlap([], ["a"]), 0);
+});
+
+test("firstSentence keeps abbreviations and product names together", () => {
+  assert.equal(firstSentence("Builds services in Node.js for retail. Also mentors."), "Builds services in Node.js for retail.");
+  assert.equal(firstSentence("Single sentence without a full stop"), "Single sentence without a full stop");
+});
+
+test("overview: opening with the job title and the years is flagged (the classic case)", () => {
+  const r = overviewFlags({ overview: "Data Engineer with 6+ years of experience building pipelines for retail analytics. Works on batch jobs." });
+  assert.deepEqual(r, [{ path: "overview", reason: OVERVIEW_REPEATS_HEADER_REASON }]);
+});
+
+test("overview: the job title alone, reordered, plural or without its seniority prefix, is flagged", () => {
+  const flagged = (title: string, overview: string) => flagOverviewRepeatsHeader({ ...hdr({ jobTitle: title }), overview }, []).length === 1;
+  assert.ok(flagged("Senior Software Engineer", "Software engineer who builds payment systems for banks."));
+  assert.ok(flagged("Engineering Manager", "Manager of engineering teams that ship retail platforms."));
+  assert.ok(flagged("Cloud Architect", "Cloud architects design platforms for regulated industries."), "plural / stem");
+  assert.ok(flagged("Developer", "Developer of retail apps and checkout flows."), "a one-word title that opens the sentence");
+});
+
+test("overview: the years of experience alone is flagged, with the header's years or any years-of-experience phrase", () => {
+  assert.equal(overviewFlags({ overview: "Builds pipelines for retail analytics with 6 years in the field." }).length, 1, "the header's own years");
+  assert.equal(overviewFlags({ overview: "Builds pipelines for retail analytics with over 15 years of professional experience." }).length, 1, "years that differ from the header");
+  assert.equal(overviewFlags({ overview: "Brings 8+ years of hands-on experience to retail analytics." }).length, 1);
+  assert.equal(overviewFlags({ overview: "Brings experience of 9 years to retail analytics." }).length, 1);
+});
+
+test("overview: the specialization restated in the first sentence is flagged", () => {
+  assert.equal(overviewFlags({ overview: "Specialises in analytics over streaming data for retail clients." }).length, 1);
+});
+
+test("overview: a header-free opening is NOT flagged (substance first, header words only in later sentences)", () => {
+  assert.deepEqual(overviewFlags({ overview: "Builds batch and streaming pipelines for retail analytics. Data engineer on three platform migrations over 6 years." }), []);
+  assert.deepEqual(overviewFlags({ overview: "Designs ingestion jobs for order and inventory data." }), []);
+});
+
+test("overview: ordinary vocabulary is NOT flagged", () => {
+  // a one-word title deep in the sentence is just a word
+  assert.deepEqual(flagOverviewRepeatsHeader({ ...hdr({ jobTitle: "Developer" }), overview: "Leads a team of developers delivering retail apps." }, []), []);
+  // a number that is not an experience statement
+  assert.deepEqual(overviewFlags({ overview: "Manages delivery for 6 services and a 6 year migration programme." }), []);
+  // only some of the title words, far apart
+  assert.deepEqual(flagOverviewRepeatsHeader({ ...hdr({ jobTitle: "Release Engineering Manager" }), overview: "Coordinates release calendars across four product teams and an engineering group, reporting to a manager of operations." }, []), []);
+  // one shared word of a multi-word specialization
+  assert.deepEqual(overviewFlags({ overview: "Streams order events into dashboards for store managers." }), [], "a single word of 'Streaming Analytics' is not a restatement");
+});
+
+test("overview: empty overview, empty header fields and an existing identical flag add nothing", () => {
+  assert.deepEqual(overviewFlags({ overview: "" }), []);
+  assert.equal(flagOverviewRepeatsHeader({ overview: "Builds pipelines with 6 years of experience." }, []).length, 1, "a years phrase flags even when the header fields are empty");
+  assert.deepEqual(flagOverviewRepeatsHeader({ overview: "Builds pipelines for retail analytics." }, []), [], "no header fields and no years phrase: nothing to compare");
+  const existing = [{ path: "overview", reason: OVERVIEW_REPEATS_HEADER_REASON }];
+  assert.deepEqual(flagOverviewRepeatsHeader(hdr({ overview: "Data Engineer with 6+ years of experience." }), existing), existing, "no duplicate flag");
+});
+
+const entry = (over: Record<string, unknown> = {}) => ({ title: "Atlas Release Hub", client: "Atlas Retail", description: "Pipeline platform that replaces twelve team setups.", responsibilities: [] as string[], ...over });
+const bulletFlags = (template: "internal" | "external", e: Record<string, unknown>) => flagRepeatedBullets(template, { projects: [e] }, []);
+
+test("bullets: two near-duplicate bullets in one entry flag the later one", () => {
+  const r = bulletFlags("internal", entry({ responsibilities: ["Moved all Maven and npm artifacts into Artifactory.", "Wrote the cut-over runbook.", "Moved Maven and npm artifacts into a single Artifactory instance."] }));
+  assert.deepEqual(r, [{ path: "projects.0.responsibilities.2", reason: BULLET_REPEATS_BULLET_REASON }]);
+});
+
+test("bullets: identical short bullets are flagged even though they are short", () => {
+  const r = bulletFlags("internal", entry({ responsibilities: ["Wrote the runbook.", "wrote the runbook."] }));
+  assert.deepEqual(r, [{ path: "projects.0.responsibilities.1", reason: BULLET_REPEATS_BULLET_REASON }]);
+});
+
+test("bullets: a bullet that copies the description is flagged", () => {
+  const r = bulletFlags("internal", entry({ description: "Pipeline platform that replaces twelve team setups.", responsibilities: ["Built the shared templates.", "Pipeline platform replacing twelve team setups."] }));
+  assert.deepEqual(r, [{ path: "projects.0.responsibilities.1", reason: BULLET_REPEATS_DESCRIPTION_REASON }]);
+});
+
+test("bullets: external employer highlights are checked too", () => {
+  const r = flagRepeatedBullets("external", { experience: [{ company: "Fenwick Systems", highlights: ["Automated environment provisioning with Ansible across three regions.", "Automated environment provisioning with Ansible in three regions."] }] }, []);
+  assert.deepEqual(r, [{ path: "experience.0.highlights.1", reason: BULLET_REPEATS_BULLET_REASON }]);
+});
+
+test("bullets: bullets that merely share a verb or some words are NOT flagged", () => {
+  assert.deepEqual(bulletFlags("internal", entry({ responsibilities: ["Designed shared pipeline templates in Jenkins and Terraform.", "Designed shared pipeline templates for all teams."] })), [], "overlap 0.67 < 0.8");
+  assert.deepEqual(bulletFlags("internal", entry({ responsibilities: ["Migrated forty services onto the platform.", "Migrated the reporting database to a managed cluster."] })), []);
+  assert.deepEqual(bulletFlags("internal", entry({ responsibilities: ["Trained leads.", "Trained testers."] })), [], "very short, different bullets");
+});
+
+test("bullets: the same bullet in two DIFFERENT entries is not flagged, and a bullet mentioning the project name is fine", () => {
+  const same = "Wrote the cut-over runbook for the release.";
+  const r = flagRepeatedBullets("internal", { projects: [entry({ responsibilities: [same] }), entry({ title: "Beacon", description: "Monitoring suite.", responsibilities: [same] })] }, []);
+  assert.deepEqual(r, []);
+  assert.deepEqual(bulletFlags("internal", entry({ responsibilities: ["Presented the Atlas Release Hub roadmap to leadership."] })), []);
+});
+
+test("bullets: no bullets, no description and non-array bullets are harmless", () => {
+  assert.deepEqual(bulletFlags("internal", entry({ responsibilities: [] })), []);
+  assert.deepEqual(flagRepeatedBullets("internal", { projects: [{ title: "A", responsibilities: "not a list" }] }, []), []);
+  assert.deepEqual(flagRepeatedBullets("internal", {}, []), []);
+});
+
+const descFlags = (template: "internal" | "external", e: Record<string, unknown>) => flagDescriptionStartsWithTitle(template, { projects: [e] }, []);
+
+test("description starting with the project title is flagged (internal title, external client, punctuation and case ignored)", () => {
+  assert.deepEqual(descFlags("internal", entry({ title: "Store Locator", description: "Store Locator is a web app that lets shoppers find nearby stores." })), [{ path: "projects.0.description", reason: DESCRIPTION_STARTS_WITH_TITLE_REASON }]);
+  assert.equal(descFlags("internal", entry({ title: "Store-Locator", description: "STORE LOCATOR: a web app for shoppers." })).length, 1);
+  assert.equal(descFlags("external", entry({ client: "Harbor Retail", description: "Harbor Retail needed a new returns workflow for its stores." })).length, 1);
+});
+
+test("description NOT flagged when it only mentions the title later, or starts differently", () => {
+  assert.deepEqual(descFlags("internal", entry({ title: "Store Locator", description: "Web app that lets shoppers find nearby stores." })), []);
+  assert.deepEqual(descFlags("internal", entry({ title: "Store Locator", description: "Replaced the old Store Locator with a map-based search." })), []);
+  assert.deepEqual(descFlags("internal", entry({ title: "", description: "Anything." })), [], "no title");
+  assert.deepEqual(descFlags("internal", entry({ title: "Store Locator", description: "" })), [], "no description");
+  assert.deepEqual(descFlags("internal", entry({ title: "Store Locator Platform Rewrite", description: "Store Locator." })), [], "description shorter than the title");
+});
+
+test("applyBackstops runs the new checks, adds only flags, and never rewrites the data", () => {
+  const data = {
+    ...hdr({ overview: "Data Engineer with 6+ years of experience building pipelines for retail analytics." }),
+    projects: [{ title: "Store Locator", role: "Developer", description: "Store Locator is a web app for shoppers.", responsibilities: ["Moved all Maven and npm artifacts into Artifactory.", "Moved Maven and npm artifacts into a single Artifactory instance."] }],
+  };
+  const before = structuredClone(data);
+  const r = applyBackstops("internal", data, [], "source text");
+  assert.deepEqual(r.data, before, "text untouched");
+  const reasons = r.flags.map((f) => `${f.path}: ${f.reason}`);
+  assert.ok(reasons.includes(`overview: ${OVERVIEW_REPEATS_HEADER_REASON}`));
+  assert.ok(reasons.includes(`projects.0.description: ${DESCRIPTION_STARTS_WITH_TITLE_REASON}`));
+  assert.ok(reasons.includes(`projects.0.responsibilities.1: ${BULLET_REPEATS_BULLET_REASON}`));
+});
+
+test("applyBackstops adds no repetition flags to a clean profile", () => {
+  const clean = {
+    ...hdr({ overview: "Builds batch and streaming pipelines for retail analytics. Works with order and inventory data." }),
+    projects: [{ title: "Store Locator", role: "Developer", description: "Web app that lets shoppers find nearby stores.", responsibilities: ["Built the map search screens.", "Added stock checks per store.", "Wrote the release notes."] }],
+  };
+  const r = applyBackstops("internal", clean, [], "source text");
+  assert.ok(!r.flags.some((f) => [OVERVIEW_REPEATS_HEADER_REASON, DESCRIPTION_STARTS_WITH_TITLE_REASON, BULLET_REPEATS_BULLET_REASON, BULLET_REPEATS_DESCRIPTION_REASON].includes(f.reason)));
 });
