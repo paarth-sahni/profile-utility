@@ -446,6 +446,10 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview rendered");
   const shown = await ev("document.querySelector('[data-doc-preview] section.docx, [data-doc-preview] .docx-wrapper')?.innerText ?? ''");
   check("the DOCX itself is rendered in the page (docx-preview) with the candidate's name", shown.includes("E2E Preview Person"), shown.slice(0, 80));
+  const layout = JSON.parse(await ev(`(()=>{const a=document.querySelector('[data-doc-preview] section.docx article'); const img=a?.querySelector('img'); const name=[...a.querySelectorAll('p')].find(p=>p.textContent.includes('E2E Preview Person')); if(!img||!name) return 'null';
+    const i=img.getBoundingClientRect(), n=name.getBoundingClientRect(), page=a.closest('section').getBoundingClientRect();
+    return JSON.stringify({ logoRight: i.left > page.left + page.width/2, logoTop: i.top < n.bottom + 20, hyph: getComputedStyle(a.querySelector('p')).hyphens })})()`));
+  check("the anchored logo is drawn top right (not under the name) and words are never hyphenated", layout && layout.logoRight && layout.logoTop && layout.hyph === "manual", JSON.stringify(layout));
   const body = await bodyText();
   check("Preview offers Back to edit, Download DOCX and Submit", ["← Back to edit", "Download DOCX", "Submit"].every((x) => body.includes(x)));
   check("the consent checkbox has the agreed wording and starts unticked", body.includes("I confirm the information in this profile is accurate and may be shared") && (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);

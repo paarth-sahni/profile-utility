@@ -4,9 +4,13 @@
  * Purpose: shows a generated DOCX in the browser (docx-preview). It is given the finished Blob — the same object the
  * Download button saves and Google Docs receives — so the preview is of the exact file, not a re-render. Shows its own
  * loading and error states. On narrow screens the page is scaled down to fit instead of scrolling sideways.
- * Rendering is approximate where Word and the browser differ (e.g. fonts the device does not have).
+ * Rendering is approximate where Word and the browser differ (e.g. fonts the device does not have). To stay close to
+ * Word / Google Docs it uses docx-preview's tab-stop layout, switches hyphenation off, and puts the anchored logo at its
+ * anchored position (lib/docxAnchors.ts). All of that changes only what is drawn, never the DOCX.
  */
 import { useEffect, useRef, useState } from "react";
+import PizZip from "pizzip";
+import { NO_HYPHENS_CSS, applyAnchors, parseAnchors } from "@/lib/docxAnchors";
 
 type RenderState = "loading" | "ready" | "error";
 
@@ -33,7 +37,17 @@ export default function DocPreview({ blob }: { blob: Blob }) {
           renderHeaders: true,
           renderFooters: true,
           ignoreLastRenderedPageBreak: true,
+          experimental: true, // tab stops: "A PROUD MEMBER OF" is positioned with tabs
         });
+        const noHyphens = document.createElement("style");
+        noHyphens.textContent = NO_HYPHENS_CSS;
+        host.current.prepend(noHyphens);
+        try {
+          const xml = new PizZip(await blob.arrayBuffer()).file("word/document.xml")?.asText();
+          if (xml) applyAnchors(host.current, parseAnchors(xml));
+        } catch (e) {
+          console.error("[preview] could not position the logo", e); // the preview still works without it
+        }
         const wrapper = host.current.querySelector<HTMLElement>(".docx-wrapper");
         if (wrapper) wrapper.style.background = "transparent"; // docx-preview's default grey is off-brand
         if (!cancelled) setState("ready");
