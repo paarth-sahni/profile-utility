@@ -6,7 +6,7 @@
  * shows an empty bullet or an empty block. Pure (no browser or DOM imports), so it is unit-tested
  * (lib/docxData.test.ts) and used by test-render.mjs against the real templates.
  *
- * Flags (see scripts/patch-optional-sections.py for where each wraps):
+ * Flags (see scripts/patch-templates.py for where each wraps):
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
  *             hasRole, hasProjectLink, hasDescription

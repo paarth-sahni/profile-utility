@@ -5,13 +5,15 @@
  *     empty, blank or "N/A"; required sections never disappear;
  *   - with every optional section empty only the required content is left;
  *   - no {tag} is left over, none is split across Word runs, nothing renders as "undefined".
- * Run: npm run test:render   (it uses tsx so it can import the TypeScript module). Add --pdf to also convert the
- * full and the all-optional-empty renders with LibreOffice into /tmp/render-check/ for a visual check.
+ * Run: npm run test:render   (it uses tsx so it can import the TypeScript module). Add --pdf to also convert full,
+ * all-optional-empty, sparse and mixed renders into /tmp/render-check/ exactly as Download PDF does (lib/pdfRender.ts,
+ * LibreOffice), check their text and geometry, and look at them.
  */
 import fs from "node:fs";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { prepareData } from "./lib/docxData.ts";
+import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -86,7 +88,7 @@ function render(id, data) {
   assert(!/\bN\/?A\b/i.test(text), `${id}: an "N/A" placeholder reached the document`);
   fs.mkdirSync("/tmp/render-check", { recursive: true });
   const out = doc.getZip().generate({ type: "nodebuffer" });
-  return { text, out };
+  return { text, out, zip: doc.getZip() };
 }
 const textOf = (id, data) => render(id, data).text;
 
@@ -240,9 +242,94 @@ console.log("external: every optional section / field shows when filled and is c
 }
 console.log("project / employer headings: no dangling dashes, shared headings behave");
 
-// ------------------------------------------------- 3. optional: PDFs through LibreOffice for a visual check
+
+// ------------------------------------------------- 3. formatting in the template XML (scripts/patch-templates.py)
+const ART_RATIO = (847 - 153) / (359 - 141); // the logo artwork inside its 1000x500 PNG
+for (const id of ["internal", "external"]) {
+  const xml = templateXml[id];
+  // logo: cropped to the artwork and drawn at the artwork's own ratio, positioned from the page margin
+  const drawing = xml.match(/<w:drawing>.*?<\/w:drawing>/s)[0];
+  const [, cx, cy] = drawing.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/).map(Number);
+  const crop = Object.fromEntries([...drawing.match(/<a:srcRect ([^>]*)\/>/)[1].matchAll(/(\w)="(\d+)"/g)].map((m) => [m[1], Number(m[2]) / 100000]));
+  const shown = (1000 * (1 - crop.l - crop.r)) / (500 * (1 - crop.t - crop.b));
+  assert(Math.abs(cx / cy - ART_RATIO) / ART_RATIO < 0.005 && Math.abs(shown - ART_RATIO) / ART_RATIO < 0.005, `${id}: the logo must keep its aspect ratio (box ${(cx / cy).toFixed(3)}, crop ${shown.toFixed(3)}, artwork ${ART_RATIO.toFixed(3)})`);
+  // the label: no tabs or padding, indented exactly to the logo's left edge
+  const labelPara = xml.match(/<w:p[ >].*?<\/w:p>/s)[0];
+  assert(/>A PROUD MEMBER OF</.test(labelPara) && !labelPara.includes("<w:tab/>") && /<w:ind w:left="\d+"/.test(labelPara), `${id}: "A PROUD MEMBER OF" has no tabs or padding spaces and a fixed indent`);
+}
+console.log("templates: logo ratio and position");
+
+
+/** Every word on every page with its box (pt, from the top left), read with pdftotext -bbox. */
+function wordsOf(pdf) {
+  const { execFileSync } = globalThis.__child;
+  const html = execFileSync("pdftotext", ["-bbox", pdf, "-"], { encoding: "utf8" });
+  return html.split("<page ").slice(1).map((page) =>
+    [...page.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g)].map((m) => ({
+      x0: +m[1], y0: +m[2], x1: +m[3], y1: +m[4], t: m[5].replace(/&amp;/g, "&"),
+    })),
+  );
+}
+
+/** Words grouped into lines (same top, within 1pt), each { y0, y1, x0, text }, top to bottom. */
+function linesOf(words) {
+  const lines = [];
+  for (const w of [...words].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)) {
+    const line = lines.find((l) => Math.abs(l.y0 - w.y0) < 1);
+    if (line) {
+      line.words.push(w);
+      line.x0 = Math.min(line.x0, w.x0);
+      line.y1 = Math.max(line.y1, w.y1);
+    } else lines.push({ y0: w.y0, y1: w.y1, x0: w.x0, words: [w] });
+  }
+  for (const l of lines) l.text = l.words.sort((a, b) => a.x0 - b.x0).map((w) => w.t).join(" ");
+  return lines.sort((a, b) => a.y0 - b.y0);
+}
+
+/** Bounding box (pt) of the dark pixels in a region of page 1, from a 216 dpi greyscale render. */
+function inkBox(pdf, region) {
+  const { execFileSync } = globalThis.__child;
+  const base = pdf.replace(/\.pdf$/, "-p1");
+  execFileSync("pdftoppm", ["-r", "216", "-gray", "-singlefile", "-f", "1", "-l", "1", pdf, base]);
+  const pgm = fs.readFileSync(`${base}.pgm`);
+  const header = pgm.toString("latin1", 0, 50).match(/^P5\s+(\d+)\s+(\d+)\s+(\d+)\s/);
+  const [w, h] = [Number(header[1]), Number(header[2])];
+  const data = pgm.subarray(header[0].length);
+  const k = 216 / 72;
+  let box = null;
+  for (let y = Math.floor(region.y0 * k); y < Math.min(h, region.y1 * k); y++) {
+    for (let x = Math.floor(region.x0 * k); x < Math.min(w, region.x1 * k); x++) {
+      if (data[y * w + x] < 160) {
+        box ??= { x0: x, y0: y, x1: x, y1: y };
+        box.x0 = Math.min(box.x0, x); box.x1 = Math.max(box.x1, x); box.y0 = Math.min(box.y0, y); box.y1 = Math.max(box.y1, y);
+      }
+    }
+  }
+  return box && { x0: box.x0 / k, y0: box.y0 / k, x1: (box.x1 + 1) / k, y1: (box.y1 + 1) / k };
+}
+
+const near = (value, want, tol) => Math.abs(value - want) <= tol;
+
+/** The logo, measured on the PDF LibreOffice laid out. */
+function checkGeometry(file, id, pdf) {
+  const pages = wordsOf(pdf);
+  // 1. logo: directly below "A PROUD MEMBER OF", left edges aligned, artwork ratio kept
+  const first = linesOf(pages[0]);
+  const label = first.find((l) => l.text === "A PROUD MEMBER OF");
+  assert(label, `${file}: "A PROUD MEMBER OF" must be one line on page 1`);
+  const logo = inkBox(pdf, { x0: label.x0 - 6, y0: label.y1, x1: 612, y1: label.y1 + 60 });
+  assert(logo, `${file}: no logo found under the label`);
+  assert(near(logo.x0, label.x0, 1.5), `${file}: logo left edge ${logo.x0.toFixed(1)} must line up with the label at ${label.x0.toFixed(1)}`);
+  assert(logo.y0 >= label.y1 - 0.5 && logo.y0 - label.y1 <= 6, `${file}: the logo must sit directly below the label (gap ${(logo.y0 - label.y1).toFixed(1)}pt)`);
+  const ratio = (logo.x1 - logo.x0) / (logo.y1 - logo.y0);
+  assert(Math.abs(ratio - ART_RATIO) / ART_RATIO < 0.04, `${file}: logo drawn at ${ratio.toFixed(3)}, the artwork is ${ART_RATIO.toFixed(3)} (stretched?)`);
+  assert(logo.x0 > 306 && logo.y1 < 140, `${file}: the logo belongs in the top right`);
+}
+
+// ------------------------------------------------- 4. optional: PDFs through LibreOffice for a visual check
 if (process.argv.includes("--pdf")) {
   const { execFileSync } = await import("node:child_process");
+  globalThis.__child = { execFileSync };
   const dir = "/tmp/render-check";
   fs.mkdirSync(dir, { recursive: true });
   const cases = [];
@@ -265,15 +352,15 @@ if (process.argv.includes("--pdf")) {
     cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed]);
   }
   for (const [file, id, data] of cases) {
-    fs.writeFileSync(`${dir}/${file}.docx`, render(id, data).out);
-    // A private profile directory keeps this headless run separate from a LibreOffice window you may have open
-    // (otherwise the request is handed to that window and no PDF is written).
-    execFileSync("soffice", [`-env:UserInstallation=file://${dir}/lo-profile`, "--headless", "--convert-to", "pdf", "--outdir", dir, `${dir}/${file}.docx`], { stdio: "ignore" });
-    assert(fs.existsSync(`${dir}/${file}.pdf`), `LibreOffice did not write ${file}.pdf`);
+    const { out, zip } = render(id, data);
+    fs.writeFileSync(`${dir}/${file}.docx`, out);
+    // exactly what Download PDF does (lib/pdfRender.ts): embedded fonts dropped, LibreOffice with the brand fonts
+    fs.writeFileSync(`${dir}/${file}.pdf`, await convertDocxToPdf(withoutEmbeddedFonts(zip).generate({ type: "uint8array", compression: "DEFLATE" })));
     console.log(`pdf: ${dir}/${file}.pdf`);
     // automatic layout checks on what LibreOffice actually laid out
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
     assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
+    checkGeometry(file, id, `${dir}/${file}.pdf`);
     if (id === "external") {
       // single column: a heading must be followed by content, never by another heading or by nothing
       const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"]);
