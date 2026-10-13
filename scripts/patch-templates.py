@@ -9,12 +9,14 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    paragraphs (the same way hasProjects / hasTeamSize already work); with paragraphLoop on, the tag paragraphs vanish and
    so does the whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). Two heading lines
    get an inline condition so no dangling " - " is left.
-2. Formatting (FORMAT, LOGO, BULLET below):
+2. Formatting (FORMAT, LOGO, BULLET, SETTINGS below):
    - the InfoBeans logo keeps its aspect ratio (cropped exactly to the artwork, box = the artwork's ratio) and sits
      directly below "A PROUD MEMBER OF", left edges aligned;
    - one bullet style for every responsibility / highlight (one numbering definition: Lexend "•" at text size, 720/360
      indent) with the same spacing between bullets;
    - a blank line between the Role line and the project description and between the description and the bullets;
+   - sidebar items (internal): 1.15 line spacing inside an item, 1.5 lines from one item to the next;
+   - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -69,7 +71,9 @@ INLINE = {
 # (paragraphs 54-59), after the last item (58 = {/managerialExperience}), so it goes with the section.
 # Same form as the Certifications spacer (plain, no list numbering), without its rsid / paraId attributes.
 SPACER = '<w:p><w:pPr><w:jc w:val="left"/><w:rPr><w:color w:val="231f20"/></w:rPr></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
-SPACERS = {"internal": [(58, SPACER)], "external": []}
+# The Skills block got its gap from a blank paragraph after EVERY skill; that one is dropped (FORMAT, 44) for the
+# item gap, so the block ends with one section spacer after the loop (45 = {/skills}), like the other sections.
+SPACERS = {"internal": [(45, SPACER), (58, SPACER)], "external": []}
 
 # Blank lines BEFORE a paragraph, inside any condition that opens there: the internal project had none between the
 # Role / Project Link line and the description, nor between the description and the bullets. Same form as the
@@ -78,10 +82,11 @@ PROJECT_SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:line="240" w:lineRule="a
 PRE_SPACERS = {"internal": [(34, PROJECT_SPACER), (35, PROJECT_SPACER)], "external": []}
 
 # ---------------------------------------------------------------------------------------------------- 2. formatting
-# 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside a bullet (w:line 276), and
-# 1.5 lines from bullet to bullet: 0.35 lines = 4.8pt = 96 twips after each.
+# 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside an item (w:line 276), and
+# 1.5 lines from item to item: 0.35 lines = 4.8pt = 96 twips after each item.
 ITEM_GAP = 96
-ITEM = {"before": "0", "after": str(ITEM_GAP), "line": "276", "lineRule": "auto"}
+TIGHT = {"before": "0", "after": "0", "line": "276", "lineRule": "auto"}  # inside an item
+ITEM = {"before": "0", "after": str(ITEM_GAP), "line": "276", "lineRule": "auto"}  # last paragraph of an item
 
 # The one bullet: numbering definition used by every responsibility / highlight paragraph.
 BULLET_NUM_ID = "1"
@@ -96,10 +101,19 @@ BULLET_PPR = {
     "ind": {"left": "720", "hanging": "360"},
 }
 
-# template -> {paragraph: changes}. "spacing" / "ind": attributes (the element is replaced), "numPr": xml.
+# template -> {paragraph: changes}. "spacing" / "ind": attributes (the element is replaced), "numPr": xml, "drop": True
+# removes the paragraph.
 FORMAT = {
     "internal": {
         36: BULLET_PPR,  # project responsibilities
+        42: {"spacing": TIGHT},  # sidebar: skill name...
+        43: {"spacing": ITEM},  # ...and its rating are one item
+        44: {"drop": True},  # the blank paragraph after every skill (the item gap replaces it)
+        48: {"spacing": ITEM},  # certification
+        52: {"spacing": ITEM},  # tools (one comma-separated item)
+        57: {"spacing": ITEM},  # managerial experience
+        62: {"spacing": ITEM},  # domain
+        67: {"spacing": ITEM},  # language
     },
     "external": {
         41: BULLET_PPR,  # project responsibilities
@@ -118,6 +132,10 @@ LOGO_GAP_PT = 2  # from the bottom of the "A PROUD MEMBER OF" line to the top of
 LOGO_LEFT_PT = {"internal": 377.7, "external": 468 - LOGO_WIDTH_PT}
 # The label's glyphs reach 0.7pt below the bottom of its line (measured on the LibreOffice PDF).
 LABEL_DESCENT_PT = 0.7
+
+# settings.xml: do not stretch a justified line that ends in a manual line break (Word's "Don't expand character
+# spaces on a line ending with SHIFT+RETURN"; LibreOffice reads it too). The overview and qualification end in one.
+NO_EXPAND_SHIFT_RETURN = "<w:doNotExpandShiftReturn/>"
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 PPR_ORDER = [
@@ -214,6 +232,12 @@ def numbering(xml: str) -> str:
     return re.sub(r'<w:lvl w:ilvl="0">.*?</w:lvl>', lambda m: BULLET_LVL0 if "\u25cf" in m.group(0) else m.group(0), xml, flags=re.S)
 
 
+def settings(xml: str) -> str:
+    if NO_EXPAND_SHIFT_RETURN in xml:
+        return xml
+    return xml.replace("<w:compat>", "<w:compat>" + NO_EXPAND_SHIFT_RETURN, 1)
+
+
 def patch(name: str) -> bytes:
     src = BACKUPS / f"{name}.before-optional-sections.docx"
     with zipfile.ZipFile(src) as zin:
@@ -239,7 +263,9 @@ def patch(name: str) -> bytes:
                 text = label(text, name)
             if "<w:drawing>" in text:
                 text = logo(text, name, xml)
-            if change:
+            if change.get("drop"):
+                text = ""
+            elif change:
                 text = set_ppr(text, change)
             opens = "".join(m for _, m in sorted(before.get(i, []), key=lambda t: -t[0]))  # outermost first
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
@@ -256,6 +282,8 @@ def patch(name: str) -> bytes:
                     data = new_xml.encode("utf8")
                 elif item.filename == "word/numbering.xml":
                     data = numbering(data.decode("utf8")).encode("utf8")
+                elif item.filename == "word/settings.xml":
+                    data = settings(data.decode("utf8")).encode("utf8")
                 zout.writestr(item, data)
     return out.read_bytes()
 

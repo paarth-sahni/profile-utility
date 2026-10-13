@@ -268,8 +268,9 @@ for (const id of ["internal", "external"]) {
   const abstractId = numbering.match(/<w:num w:numId="1"[^>]*>\s*<w:abstractNumId w:val="(\d+)"/)[1];
   const lvl0 = numbering.match(new RegExp(`<w:abstractNum [^>]*w:abstractNumId="${abstractId}".*?<w:lvl w:ilvl="0">(.*?)</w:lvl>`, "s"))[1];
   assert(lvl0.includes('w:val="•"') && lvl0.includes('w:ascii="Lexend"') && lvl0.includes('<w:sz w:val="22"/>') && lvl0.includes('<w:ind w:left="720" w:hanging="360"/>'), `${id}: the bullet is a Lexend "•" at text size with a 720/360 indent`);
+  assert(zip.file("word/settings.xml").asText().includes("<w:doNotExpandShiftReturn/>"), `${id}: justified lines ending in a line break must not be stretched`);
 }
-console.log("templates: logo ratio and position, one bullet style");
+console.log("templates: logo ratio and position, one bullet style, no stretched manual-break lines");
 
 
 /** Every word on every page with its box (pt, from the top left), read with pdftotext -bbox. */
@@ -323,8 +324,8 @@ function inkBox(pdf, region) {
 const LINE = 13.75; // one line of 11pt Lexend
 const near = (value, want, tol) => Math.abs(value - want) <= tol;
 
-/** Logo, bullets and blank lines, measured on the PDF LibreOffice laid out. */
-function checkGeometry(file, id, pdf) {
+/** Logo, bullets, blank lines and sidebar spacing, measured on the PDF LibreOffice laid out. */
+function checkGeometry(file, id, pdf, data) {
   const pages = wordsOf(pdf);
   // 1. logo: directly below "A PROUD MEMBER OF", left edges aligned, artwork ratio kept
   const first = linesOf(pages[0]);
@@ -365,6 +366,34 @@ function checkGeometry(file, id, pdf) {
       }
     }
   }
+  // 4. internal sidebar: 1.15 lines inside an item, 1.5 lines from item to item
+  if (id === "internal") {
+    const side = linesOf(pages[0].filter((w) => w.x0 >= SIDEBAR_X && w.y0 > 140));
+    const HEADINGS = /^(Skills|Certifications|Tools|Managerial Experience|Domain|Languages)$/;
+    const items = []; // [first line, ..., last line] per item
+    const itemTexts = [
+      ...data.skills.map((s) => [s.name, `(${s.rating}/5)`]),
+      ...[data.certifications, data.managerialExperience, data.domains, data.languages].flat().filter(Boolean).map((t) => [t]),
+      ...(data.tools?.length ? [[data.tools.filter(Boolean).join(", ")]] : []),
+    ].map((parts) => parts.join(" "));
+    let n = 0;
+    while (n < side.length) {
+      if (HEADINGS.test(side[n].text)) { n++; continue; }
+      // grow the item line by line until its text is one of the expected items
+      let k = n;
+      let text = side[n].text;
+      while (!itemTexts.includes(text) && k + 1 < side.length && !HEADINGS.test(side[k + 1].text)) text += " " + side[++k].text;
+      if (itemTexts.includes(text)) items.push(side.slice(n, k + 1));
+      n = k + 1;
+    }
+    assert(items.length >= Math.min(2, itemTexts.length), `${file}: could not find the sidebar items (${items.length} of ${itemTexts.length})`);
+    for (const [i, item] of items.entries()) {
+      for (let j = 1; j < item.length; j++) assert(near(item[j].y0 - item[j - 1].y0, 1.15 * LINE, 1), `${file}: inside a sidebar item lines must be 1.15 apart ("${item[j].text}": ${(item[j].y0 - item[j - 1].y0).toFixed(1)}pt)`);
+      const next = items[i + 1];
+      const between = next && side.slice(side.indexOf(item.at(-1)) + 1, side.indexOf(next[0]));
+      if (next && between.length === 0) assert(near(next[0].y0 - item.at(-1).y0, 1.5 * LINE, 1.2), `${file}: sidebar items must be 1.5 lines apart ("${next[0].text}": ${(next[0].y0 - item.at(-1).y0).toFixed(1)}pt)`);
+    }
+  }
 }
 
 // ------------------------------------------------- 4. optional: PDFs through LibreOffice for a visual check
@@ -390,12 +419,14 @@ if (process.argv.includes("--pdf")) {
       id === "internal"
         ? { ...base, experienceSummary: "", certifications: [], tools: [], domains: [], projects: base.projects.slice(0, 1) } // keeps managerial + languages
         : { ...base, specialization: "", tools: [], projects: [] }; // keeps certifications + employers only
-    // long text everywhere: wrapping bullets and a wrapping description
+    // long text everywhere: wrapping bullets, a wrapping description and (internal) wrapping sidebar items
     const LONG = "LONG-MARK led a cross-functional team to migrate a fictional platform to the cloud, cutting batch runtimes and simplifying every release";
     const long = {
       ...base,
       projects: base.projects.map((p) => ({ ...p, description: `DESC-MARK ${LONG}.`, responsibilities: [LONG, "RESP-MARK short", LONG] })),
-      ...(id === "external" ? { experience: base.experience.map((x) => ({ ...x, highlights: [LONG, "HIGH-MARK short"] })) } : {}),
+      ...(id === "internal"
+        ? { skills: [{ name: "SKILL-MARK Programme and portfolio management", rating: "4.5" }, ...base.skills], managerialExperience: ["MGR-MARK Stakeholder management across regions", "Hiring"], domains: ["DOMAIN-MARK Banking and financial services", "Retail"] }
+        : { experience: base.experience.map((x) => ({ ...x, highlights: [LONG, "HIGH-MARK short"] })) }),
     };
     cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed], [`${id}-long`, id, long]);
   }
@@ -408,7 +439,7 @@ if (process.argv.includes("--pdf")) {
     // automatic layout checks on what LibreOffice actually laid out
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
     assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
-    checkGeometry(file, id, `${dir}/${file}.pdf`);
+    checkGeometry(file, id, `${dir}/${file}.pdf`, data);
     if (id === "external") {
       // single column: a heading must be followed by content, never by another heading or by nothing
       const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"]);
