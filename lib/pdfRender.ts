@@ -35,7 +35,8 @@ export class PdfError extends Error {
 
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const SOFFICE = () => process.env.SOFFICE_PATH?.trim() || "soffice";
-const FONTS_DIR = () => path.resolve(process.env.PDF_FONTS_DIR?.trim() || path.join(PUBLIC_DIR, "fonts"));
+// turbopackIgnore: a path from the environment must not make the build trace (and ship) the whole project
+const FONTS_DIR = () => path.resolve(/*turbopackIgnore: true*/ process.env.PDF_FONTS_DIR?.trim() || path.join(PUBLIC_DIR, "fonts"));
 const TIMEOUT_MS = 60_000;
 /** LibreOffice is heavy: at most this many conversions run at once, the rest wait their turn. */
 const MAX_PARALLEL = 2;
