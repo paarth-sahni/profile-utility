@@ -1,7 +1,7 @@
 /** Purpose: unit tests for the "is this saved profile complete enough to export?" check and the file name. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkReadyForDocx, docxFileName } from "./docxReady";
+import { checkReadyForDocx, docxFileName, pdfFileName } from "./docxReady";
 import type { InternalResume } from "./schemas";
 
 const COMPLETE: InternalResume = {
@@ -60,4 +60,16 @@ test("an incomplete draft is not ready and the message points to Review", () => 
 test("docxFileName uses underscores and falls back to resume", () => {
   assert.equal(docxFileName("internal", COMPLETE), "Testy_McSample_internal_profile.docx");
   assert.equal(docxFileName("external", { ...COMPLETE, name: "  " }), "resume_external_profile.docx");
+});
+
+test("pdfFileName is <Name>-<Job title>-InfoBeans.pdf with underscores and no unsafe characters", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Abdul", jobTitle: "Technology Delivery Manager" }), "Abdul-Technology_Delivery_Manager-InfoBeans.pdf");
+  assert.equal(pdfFileName(COMPLETE), "Testy_McSample-Senior_Engineer-InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: " José  O'Brien ", jobTitle: "QA / Test Lead: Cloud*" }), "José_OBrien-QA_Test_Lead_Cloud-InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "../../etc/passwd", jobTitle: "a\\b" }), "etcpasswd-ab-InfoBeans.pdf");
+});
+
+test("pdfFileName falls back to Profile and drops an empty job title", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "  ", jobTitle: "" }), "Profile-InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "???", jobTitle: "Lead" }), "Profile-Lead-InfoBeans.pdf");
 });

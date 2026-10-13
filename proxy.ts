@@ -1,6 +1,6 @@
 /**
  * Purpose: runs before protected routes. Refreshes the Supabase session cookies and enforces sign-in:
- * pages redirect to /login, /api/extract answers 401. Public pages (instructions, style guide) are not matched.
+ * pages redirect to /login, the matched /api/* routes answer 401. Public pages (instructions, style guide) are not matched.
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -74,5 +74,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/internal", "/external", "/profiles/:path*", "/manage/:path*", "/api/extract", "/api/profiles"],
+  matcher: ["/login", "/internal", "/external", "/profiles/:path*", "/manage/:path*", "/api/extract", "/api/profiles", "/api/pdf"],
 };

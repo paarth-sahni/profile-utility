@@ -25,3 +25,19 @@ export function docxFileName(template: TemplateId, data: ResumeData): string {
   const who = (data as { name?: string }).name?.trim().replace(/\s+/g, "_") || "resume";
   return `${who}_${template}_profile.docx`;
 }
+
+/** One part of a file name: spaces become "_", anything but letters, digits, "_" and "-" is removed. */
+const fileNamePart = (value: string | undefined): string =>
+  (value ?? "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\p{L}\p{N}_-]/gu, "")
+    .replace(/_{2,}/g, "_")
+    .replace(/^[_-]+|[_-]+$/g, "");
+
+/** The PDF download name: "<Name>-<Job_title>-InfoBeans.pdf", e.g. "Abdul-Technology_Delivery_Manager-InfoBeans.pdf". */
+export function pdfFileName(data: ResumeData): string {
+  const { name, jobTitle } = data as { name?: string; jobTitle?: string };
+  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean);
+  return `${parts.join("-")}-InfoBeans.pdf`;
+}
