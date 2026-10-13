@@ -1,6 +1,6 @@
 # Resume Generator
 
-Next.js app that turns a resume (or a blank form) into a branded InfoBeans profile `.docx`, from one of two Word
+Next.js app that turns a resume (or a blank form) into a branded InfoBeans profile **PDF**, made from one of two Word
 templates. Sign-in is with an InfoBeans Google account; the resume is read by an LLM on the server (`/api/extract`),
 and **internal** profiles can be saved per user in Supabase (My Profiles). **External** (client-facing) profiles are
 never stored.
@@ -16,10 +16,11 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    (name, job title, overview, one education entry, one skill) are marked in red when missing. There is **no save
    control here**: an internal profile is saved only by **Submit** on Preview (below).
 4. **Preview** — pressing *Preview →* first validates the profile; if anything is missing you stay on (or return to)
-   Edit details with the fields marked. Otherwise the **exact generated DOCX** is rendered in the page with
-   `docx-preview`: the same `Blob` is what *Download DOCX* saves and *Open in Google Docs* uploads. Buttons:
+   Edit details with the fields marked. Otherwise the server makes the **PDF** (`POST /api/pdf`, see [PDF](#pdf)) and
+   the page draws that PDF (pdf.js): the same `Blob` is what *Download PDF* saves. Buttons:
    - **← Back to edit** — keeps every edit.
-   - **Download DOCX** — all users.
+   - **Download PDF** — all users. File name `<Name>-<Job_title>-InfoBeans.pdf`, e.g.
+     `Abdul-Technology_Delivery_Manager-InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed).
    - **Open in Google Docs** — managers and admins only (see below).
    - **Submit** — internal profiles only (see below).
 
@@ -30,7 +31,7 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 
 **Submit** (internal only, on Preview) validates, records the consent and saves the profile as a new version in
 My Profiles (if nothing changed since the last save, that version is reused). Preview stays on screen and shows
-"Submitted · saved to My Profiles · v3" with a *View in My Profiles* link; *Download DOCX* remains available. There is
+"Submitted · saved to My Profiles · v3" with a *View in My Profiles* link; *Download PDF* remains available. There is
 no further step and no external form link.
 
 ### Internal vs external
@@ -39,8 +40,8 @@ no further step and no external form link.
 |---|---|---|
 | Saved in the database | yes, by Submit on Preview: My Profiles, version history (Base, v2, v3, ...) | **never** |
 | Edit details | no save controls (same as external) | no save controls |
-| Preview | Back to edit, Download DOCX, Submit (stays on Preview), (Google Docs) | Back to edit, Download DOCX, (Google Docs) |
-| Session-expiry banner | "go to Preview and Submit to save your profile (or download your DOCX)", no button | "download your DOCX now", no button |
+| Preview | Back to edit, Download PDF, Submit (stays on Preview), (Google Docs) | Back to edit, Download PDF, (Google Docs) |
+| Session-expiry banner | "go to Preview and Submit to save your profile (or download your PDF)", no button | "download your PDF now", no button |
 | Listed in My Profiles / Manage | yes | n/a |
 
 The server enforces it: `POST /api/profiles` answers **400 `EXTERNAL_NOT_SAVED`** for template `external`
@@ -52,39 +53,80 @@ Additional pages: **/instructions** (step-by-step generation process for each
 template) and **/style-guide** (the typography Style Guide PDF, embedded as-is
 from `public/style-guide/`).
 
+## PDF
+
+There is no DOCX download any more: every download (Preview, My Profiles, Manage) is a PDF, and Preview shows that
+same PDF.
+
+- `POST /api/pdf` (`app/api/pdf/route.ts`): signed-in users only (401 otherwise, also in `proxy.ts`), 60 PDFs per
+  10 minutes per user, body `{ template, data }` checked with the strict schema and the "N/A" check (422 `INCOMPLETE`
+  otherwise). Nothing is stored and no profile content is logged (only an error code); `Cache-Control: no-store`.
+- `lib/pdfRender.ts` fills the Word template exactly as the browser does (`lib/docxFill.ts`), drops the template's
+  embedded fonts (one of them is mislabelled and turned all Lexend Light text into Lexend Regular), and runs
+  `soffice --headless --convert-to pdf` in a fresh temporary directory with its own LibreOffice profile
+  (`-env:UserInstallation`), deleted afterwards. At most 2 conversions run at once per server process.
+- Fonts: the Lexend files in `public/fonts` are copied into that temporary directory and given to LibreOffice through a
+  private fontconfig file, so nothing has to be installed system-wide. If `soffice` is missing the API answers
+  **503 `CONVERTER_MISSING`** and the error is logged as `[pdf] could not make the PDF (CONVERTER_MISSING)`.
+- Settings (optional): `SOFFICE_PATH` (default `soffice`), `PDF_FONTS_DIR` (default `public/fonts`).
+- Preview draws the PDF with pdf.js (through `unpdf`, loaded only on Preview) rather than an `<iframe>`: phones do not
+  show a PDF inside a page (Android offers a download, iOS shows page 1 only).
+- *Open in Google Docs* still uploads the filled DOCX (Google converts it); that is the only place a DOCX is made.
+
+### Production server (go-live checklist)
+
+- **LibreOffice** 7.3 or newer; Writer without a GUI is enough (Ubuntu 22.04: `apt-get install
+  --no-install-recommends libreoffice-writer-nogui`, 7.3.7), with `soffice` on the `PATH` of the Node process (or set
+  `SOFFICE_PATH`). Tested with 7.3.7.2. Check: `soffice --version`. Newer versions can shift line breaks slightly:
+  run `npm run test:render -- --pdf` after an upgrade.
+- **fontconfig** (comes with LibreOffice) and a basic sans font for symbols the brand font lacks (`fonts-dejavu-core`,
+  normally pulled in by LibreOffice). The **Lexend** fonts need no install: they ship in `public/fonts`, which must be
+  deployed next to the server (`cp -r public .next/standalone/` for the standalone output; the server reads
+  `public/templates` and `public/fonts` relative to its working directory).
+- A writable temporary directory (`TMPDIR`, default `/tmp`) for the Node user; each conversion uses under 2 MB there
+  for a second or two.
+- Memory / CPU (measured): one conversion takes ~1.2 s and ~220 MB peak for LibreOffice; at most 2 run at once per
+  Node process, so allow ~500 MB on top of the app.
+- Smoke test after deploy: open Preview for any profile, or `npm run test:render -- --pdf` on the box.
+
 ## Templates
 
 The originals (`IB - External Profile Format.docx`, `IB - Internal Profile
-Format Final.docx`, in the parent folder) were converted into docxtemplater
-templates by inserting `{placeholder}` and `{#loop}…{/loop}` tags directly into
-their `word/document.xml`, preserving every font, color, size, spacing and the
-embedded logo. The tagged copies live in `public/templates/`.
-
-To re-tag after changing a source template, adjust the paraId-keyed rules and run:
+Format Final.docx`) were converted into docxtemplater templates by inserting `{placeholder}` and `{#loop}…{/loop}`
+tags into their `word/document.xml`; those tagged originals are kept in `docs/template-backups/`.
+`public/templates/{internal,external}.docx` are **generated** from them, never edited by hand:
 
 ```bash
-python3 ../tag_templates.py
+python3 scripts/patch-templates.py
 ```
 
-`node test-render.mjs` renders both tagged templates with sample data and
-checks for leftover tags (writes outputs to `/tmp/out-*.docx`).
+It wraps every optional section in a `{#hasX}` condition (flags set in `lib/docxData.ts`) and applies the formatting:
+the logo at its true aspect ratio directly under "A PROUD MEMBER OF" (left edges aligned), one bullet style for all
+responsibilities, a blank line before the project description and before its bullets, sidebar spacing (1.15 inside an
+item, 1.5 between items) and no stretched last line in justified paragraphs. Change the script and run it again.
+
+`npm run test:render` checks the generated templates; `npm run test:render -- --pdf` also converts full / empty /
+sparse / mixed / long renders exactly as Download PDF does into `/tmp/render-check/` and measures them (logo
+position and ratio, bullets, blank lines, sidebar spacing). Open those PDFs to look at them.
 
 ## Key files
 
 - `lib/schemas.ts` — Zod schemas for both templates (source of truth for the JSON shape)
 - `lib/prompts.ts` — the LLM extraction prompts (schema + rules + example)
-- `lib/generate.ts` — docxtemplater rendering, data mapping, error explanation
-- `lib/pdf.ts` — native PDF layout engine + both template renderers (pure, node-testable)
-- `lib/pdfClient.ts` — browser asset loading, PDF blob/download helpers
+- `lib/docxData.ts` — maps a profile onto the template tags (and the optional-section flags)
+- `lib/docxFill.ts` — fills a template with docxtemplater (shared by browser and server)
+- `lib/pdfRender.ts`, `app/api/pdf/route.ts` — the server-side PDF (LibreOffice)
+- `lib/pdfClient.ts` — browser side: ask `/api/pdf` for the PDF, save it
+- `lib/docxReady.ts` — "is this profile complete enough to export?" and the PDF file name
+- `lib/generate.ts` — fills the template in the browser (Google Docs upload only)
 - `components/ProfileWorkflow.tsx` — the steps, validation, saving and Submit
 - `components/ExternalForm.tsx`, `components/InternalForm.tsx` — the Edit details editors
-- `components/PreviewStep.tsx` — Preview step: consent checkbox, Download / Google Docs / Submit
-- `components/usePreviewDocx.ts` — builds the DOCX once; the preview, the download and Google Docs all use that Blob
-- `components/DocPreview.tsx` — renders a DOCX Blob in the page (`docx-preview`)
+- `components/PreviewStep.tsx` — Preview step: consent checkbox, Download PDF / Google Docs / Submit
+- `components/usePreviewPdf.ts` — builds the PDF once; the preview and the download use that Blob
+- `components/PdfPreview.tsx` — draws a PDF Blob in the page (pdf.js via `unpdf`)
+- `components/DownloadPdfButton.tsx` — Download PDF on My Profiles and Manage
 - `lib/consent.ts`, `lib/consentClient.ts`, `app/api/consent/route.ts` — the consent wording and its audit record
-
-`npx tsx test-pdf.mts` builds sample PDFs for both templates to `/tmp` for
-visual inspection.
+- `scripts/patch-templates.py` — generates `public/templates/*.docx` from `docs/template-backups/`
 
 ## Develop
 
@@ -97,10 +139,10 @@ npm run dev
 
 | Command | What it runs | Needs |
 |---|---|---|
-| `npm test` | unit tests (`lib/*.test.ts`) | nothing |
+| `npm test` | unit tests (`lib/*.test.ts`), incl. real PDF conversions (`pdfRender`, `extractText`) | LibreOffice (`soffice`) |
 | `npm run test:db` | the data layer as seeded users (round trips, ownership, search) | local Supabase + seed |
 | `npm run test:rls` | Row Level Security per role and table | local Supabase + seed |
-| `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags (add `-- --pdf` to also convert full / empty / sparse / mixed renders with LibreOffice into `/tmp/render-check/` and check them) | nothing (`--pdf`: LibreOffice + poppler) |
+| `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags, the formatting in the XML (logo ratio, bullet definition, spacing). Add `-- --pdf` to also convert full / empty / sparse / mixed / long renders as Download PDF does into `/tmp/render-check/` and measure them (logo position and ratio, bullets, blank lines, sidebar spacing) | nothing (`--pdf`: LibreOffice + poppler) |
 | `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
 
 ### End-to-end browser checks (optional)
@@ -118,9 +160,11 @@ npm run dev                              # in another terminal; development mode
 npm run test:e2e
 ```
 
-`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above) and `scripts/e2e-ui.mjs`: the Preview step (exact
-DOCX rendered, the downloaded file matches what was previewed, validation gate, consent before Download / Submit /
-Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
+`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above, incl. a 401 from `/api/pdf` on Preview) and
+`scripts/e2e-ui.mjs`: the Preview step (the PDF itself drawn in the page, the downloaded PDF byte-identical to the
+previewed one (SHA-256) and named `<Name>-<Job_title>-InfoBeans.pdf`, no DOCX anywhere, `/api/pdf` refusing incomplete
+data, validation gate, consent before Download / Submit / Google Docs and its `audit_log` rows, Back keeps edits),
+Download PDF on My Profiles, Manage and for external profiles, Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
 external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
 and admins only (Preview, My Profiles, Manage), previews hiding empty sections, automatic version labels (Base, v2, v3), saving only through Submit, the
 unsaved-changes dialog, optional-section notes and brand rules. Google is **stubbed** in the page (a fake token client;
@@ -171,12 +215,12 @@ which is safe to import from `proxy.ts`, client components and tests.
 
 ## Open in Google Docs
 
-An **Open in Google Docs** button sits next to *Download DOCX* on Preview, on `/profiles/[id]` (every version) and on
-`/manage/[id]` (read-only; the manager view also has *Download DOCX*). It is offered to **managers and admins only**
+An **Open in Google Docs** button sits next to *Download PDF* on Preview, on `/profiles/[id]` (every version) and on
+`/manage/[id]` (read-only; the manager view also has *Download PDF*). It is offered to **managers and admins only**
 (`canUseGoogleDocs()` in `lib/authRules.ts`; the pages read the role on the server and do not render the button for
 anyone else). It is a product rule enforced by the pages: the export runs in the browser with the user's own Google
-token, so there is no server call to refuse. On Preview it uploads the very DOCX that is previewed, after the consent
-box is ticked and recorded. It works entirely in the browser:
+token, so there is no server call to refuse. On Preview it uploads the filled DOCX of the profile being previewed (the
+same data the PDF is made from), after the consent box is ticked and recorded. It works entirely in the browser:
 
 1. On click, Google Identity Services opens Google's own consent popup and returns a short-lived **access token**
    for the single scope `https://www.googleapis.com/auth/drive.file` (only files this app creates).
@@ -188,7 +232,7 @@ box is ticked and recorded. It works entirely in the browser:
 The script `https://accounts.google.com/gsi/client` is loaded on pages that show the button (so the popup can open
 inside the click). If you add a Content-Security-Policy later, allow `https://accounts.google.com/gsi/` and
 `https://www.googleapis.com`. Failures (blocked pop-up, closed window, access denied, Drive API off, offline, rate
-limit) show a plain-language message and suggest *Download DOCX*.
+limit) show a plain-language message and suggest *Download PDF*.
 
 ### Setup
 
@@ -224,20 +268,31 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 
 1. **Preview gate** (member, `/internal`): *Create a Profile from Scratch* → *Preview →* with nothing filled → stays on
    Edit details, fields marked red. Fill name, job title, overview, year, qualification, one skill + rating → *Preview →*
-   → the DOCX appears in the page.
+   → the PDF appears in the page (every page, readable on a phone too: try the browser's device mode).
 2. **Back keeps edits**: *← Back to edit* → everything typed is still there.
-3. **Consent**: on Preview press *Download DOCX* and *Submit* without the box → a message, nothing happens. Tick it →
+3. **Consent**: on Preview press *Download PDF* and *Submit* without the box → a message, nothing happens. Tick it →
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
-4. **Same file**: open the downloaded DOCX in Word; it matches the preview.
-5. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
+4. **Same file**: the downloaded file is named like `Jane_Doe-Senior_Engineer-InfoBeans.pdf` and looks exactly like the
+   preview. There is no *Download DOCX* anywhere (Preview, My Profiles, Manage).
+5. **Formatting** (open the PDF at 100-200 %): the logo is not stretched and sits directly under "A PROUD MEMBER OF",
+   left edges aligned, top right; all bullets look the same, with even gaps; a blank line before the project
+   description and before its bullets; in the internal sidebar a wrapped item is tight (1.15) and items are further apart
+   (1.5); the last line of the overview is not stretched. Text is in Lexend (Light for body text).
+6. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
    `profiles` until you Submit. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
-   *View in My Profiles* link (no new step, no form link); Download DOCX still works. *My Profiles* lists it. Submit
+   *View in My Profiles* link (no new step, no form link); Download PDF still works. *My Profiles* lists it. Submit
    again without edits → still v1. Edit, Preview, Submit → v2, then v3 (labels are automatic: Base, v2, v3). Open a version from My Profiles ("Open in Review"), edit, Preview, Submit → a new version of the same profile. The top and mobile menus have no "Submit Profile" link.
-6. **External**: `/external` → blank form → no save controls; steps are Start, Upload resume, Edit details,
-   Preview; Preview has *Back to edit* and *Download DOCX* only. Nothing appears in `profiles`. From a signed-in tab:
+7. **External**: `/external` → blank form → no save controls; steps are Start, Upload resume, Edit details,
+   Preview; Preview has *Back to edit* and *Download PDF* only; the PDF is named after the candidate. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
    → `EXTERNAL_NOT_SAVED` (400).
-7. **Google Docs**: as `member@example.test` it is on neither Preview nor *My Profiles*; as `admin@example.test` or
+8. **Google Docs**: as `member@example.test` it is on neither Preview nor *My Profiles*; as `admin@example.test` or
    `manager@example.test` it is on Preview, and on `/manage/[id]`; admins also see it on *My Profiles*.
-8. **Manage**: `/manage` as `manager@example.test` lists internal profiles only.
+9. **Manage**: `/manage` as `manager@example.test` lists internal profiles only; *Download PDF* on `/manage/[id]` saves
+   the version shown.
+10. **Saved versions**: on *My Profiles* → a profile → *Download PDF* on any version → that version as a PDF; an
+    incomplete draft shows "Open in Review to finish it" instead.
+11. **Converter missing** (staging only): stop the app, start it with `SOFFICE_PATH=/nonexistent npm run dev` → Preview
+    shows "PDF creation is not available on this server right now"; the server log has
+    `[pdf] could not make the PDF (CONVERTER_MISSING)` and no profile content.
