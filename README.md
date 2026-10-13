@@ -13,8 +13,8 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 2. **Upload resume** — the file is read and pre-fills the form; a single note above the form asks you to review every
    section (`ExtractionSummary`).
 3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
-   (name, job title, overview, one education entry, one skill) are marked in red when missing. Internal profiles can
-   also be saved here (*Save to My Profiles*, version labels, role-specific versions).
+   (name, job title, overview, one education entry, one skill) are marked in red when missing. There is **no save
+   control here**: an internal profile is saved only by **Submit** on Preview (below).
 4. **Preview** — pressing *Preview →* first validates the profile; if anything is missing you stay on (or return to)
    Edit details with the fields marked. Otherwise the **exact generated DOCX** is rendered in the page with
    `docx-preview`: the same `Blob` is what *Download DOCX* saves and *Open in Google Docs* uploads. Buttons:
@@ -37,10 +37,10 @@ no further step and no external form link.
 
 | | Internal | External |
 |---|---|---|
-| Saved in the database | yes: My Profiles, version history, role-specific versions | **never** |
-| Edit details | save controls (version label, role-specific) | no save controls |
+| Saved in the database | yes, by Submit on Preview: My Profiles, version history (Base, v2, v3, ...) | **never** |
+| Edit details | no save controls (same as external) | no save controls |
 | Preview | Back to edit, Download DOCX, Submit (stays on Preview), (Google Docs) | Back to edit, Download DOCX, (Google Docs) |
-| Session-expiry banner | "save your profile now" + Save button | "download your DOCX now", no Save button |
+| Session-expiry banner | "go to Preview and Submit to save your profile (or download your DOCX)", no button | "download your DOCX now", no button |
 | Listed in My Profiles / Manage | yes | n/a |
 
 The server enforces it: `POST /api/profiles` answers **400 `EXTERNAL_NOT_SAVED`** for template `external`
@@ -122,7 +122,7 @@ npm run test:e2e
 DOCX rendered, the downloaded file matches what was previewed, validation gate, consent before Download / Submit /
 Google Docs and its `audit_log` rows, Back keeps edits), Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
 external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
-and admins only (Preview, My Profiles, Manage), previews hiding empty sections, version label defaults, the
+and admins only (Preview, My Profiles, Manage), previews hiding empty sections, automatic version labels (Base, v2, v3), saving only through Submit, the
 unsaved-changes dialog, optional-section notes and brand rules. Google is **stubbed** in the page (a fake token client;
 Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
@@ -230,10 +230,11 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
 4. **Same file**: open the downloaded DOCX in Word; it matches the preview.
-5. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
+5. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
+   `profiles` until you Submit. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
    *View in My Profiles* link (no new step, no form link); Download DOCX still works. *My Profiles* lists it. Submit
-   again without edits → still v1. Edit, Preview, Submit → v2. The top and mobile menus have no "Submit Profile" link.
-6. **External**: `/external` → blank form → no *Save* / *Version label*; steps are Start, Upload resume, Edit details,
+   again without edits → still v1. Edit, Preview, Submit → v2, then v3 (labels are automatic: Base, v2, v3). Open a version from My Profiles ("Open in Review"), edit, Preview, Submit → a new version of the same profile. The top and mobile menus have no "Submit Profile" link.
+6. **External**: `/external` → blank form → no save controls; steps are Start, Upload resume, Edit details,
    Preview; Preview has *Back to edit* and *Download DOCX* only. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
    → `EXTERNAL_NOT_SAVED` (400).

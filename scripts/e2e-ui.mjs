@@ -9,7 +9,7 @@
 import { startHarness } from "./e2e-lib.mjs";
 
 const t = await startHarness("e2e-ui");
-const { check, goto, click, bodyText, waitFor, ev, sleep, sql, signIn, send, on, APP } = t;
+const { check, goto, click, bodyText, waitFor, ev, sleep, sql, signIn, send, on, APP, submitViaPreview } = t;
 
 const FAKE_TOKEN = "FAKE-TOKEN-e2e-123";
 const DRIVE_URL = "https://www.googleapis.com/upload/drive/v3/files";
@@ -239,49 +239,44 @@ await t.scenario("previews hide empty sections and show ratings as x/5", async (
   }
 });
 
-await t.scenario("version labels default to Base, then v2, v3...; role-specific asks for a name", async () => {
+await t.scenario("saving only through Submit on Preview; versions are labelled Base, v2, v3... automatically", async () => {
   await signIn("member");
   await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
   await click("Get started");
-  await waitFor("!!document.querySelector('label input')", "review form");
-  await t.fillRequired("E2E Label Test"); // saving needs the required fields
-  const label = () => ev("document.getElementById('save-label').value");
-  const setLabel = (v) => ev(`(()=>{const i=document.getElementById('save-label'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(v)}); i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  const saved = (text) => waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`, text);
-  const roleBox = () => ev("[...document.querySelectorAll('label')].find(l=>l.textContent.includes('role-specific'))?.querySelector('input')?.click()");
+  await waitFor("!!document.querySelector('label input')", "edit form");
+  await t.fillRequired("E2E Label Test");
+  const edit = await bodyText();
+  check("Edit details has no save controls: no Save button, no Version label, no role-specific box, no saved/unsaved line", !/Save to My Profiles|Save new version|Version label|role-specific|You have unsaved changes|Saved ·/.test(edit) && !(await ev("!!document.getElementById('save-label')")));
   const versions = () => sql("select string_agg(version_no||':'||kind||':'||label, ' | ' order by version_no) from profile_versions where profile_id=(select id from profiles where candidate_name='E2E Label Test')");
+  const profiles = () => Number(sql("select count(*) from profiles where candidate_name='E2E Label Test'"));
+  check("nothing is saved before Submit", profiles() === 0);
 
-  check("the first save defaults to Base", (await label()) === "Base");
-  await click("Save to My Profiles");
-  await saved("Saved · v1 · Base");
-  check("after saving, the box holds the next default (v2), not an empty box", (await label()) === "v2");
-  await click("Save new version");
-  await saved("Saved · v2 · v2");
-  check("and then v3", (await label()) === "v3");
+  await submitViaPreview();
+  check("the first Submit saves version 1 labelled Base", (await versions()) === "1:base:Base");
+  for (const [n, title] of [[2, "Lead Engineer"], [3, "Staff Engineer"]]) {
+    await click("← Back to edit");
+    await waitFor("!!document.querySelector('label input')", "edit again");
+    await t.fill("Job title", title);
+    await sleep(200);
+    await submitViaPreview();
+    check(`the next Submit after an edit saves v${n}`, (await versions()).endsWith(`${n}:base:v${n}`));
+  }
+  check("all versions belong to one profile and are plain 'base' versions", profiles() === 1 && (await versions()) === "1:base:Base | 2:base:v2 | 3:base:v3");
 
-  await roleBox();
-  await sleep(200);
-  check("ticking role-specific clears the box and marks it required", (await label()) === "" && (await ev("document.querySelector('label[for=save-label]').textContent")).includes("(required)"));
-  await click("Save new version");
-  await waitFor("document.body.innerText.includes('Give this role-specific version a name')", "name required message");
-  check("a role-specific version without a name is refused", (await versions()) === "1:base:Base | 2:base:v2");
-  await roleBox();
-  await sleep(200);
-  check("unticking brings the default back", (await label()) === "v3");
-
-  await roleBox();
-  await setLabel("Java Backend");
-  await click("Save new version");
-  await saved("Saved · v3 · Java Backend");
-  check("a named role-specific version saves with its parent", (await versions()) === "1:base:Base | 2:base:v2 | 3:role_specific:Java Backend");
-  check("the next default continues at v4 and the box is a normal version again", (await label()) === "v4");
-
-  // Opening a saved version pre-fills the next number too
+  // Opening a saved version: Edit details, then Submit saves a NEW version of the same profile
   const profile = sql("select id from profiles where candidate_name='E2E Label Test'");
   const v1 = sql(`select id from profile_versions where profile_id='${profile}' and version_no=1`);
+  await goto("/profiles");
+  await ev("sessionStorage.clear()");
   await goto(`/internal?version=${v1}`);
-  await waitFor("!!document.getElementById('save-label')", "saved version open");
-  check("opening v1 pre-fills v2", (await label()) === "v2");
+  await waitFor("!!document.querySelector('label input')", "saved version open");
+  check("an opened version loads into Edit details", (await t.getName()) === "E2E Label Test" && !(await bodyText()).includes("Version label"));
+  await t.fill("Job title", "Principal Engineer");
+  await sleep(200);
+  const text = await submitViaPreview();
+  check("Submit from an opened version saves v4 of the same profile", text.includes("v4") && profiles() === 1 && (await versions()).endsWith("4:base:v4"), text);
 });
 
 await t.scenario("unsaved-changes dialog (branded) when leaving through an in-app link", async () => {
@@ -319,13 +314,14 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   await sleep(300);
   check("Stay keeps you on the page", !(await dialogOpen()) && (await ev("location.pathname")) === "/internal");
 
-  // saving removes the warning
-  await click("Save to My Profiles");
-  await waitFor("document.body.innerText.includes('Saved')", "saved");
+  // submitting (the only way to save) removes the warning
+  await t.submitViaPreview();
   await sleep(300);
-  check("after saving, beforeunload no longer fires and links do not ask", !(await beforeUnloadPrevented()));
+  check("after Submit, beforeunload no longer fires and links do not ask", !(await beforeUnloadPrevented()));
 
-  // typing again brings it back; Leave anyway goes through
+  // editing again brings it back; Leave anyway goes through
+  await click("← Back to edit");
+  await waitFor("!!document.querySelector('label input')", "edit again");
   await t.setName("E2E Leave Test 2");
   await sleep(200);
   await clickMyProfiles();

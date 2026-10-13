@@ -2,7 +2,8 @@
 
 /**
  * Purpose: warns, in the InfoBeans callout style, shortly before the hard sign-in limit ends the session
- * (5 minutes before), with a Save button while there is unsaved work. It counts down from the time left that
+ * (5 minutes before). With unsaved work the text says to go to Preview and Submit (internal) or download (external);
+ * there is no Save button, because profiles are only saved by Submit on Preview. It counts down from the time left that
  * the server measured at render (`remainingMs`), not from the browser's clock. Shows nothing until the warning
  * window opens. Announced politely to screen readers.
  */
@@ -12,19 +13,15 @@ import { expiryMessage, expiryPhase } from "@/lib/sessionExpiry";
 interface SessionExpiryBannerProps {
   /** Milliseconds left of the sign-in limit when the page was rendered (from the server). */
   remainingMs: number;
-  /** True when there is unsaved work, so a Save button is offered. */
+  /** True when there is unsaved work (not yet submitted / downloaded), so the text asks the user to act. */
   canSave: boolean;
-  saving: boolean;
-  onSave: () => void;
-  /** False for external profiles, which are never saved: the banner then asks for a download and has no Save button. */
+  /** False for external profiles, which are never saved: the text then asks for a download. */
   saves?: boolean;
-  /** Why the last save did not go through (e.g. a role-specific version still needs a name). */
-  error?: string | null;
 }
 
 const TICK_MS = 10_000;
 
-export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSave, error, saves = true }: SessionExpiryBannerProps) {
+export default function SessionExpiryBanner({ remainingMs, canSave, saves = true }: SessionExpiryBannerProps) {
   // The moment the session ends, fixed on mount from the server's measurement.
   const deadline = useRef<number>(Date.now() + remainingMs);
   const [left, setLeft] = useState<number>(remainingMs);
@@ -46,20 +43,7 @@ export default function SessionExpiryBanner({ remainingMs, canSave, saving, onSa
       aria-live={ended ? "assertive" : "polite"}
       className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
     >
-      <div>
-        <p>{message}</p>
-        {error && <p className="mt-1 text-brand-700">{error}</p>}
-      </div>
-      {saves && canSave && !ended && (
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-        >
-          {saving ? "Saving..." : "Save now"}
-        </button>
-      )}
+      <p>{message}</p>
     </div>
   );
 }

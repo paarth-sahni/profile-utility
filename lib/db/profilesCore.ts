@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { reviewFlagSchema } from "@/lib/extract.types";
 import { lenientSchemaFor, type SavePayload } from "@/lib/profilePayload";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
+import { labelForVersion } from "@/lib/versionLabel";
 
 const uuid = z.string().uuid();
 
@@ -82,11 +83,17 @@ export async function saveVersionAs(
     const { data: owned } = await supabase.from("profiles").select("id").eq("id", p.profileId).eq("owner_id", userId).maybeSingle();
     if (!owned) throw new ProfileNotFoundError();
   }
+  // Versions are labelled automatically: Base, v2, v3, ... (the number of the version about to be created).
+  let nextNo = 1;
+  if (p.profileId) {
+    const { data: last } = await supabase.from("profile_versions").select("version_no").eq("profile_id", p.profileId).order("version_no", { ascending: false }).limit(1).maybeSingle();
+    nextNo = (last?.version_no ?? 0) + 1;
+  }
   const { data, error } = await supabase.rpc("save_profile_version", {
     p_profile_id: p.profileId ?? null,
     p_template: p.template,
     p_kind: p.kind,
-    p_label: p.label,
+    p_label: p.label || labelForVersion(nextNo),
     p_parent: p.parentVersionId ?? null,
     p_source: p.source,
     p_profile: p.data,

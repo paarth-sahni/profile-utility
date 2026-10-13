@@ -7,7 +7,7 @@
 import { startHarness } from "./e2e-lib.mjs";
 
 const t = await startHarness("e2e-drafts");
-const { check, goto, click, bodyText, setName, fillRequired, getName, draftOf, waitFor, ev, sleep, sql, signIn, ageSession, key } = t;
+const { check, goto, click, bodyText, setName, fillRequired, submitViaPreview, getName, draftOf, waitFor, ev, sleep, sql, signIn, ageSession, key } = t;
 
 /** A clean slate for one scenario: signed in as `who`, nothing in this tab's storage, on the start screen. */
 async function fresh(who = "member") {
@@ -39,9 +39,13 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await fillRequired("E2E Draft Test"); // saving needs the required fields
   await sleep(700);
   ageSession("member", "2 hours 1 minute");
-  await click("Save to My Profiles");
+  // Preview, tick the consent box, Submit: recording the consent answers 401, which ends the session
+  await click("Preview →");
+  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview");
+  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+  await click("Submit", "[data-preview-step] button");
   await waitFor("location.pathname.startsWith('/login')", "redirect to /login after 401");
-  check("a 401 on save sends the user to /login", true);
+  check("a 401 on Submit sends the user to /login", true);
   check("the draft survives the redirect (same tab)", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Test");
 
   await signIn("member");
@@ -56,10 +60,9 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await sleep(700);
   check("restored work is kept as a draft again", !!(await draftOf()));
 
-  await click("Save to My Profiles");
-  await waitFor("document.body.innerText.includes('Saved')", "saved line");
+  await submitViaPreview();
   await sleep(500);
-  check("saving clears the draft", (await draftOf()) === null);
+  check("submitting clears the draft", (await draftOf()) === null);
 
   const profile = sql("select p.id from profiles p where p.candidate_name='E2E Draft Test' limit 1");
   const version = sql(`select current_version_id from profiles where id='${profile}'`);
@@ -70,12 +73,10 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   const saved = await bodyText();
   check("banner with nothing unsaved only reassures", /Your session ends in [45] minutes?\. Your latest changes are saved\./.test(saved) && !saved.includes("Save now"));
   await setName("E2E Draft Test 2");
-  await waitFor("document.body.innerText.includes('save your profile now')", "banner (unsaved)");
+  await waitFor("document.body.innerText.includes('go to Preview and Submit')", "banner (unsaved)");
   const unsaved = await bodyText();
-  check("banner with unsaved work asks to save and offers a button", /Your session ends in [45] minutes? — save your profile now\./.test(unsaved) && unsaved.includes("Save now"));
-  await click("Save now");
-  await waitFor("document.body.innerText.includes('Your latest changes are saved.')", "banner after Save now");
-  check("Save now in the banner saves", true);
+  check("banner with unsaved work says to go to Preview and Submit (or download), with no Save button", /Your session ends in [45] minutes? — go to Preview and Submit to save your profile \(or download your DOCX\)\./.test(unsaved) && !unsaved.includes("Save now") && !(await ev("[...document.querySelectorAll('[role=status] button, [role=alert] button')].length")));
+  check("the draft still protects the edit", JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2" || (await sleep(700), JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2"));
 });
 
 await t.scenario("Discard, and leaving immediately still keeps a draft", async () => {

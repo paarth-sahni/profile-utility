@@ -171,6 +171,18 @@ export async function startHarness(title) {
       await h.fill("Rating out of 5 (e.g. 4)", "4");
       await sleep(300);
     },
+    /**
+     * From Edit details: Preview, tick the consent box and press Submit; resolves once the success message shows.
+     * Saving is only possible this way (there is no Save button on Edit details). Returns the success text.
+     */
+    async submitViaPreview() {
+      await h.click("Preview →");
+      await h.waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview ready");
+      if (!(await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+      await h.click("Submit", "[data-preview-step] button");
+      await h.waitFor("!!document.querySelector('[data-submitted]')", "submitted message");
+      return h.ev("document.querySelector('[data-submitted]').innerText.replace(/\\s+/g,' ').trim()");
+    },
     getName: () => ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); return l?.querySelector('input')?.value ?? null})()`),
     draftOf: (template = "internal") => ev(`sessionStorage.getItem('profile-draft:v1:${template}')`),
     /** Presses a key in the page. */

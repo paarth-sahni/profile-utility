@@ -12,7 +12,7 @@ import PreviewStep, { type SubmittedVersion } from "@/components/PreviewStep";
 import { docxFileName } from "@/lib/docxReady";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
-import { defaultLabel, resolveLabel } from "@/lib/versionLabel";
+import { labelForVersion } from "@/lib/versionLabel";
 import { useUnsavedChangesWarning } from "@/lib/useUnsavedChangesWarning";
 import { useStepHistory } from "@/lib/useStepHistory";
 import SessionExpiryBanner from "@/components/SessionExpiryBanner";
@@ -115,9 +115,6 @@ const STEP_LABELS: Record<TemplateId, string[]> = {
   internal: ["Start", "Upload resume", "Edit details", "Preview"],
 };
 
-/** Shown next to the Save button when required information is missing. */
-const MISSING_MSG = "Some required information is missing. Fill in the fields marked in red, then save again.";
-
 
 /** What the server knows about the sign-in (see lib/sessionInfo.ts). */
 export interface WorkflowSession {
@@ -162,7 +159,7 @@ export default function ProfileWorkflow({
   const [extraction, setExtraction] = useState<ExtractResult | null>(null);
   const [edited, setEdited] = useState(false);
 
-  // saving to My Profiles
+  // saving to My Profiles (only through Submit on the Preview step)
   const [savedProfileId, setSavedProfileId] = useState<string | null>(initial?.profileId ?? null);
   const [lastVersionId, setLastVersionId] = useState<string | null>(initial?.versionId ?? null);
   const [savedInfo, setSavedInfo] = useState<{ no: number; label: string } | null>(
@@ -170,10 +167,6 @@ export default function ProfileWorkflow({
   );
   const [dirty, setDirty] = useState(false);
   const [downloaded, setDownloaded] = useState(false); // DOCX downloaded and not edited since
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveLabel, setSaveLabel] = useState(defaultLabel({ lastSavedNo: initial?.versionNo ?? null, roleSpecific: false }));
-  const [roleSpecific, setRoleSpecific] = useState(false);
 
   // draft recovery (sessionStorage only; see lib/draft.ts)
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(null); // found on load, waiting for Restore/Discard
@@ -287,8 +280,6 @@ export default function ProfileWorkflow({
     setSavedProfileId(null);
     setLastVersionId(null);
     setSavedInfo(null);
-    setSaveLabel("Base");
-    setRoleSpecific(false);
     setDirty(false);
     setDownloaded(false);
     setRestored(null);
@@ -326,9 +317,7 @@ export default function ProfileWorkflow({
       setSavedProfileId(null);
       setLastVersionId(null);
       setSavedInfo(null);
-      setSaveLabel("Base");
-      setRoleSpecific(false);
-      setDirty(false);
+        setDirty(false);
       setDownloaded(false);
       setRestored(null);
       setEdited(false);
@@ -430,7 +419,6 @@ export default function ProfileWorkflow({
       const r = checkProfile(d);
       setErrors(r.data ? null : r.list);
       setFieldErrors(r.data ? {} : r.byPath);
-      if (r.data && saveError === MISSING_MSG) setSaveError(null);
     }
   };
 
@@ -449,12 +437,6 @@ export default function ProfileWorkflow({
   const persist = async (): Promise<{ ok: true; profileId: string; versionNo: number } | { ok: false; message: string }> => {
     const fail = (message: string) => ({ ok: false as const, message });
     if (!data || templateId !== "internal") return fail("This profile cannot be saved.");
-    const kind = roleSpecific && lastVersionId ? "role_specific" : "base";
-    // A role-specific version must be named; a normal one falls back to "Base" / "v<next>".
-    const resolved = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: kind === "role_specific" });
-    if (!resolved.ok) return fail(resolved.message);
-    const label = resolved.label;
-    setSaving(true);
     const effective: ResumeData = fromScratch
       ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) }
       : data;
@@ -465,10 +447,10 @@ export default function ProfileWorkflow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           template: templateId,
-          kind,
-          label,
+          kind: "base",
+          label: "", // versions are labelled automatically by the server: Base, v2, v3, ...
           profileId: savedProfileId,
-          parentVersionId: kind === "role_specific" ? lastVersionId : null,
+          parentVersionId: null,
           source: savedProfileId || source === "saved" ? "edit" : source === "scratch" ? "scratch" : "upload",
           data: effective,
           reviewFlags: flagsNow,
@@ -484,10 +466,8 @@ export default function ProfileWorkflow({
       if (!res.ok) throw new Error(json?.error?.message ?? "We could not save your profile. Please try again.");
       setSavedProfileId(json.profileId);
       setLastVersionId(json.versionId);
-      setSavedInfo({ no: json.versionNo, label });
+      setSavedInfo({ no: json.versionNo, label: labelForVersion(json.versionNo) });
       setDirty(false);
-      setRoleSpecific(false);
-      setSaveLabel(defaultLabel({ lastSavedNo: json.versionNo, roleSpecific: false })); // next default: v2, v3, ...
       if (fromScratch) {
         // the saved summary is the full "<N>+ Years..." string, so the form leaves bare-number mode
         setData(effective);
@@ -496,22 +476,7 @@ export default function ProfileWorkflow({
       return { ok: true, profileId: json.profileId, versionNo: json.versionNo };
     } catch (e) {
       return fail(e instanceof Error ? e.message : "We could not save your profile. Please try again.");
-    } finally {
-      setSaving(false);
     }
-  };
-
-  /** "Save to My Profiles" on Edit details (internal only): validates, then saves a new version. */
-  const handleSave = async () => {
-    if (!data || saving) return;
-    setSaveError(null);
-    // required information must be there before anything is saved (same rules as Preview)
-    if (!validateForExport()) {
-      setSaveError(MISSING_MSG);
-      return;
-    }
-    const result = await persist();
-    if (!result.ok) setSaveError(result.message);
   };
 
   /**
@@ -532,8 +497,7 @@ export default function ProfileWorkflow({
     if (savedInfo && lastVersionId && !dirty) {
       return `This profile is already saved in My Profiles as v${savedInfo.no}${savedInfo.label ? ` (${savedInfo.label})` : ""}. Submit uses that version.`;
     }
-    const r = resolveLabel(saveLabel, { lastSavedNo: savedInfo?.no ?? null, roleSpecific: roleSpecific && !!lastVersionId });
-    return r.ok ? `Submit saves this profile to My Profiles${r.label ? ` as “${r.label}”` : ""}.` : null;
+    return "Submit saves this profile to My Profiles as a new version.";
   };
 
   /** Puts the form back exactly as the draft had it. */
@@ -548,9 +512,6 @@ export default function ProfileWorkflow({
     setSavedProfileId(d.profileId);
     setLastVersionId(d.versionId);
     setSavedInfo(d.versionNo !== null ? { no: d.versionNo, label: d.label } : null);
-    setSaveLabel(defaultLabel({ lastSavedNo: d.versionNo, roleSpecific: false }));
-    setRoleSpecific(false);
-    setSaveError(null);
     setErrors(null);
     setEdited(true);
     setDirty(true);
@@ -640,7 +601,7 @@ export default function ProfileWorkflow({
         )}
         {pendingDraft && <DraftRestoreBanner savedAt={pendingDraft.savedAt} onRestore={handleRestoreDraft} onDiscard={handleDiscardDraft} />}
         {session && data && (
-          <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saving={saving} onSave={handleSave} error={saveError} saves={templateId === "internal"} />
+          <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saves={templateId === "internal"} />
         )}
         <div className="mb-6">
           <Stepper
@@ -805,69 +766,6 @@ export default function ProfileWorkflow({
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
-
-            {/* Saving is for internal profiles only: external profiles are never stored (download them from Preview). */}
-            {templateId === "internal" && (
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="min-w-[12rem] flex-1">
-                    <label htmlFor="save-label" className="mb-1 block text-xs font-medium text-ink-light">
-                      Version label{roleSpecific ? " (required)" : ""}
-                    </label>
-                    <input
-                      id="save-label"
-                      type="text"
-                      maxLength={60}
-                      value={saveLabel}
-                      onChange={(e) => setSaveLabel(e.target.value)}
-                      placeholder={roleSpecific ? "e.g. Java Backend" : "e.g. Base"}
-                      aria-required={roleSpecific}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="rounded-md border border-brand-500 px-4 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:opacity-50"
-                  >
-                    {saving ? "Saving..." : savedProfileId ? "Save new version" : "Save to My Profiles"}
-                  </button>
-                </div>
-                {lastVersionId && (
-                  <label className="mt-3 flex items-center gap-2 text-sm text-ink-light">
-                    <input
-                      type="checkbox"
-                      checked={roleSpecific}
-                      onChange={(e) => {
-                        // A role-specific version asks for its own name; unticking brings the default back.
-                        setRoleSpecific(e.target.checked);
-                        setSaveLabel(defaultLabel({ lastSavedNo: savedInfo?.no ?? null, roleSpecific: e.target.checked }));
-                        setSaveError(null);
-                      }}
-                    />
-                    Save as a role-specific version of v{savedInfo?.no}
-                  </label>
-                )}
-                <p className="mt-3 text-xs text-ink-light" aria-live="polite">
-                  {saveError ? (
-                    <span className="text-brand-700">{saveError}</span>
-                  ) : savedInfo && !dirty ? (
-                    <>
-                      Saved &middot; v{savedInfo.no}
-                      {savedInfo.label ? ` \u00b7 ${savedInfo.label}` : ""} &middot;{" "}
-                      <a href={`/profiles/${savedProfileId}`} className="font-medium text-brand-600 hover:underline">
-                        View in My Profiles
-                      </a>
-                    </>
-                  ) : savedInfo ? (
-                    `You have unsaved changes since v${savedInfo.no}.`
-                  ) : (
-                    "Not saved yet. Saving keeps this profile private to you and lets you reopen it later."
-                  )}
-                </p>
               </div>
             )}
 

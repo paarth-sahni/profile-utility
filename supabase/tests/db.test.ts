@@ -245,6 +245,15 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     for (const r of legacyRows ?? []) createdProfiles.push(r.id);
   });
 
+  test("a blank label is replaced by the automatic one: Base, then v2, v3 (numbered per profile)", async () => {
+    const v1 = await saveVersionAs(ctx.member, internalPayload({ label: "" }));
+    createdProfiles.push(v1.profileId);
+    const v2 = await saveVersionAs(ctx.member, internalPayload({ label: "", profileId: v1.profileId, source: "edit" }));
+    const v3 = await saveVersionAs(ctx.member, internalPayload({ label: "", profileId: v1.profileId, source: "edit" }));
+    const labels = await Promise.all([v1, v2, v3].map(async (v) => (await getVersionAs(ctx.member, v.versionId))?.meta.label));
+    assert.deepEqual(labels, ["Base", "v2", "v3"]);
+  });
+
   test("a later version and a role-specific version round-trip too, and older versions stay unchanged", async () => {
     const v1 = await saveVersionAs(ctx.member, internalPayload());
     createdProfiles.push(v1.profileId);

@@ -32,7 +32,7 @@ export function minutesLeft(remainingMs: number): number {
 
 /**
  * The banner text, or null when there is nothing to show. `canSave` is true when there is unsaved work:
- * then the text asks the user to save; otherwise it only says the work is already safe.
+ * then the text asks the user to Submit (or download); otherwise it only says the work is already safe.
  * `saves` is false for external profiles, which are never saved: the text then asks for a download instead and
  * never claims anything is saved.
  */
@@ -56,5 +56,7 @@ export function expiryMessage(remainingMs: number, canSave: boolean, saves: bool
   }
   const m = minutesLeft(remainingMs);
   const when = remainingMs < 60_000 ? "in less than a minute" : m === 1 ? "in 1 minute" : `in ${m} minutes`;
-  return canSave ? `Your session ends ${when} — save your profile now.` : `Your session ends ${when}. Your latest changes are saved.`;
+  return canSave
+    ? `Your session ends ${when} — go to Preview and Submit to save your profile (or download your DOCX).`
+    : `Your session ends ${when}. Your latest changes are saved.`;
 }
