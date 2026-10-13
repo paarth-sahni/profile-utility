@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { generateDocx } from "@/lib/generate";
-import { checkReadyForDocx, docxFileName } from "@/lib/docxReady";
+import { checkReadyForDocx, pdfFileName } from "@/lib/docxReady";
+import { PdfRequestError, fetchProfilePdf, savePdf } from "@/lib/pdfClient";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
 
-/** Downloads a saved version as DOCX. Incomplete drafts are sent back to Review to be finished. */
-export default function DownloadDocxButton({
+/** Downloads a saved version as PDF (made by the server, POST /api/pdf). Incomplete drafts are sent back to Review to be finished. */
+export default function DownloadPdfButton({
   template,
   data,
   versionId,
@@ -27,9 +27,15 @@ export default function DownloadDocxButton({
     }
     setBusy(true);
     try {
-      await generateDocx(template, ready.data, docxFileName(template, data));
-    } catch {
-      setMessage("We could not generate the DOCX. Please try again.");
+      savePdf(await fetchProfilePdf(template, ready.data), pdfFileName(ready.data));
+    } catch (e) {
+      setMessage(
+        e instanceof PdfRequestError && e.status === 401
+          ? "Your session has ended. Please sign in again."
+          : e instanceof Error
+            ? e.message
+            : "We could not create the PDF. Please try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -43,9 +49,13 @@ export default function DownloadDocxButton({
         disabled={busy}
         className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
       >
-        {busy ? "Generating..." : "Download DOCX"}
+        {busy ? "Preparing…" : "Download PDF"}
       </button>
-      {message && <span className="mt-1 max-w-xs text-xs text-brand-700">{message}</span>}
+      {message && (
+        <span role="alert" className="mt-1 max-w-xs text-xs text-brand-700">
+          {message}
+        </span>
+      )}
     </span>
   );
 }

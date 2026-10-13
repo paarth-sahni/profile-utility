@@ -16,7 +16,7 @@ const lexend = Lexend({
 
 export const metadata: Metadata = {
   title: "Profile Generator — InfoBeans",
-  description: "Generate branded InfoBeans profile documents (DOCX) from an uploaded resume. Creating WOW!",
+  description: "Generate branded InfoBeans profile PDFs from an uploaded resume. Creating WOW!",
 };
 
 /** The signed-in user's display details (name and photo come from the Google profile). */

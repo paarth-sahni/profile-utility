@@ -13,13 +13,13 @@ export interface WorkState {
   saved: boolean;
   /** Edited since the last save (or since it was opened). */
   dirty: boolean;
-  /** The DOCX was downloaded and nothing has been edited since. */
+  /** The PDF was downloaded and nothing has been edited since. */
   downloaded: boolean;
 }
 
 /**
  * True when leaving would lose work: a profile that was never saved, or one edited since its last save,
- * unless its DOCX has been downloaded since the last edit (the user already has the result).
+ * unless its PDF has been downloaded since the last edit (the user already has the result).
  */
 export function hasUnsavedWork(s: WorkState): boolean {
   if (!s.hasProfile || s.downloaded) return false;

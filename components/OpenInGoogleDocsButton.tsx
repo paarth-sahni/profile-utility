@@ -5,8 +5,7 @@
  * builds the DOCX in the browser, uploads it to the user's own Drive as a Google Doc and opens it. Nothing goes
  * through our server and the token is never kept (see lib/googleDocs.ts). Renders nothing when the environment has
  * no NEXT_PUBLIC_GOOGLE_CLIENT_ID. `prepare` validates the profile and returns the data to export or a message.
- * The Preview step passes the DOCX it is showing (`blob`), so Google receives exactly the file that downloads, and
- * `beforeUpload` (consent recording) which must succeed before anything is uploaded.
+ * The Preview step passes `beforeUpload` (consent recording) which must succeed before anything is uploaded.
  */
 import { useEffect, useState } from "react";
 import { type DocxReady } from "@/lib/docxReady";

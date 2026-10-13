@@ -119,11 +119,11 @@ export default function InstructionsContent({ audience }: { audience: Audience }
               </ul>
             </Step>
             <Step n={4} title="Preview & download">
-              <strong>Preview</strong> shows the exact document that will be downloaded. If something is missing, you are
+              <strong>Preview</strong> shows the exact PDF that will be downloaded. If something is missing, you are
               taken back to Edit details with the fields marked. Tick the confirmation (&ldquo;I confirm the information
-              in this profile is accurate and may be shared&rdquo;), then choose <strong>Download DOCX</strong>. Managers
+              in this profile is accurate and may be shared&rdquo;), then choose <strong>Download PDF</strong>. Managers
               and admins can also choose <strong>Open in Google Docs</strong>. <strong>← Back to edit</strong> keeps
-              your changes. External profiles are never saved in the tool, so download the DOCX before you leave.
+              your changes. External profiles are never saved in the tool, so download the PDF before you leave.
             </Step>
           </ol>
         </Card>
@@ -207,10 +207,10 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             </ul>
           </Step>
           <Step n={4} title="Preview">
-            <strong>Preview</strong> shows the exact document that will be generated. If something is missing, you are
+            <strong>Preview</strong> shows the exact PDF that will be downloaded. If something is missing, you are
             taken back to Edit details with the fields marked. Do a final review, tick the confirmation (&ldquo;I confirm
             the information in this profile is accurate and may be shared&rdquo;), then choose <strong>Submit</strong> to save the
-            profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link> (a confirmation with its version number appears on the same screen), and <strong>Download DOCX</strong> to keep a copy. <strong>← Back to
+            profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link> (a confirmation with its version number appears on the same screen), and <strong>Download PDF</strong> to keep a copy. <strong>← Back to
             edit</strong> keeps your changes.
           </Step>
         </ol>
@@ -232,12 +232,12 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             the blank form instead.
           </li>
           <li>
-            <strong>DOCX formatting</strong> – Minor formatting differences may appear in the downloaded DOCX
-            depending on whether it is opened in Microsoft Word, WPS, or Google Docs.
+            <strong>PDF download</strong> – The downloaded PDF is exactly the document shown on Preview, so it looks
+            the same on every device. File name: <em>Name-Job_title-InfoBeans.pdf</em>.
           </li>
           <li>
-            <strong>Formatting adjustments</strong> – If the downloaded DOCX requires any formatting changes, upload
-            it to Google Docs and update the formatting there.
+            <strong>Formatting adjustments</strong> – To change the content, go back to Edit details and preview
+            again. Managers and admins can also open the profile in Google Docs and adjust the formatting there.
           </li>
           <li>
             <strong>Style Guide</strong> – Use the predefined{" "}

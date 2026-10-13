@@ -1,7 +1,7 @@
 /**
- * Purpose: optional browser test for the saved-profile screens and exports (npm run test:e2e): Open in Google
- * Docs on Review, /profiles/[id] and /manage/[id], and (added with later features) previews, version labels and the
- * unsaved-changes dialog. Google is STUBBED in the page (a fake token client) and Drive requests are intercepted, so
+ * Purpose: optional browser test for the saved-profile screens and exports (npm run test:e2e): Download PDF and Open
+ * in Google Docs on Preview, /profiles/[id] and /manage/[id], the Preview showing the PDF itself, and (added with
+ * later features) previews, version labels and the unsaved-changes dialog. Google is STUBBED in the page (a fake token client) and Drive requests are intercepted, so
  * nothing real is called and the test can prove what is sent where. Local stack and seeded users only.
  * The Google checks need NEXT_PUBLIC_GOOGLE_CLIENT_ID set (any value) in .env.local when `npm run dev` starts;
  * without it they are skipped.
@@ -44,9 +44,14 @@ async function saveProfile(data, label = "Base", reviewFlags = []) {
 
 // ---- Google stub: a fake GIS token client in the page, and Drive requests answered by the test
 await send("Page.addScriptToEvaluateOnNewDocument", {
-  // every DOCX blob given to URL.createObjectURL (file-saver does that for a download) is kept for inspection
-  source: `window.__blobs = []; { const make = URL.createObjectURL.bind(URL);
-      URL.createObjectURL = (o) => { if (o instanceof Blob && o.type.includes('wordprocessingml')) window.__blobs.push(o); return make(o); }; }
+  // every PDF blob given to URL.createObjectURL (file-saver does that for a download) is kept for inspection, and the
+  // file name of every download link file-saver clicks
+  source: `window.__blobs = []; window.__downloads = []; { const make = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (o) => { if (o instanceof Blob && o.type === 'application/pdf') window.__blobs.push(o); return make(o); };
+      const click = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__downloads.push(this.download); return; } return click.call(this); };
+      const dispatch = HTMLAnchorElement.prototype.dispatchEvent;
+      HTMLAnchorElement.prototype.dispatchEvent = function (e) { if (this.download && e.type === 'click') { window.__downloads.push(this.download); return true; } return dispatch.call(this, e); }; }
     window.__gis = { calls: 0, scope: null, mode: 'ok' };
     window.google = { accounts: { oauth2: { initTokenClient(cfg) { return { requestAccessToken() {
       window.__gis.calls++; window.__gis.scope = cfg.scope;
@@ -153,7 +158,12 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await goto(`/manage/${saved.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Docs Person')", "manage page");
   const manage = await bodyText();
-  check("/manage/[id] has Download DOCX and Open in Google Docs", manage.includes("Download DOCX") && (await googleButton()));
+  check("/manage/[id] has Download PDF and Open in Google Docs, and no DOCX download", manage.includes("Download PDF") && !manage.includes("DOCX") && (await googleButton()));
+  const blobsBefore = await ev("window.__blobs.length");
+  await click("Download PDF");
+  await waitFor(`window.__blobs.length > ${blobsBefore}`, "manager PDF download");
+  const managerPdf = await t.lastPdf();
+  check("Download PDF on /manage/[id] saves a PDF named <Name>-<Job title>-InfoBeans.pdf", managerPdf.isPdf && managerPdf.name === "E2E_Docs_Person-Senior_Engineer-InfoBeans.pdf" && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
   check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in Review"));
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
@@ -167,7 +177,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await waitFor("!!document.querySelector('label input')", "edit form (manager)");
   await t.fillRequired("E2E Google Preview");
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (manager)");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (manager)");
   check("a manager sees Open in Google Docs on Preview", await googleButton());
   const since = sql("select now()");
   const popups = await gisCalls();
@@ -187,7 +197,12 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   const mine = await saveProfile({ ...COMPLETE, name: "E2E Member Docs Person" });
   await goto(`/profiles/${mine.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Member Docs Person')", "member's profile page");
-  check("a member sees Download DOCX but no Open in Google Docs on My Profiles", (await bodyText()).includes("Download DOCX") && !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs"));
+  check("a member sees Download PDF (no DOCX) but no Open in Google Docs on My Profiles", (await bodyText()).includes("Download PDF") && !(await bodyText()).includes("DOCX") && !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs"));
+  const memberBlobs = await ev("window.__blobs.length");
+  await click("Download PDF");
+  await waitFor(`window.__blobs.length > ${memberBlobs}`, "member PDF download");
+  const memberPdf = await t.lastPdf();
+  check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === "E2E_Member_Docs_Person-Senior_Engineer-InfoBeans.pdf" && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);
   await goto("/internal");
   await ev("sessionStorage.clear()");
   await goto("/internal");
@@ -195,8 +210,8 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await waitFor("!!document.querySelector('label input')", "edit form (member)");
   await t.fillRequired("E2E Member Preview");
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (member)");
-  check("a member sees no Open in Google Docs on Preview", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download DOCX"));
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (member)");
+  check("a member sees no Open in Google Docs on Preview", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download PDF"));
   await goto("/profiles"); // leaving flushes the form above as a draft; clear it here so later scenarios start clean
   await ev("sessionStorage.clear()");
 });
@@ -397,7 +412,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await fill("Rating out of 5 (e.g. 4)", "4");
   await sleep(300);
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview of a profile with only the required fields");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview of a profile with only the required fields");
   check("a profile with only the required fields reaches Preview (no validation errors)", !(await bodyText()).includes("before continuing"));
   await click("← Back to edit");
   await waitFor("!!document.querySelector('label input')", "back on Edit details");
@@ -416,7 +431,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   check("a missing required field is reported and Preview is not entered", !(await ev("!!document.querySelector('[data-preview-step]')")));
 });
 
-await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Back keeps edits", async () => {
+await t.scenario("Preview step: the PDF itself, consent before Download / Submit, Back keeps edits", async () => {
   await signIn("member");
   await goto("/internal");
   await ev("sessionStorage.clear()");
@@ -439,19 +454,19 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
 
   await t.fillRequired("E2E Preview Person");
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview rendered");
-  const shown = await ev("document.querySelector('[data-doc-preview] section.docx, [data-doc-preview] .docx-wrapper')?.innerText ?? ''");
-  check("the DOCX itself is rendered in the page (docx-preview) with the candidate's name", shown.includes("E2E Preview Person"), shown.slice(0, 80));
-  const layout = JSON.parse(await ev(`(()=>{const a=document.querySelector('[data-doc-preview] section.docx article'); const img=a?.querySelector('img'); const name=[...a.querySelectorAll('p')].find(p=>p.textContent.includes('E2E Preview Person')); if(!img||!name) return 'null';
-    const i=img.getBoundingClientRect(), n=name.getBoundingClientRect(), page=a.closest('section').getBoundingClientRect();
-    return JSON.stringify({ logoRight: i.left > page.left + page.width/2, logoTop: i.top < n.bottom + 20, hyph: getComputedStyle(a.querySelector('p')).hyphens })})()`));
-  check("the anchored logo is drawn top right (not under the name) and words are never hyphenated", layout && layout.logoRight && layout.logoTop && layout.hyph === "manual", JSON.stringify(layout));
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview rendered");
+  const preview = JSON.parse(await ev(`(()=>{const el=document.querySelector('[data-pdf-preview=ready]'); const c=[...el.querySelectorAll('canvas[data-pdf-page]')];
+    const inked=c.length>0 && c.every(cv=>{const d=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data; for(let i=0;i<d.length;i+=4*97) if(d[i]<200||d[i+1]<200||d[i+2]<200) return true; return false});
+    return JSON.stringify({pages:Number(el.dataset.pdfPages), canvases:c.length, inked, wide:c[0]?.getBoundingClientRect().width??0, sha:el.dataset.pdfSha256??null, text:el.querySelector('[data-pdf-text]')?.textContent??''})})()`));
+  check("Preview draws every page of the PDF (pdf.js canvases, with content) at a readable width", preview.pages >= 1 && preview.canvases === preview.pages && preview.inked && preview.wide > 300, JSON.stringify({ ...preview, text: undefined }));
+  check("the previewed PDF holds the candidate's name, job title and overview", ["E2E Preview Person", "Engineer", "Only the overview."].every((x) => preview.text.includes(x)), preview.text.slice(0, 80));
+  check("no docx-preview rendering is left on the page", !(await ev("!!document.querySelector('.docx-wrapper, section.docx')")));
   const body = await bodyText();
-  check("Preview offers Back to edit, Download DOCX and Submit", ["← Back to edit", "Download DOCX", "Submit"].every((x) => body.includes(x)));
+  check("Preview offers Back to edit, Download PDF and Submit, and no DOCX download", ["← Back to edit", "Download PDF", "Submit"].every((x) => body.includes(x)) && !body.includes("DOCX"));
   check("the consent checkbox has the agreed wording and starts unticked", body.includes("I confirm the information in this profile is accurate and may be shared") && (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
 
   // consent is required, and recorded, before each action
-  await click("Download DOCX");
+  await click("Download PDF");
   await sleep(400);
   check("Download without the consent box shows a message and focuses the box", (await bodyText()).includes("Please tick the box to confirm") && (await ev("document.activeElement?.type")) === "checkbox");
   check("nothing was downloaded and nothing was recorded", (await ev("window.__blobs.length")) === 0 && consents("download") === 0);
@@ -462,17 +477,21 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await sleep(200);
   check("ticking the box clears the message", !(await bodyText()).includes("Please tick the box to confirm"));
-  await click("Download DOCX");
-  await waitFor("document.body.innerText.includes('DOCX downloaded')", "downloaded");
+  await click("Download PDF");
+  await waitFor("document.body.innerText.includes('PDF downloaded')", "downloaded");
   check("the consent was recorded in audit_log (metadata only) before the download", consents("download") === 1 && sql(`select detail::text from audit_log where action='consent_download' and at >= '${since}' order by id desc limit 1`).includes('"template": "internal"'));
-  const dl = JSON.parse(await ev(`(async()=>{const b=window.__blobs.at(-1); if(!b) return 'null'; const buf=new Uint8Array(await b.arrayBuffer()); let s=''; for(const x of buf) s+=String.fromCharCode(x); return JSON.stringify({size:b.size,b64:btoa(s)})})()`));
-  check("exactly one DOCX was handed to the browser", dl && dl.size > 1000);
-  if (dl) {
-    const { default: PizZip } = await import("pizzip");
-    const xml = new PizZip(Buffer.from(dl.b64, "base64")).file("word/document.xml").asText();
-    const text = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(" ");
-    check("the downloaded file contains the same content that was previewed (name, job title, overview)", ["E2E Preview Person", "Engineer", "Only the overview."].every((x) => text.includes(x) && shown.includes(x)), text.slice(0, 120));
-  }
+  check("exactly one PDF was handed to the browser", (await ev("window.__blobs.length")) === 1);
+  const dl = await t.lastPdf();
+  check("the download is a PDF named <Name>-<Job title>-InfoBeans.pdf", dl.isPdf && dl.name === "E2E_Preview_Person-Engineer-InfoBeans.pdf", JSON.stringify({ name: dl.name, isPdf: dl.isPdf }));
+  check("the downloaded PDF is byte-for-byte the previewed one (same SHA-256)", !!preview.sha && dl.sha256 === preview.sha, `${dl.sha256} vs ${preview.sha}`);
+  check("the downloaded file contains the same content that was previewed (name, job title, overview)", ["E2E Preview Person", "Engineer", "Only the overview."].every((x) => dl.text.includes(x)), dl.text.slice(0, 120));
+
+  // the PDF API: signed in, strict validation, PDF out, nothing cached
+  const api = JSON.parse(await ev(`(async()=>{const post=(b)=>fetch('/api/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    const bad=await post({template:'internal',data:{name:'E2E Incomplete'}}); const badJson=await bad.json();
+    const unknown=await post({template:'other',data:{}});
+    return JSON.stringify({bad:bad.status, badCode:badJson.error?.code, unknown:unknown.status})})()`));
+  check("POST /api/pdf refuses an incomplete profile (422) and an unknown template (400)", api.bad === 422 && api.badCode === "INCOMPLETE" && api.unknown === 400, JSON.stringify(api));
 
   // Back keeps the edits
   await click("← Back to edit");
@@ -481,7 +500,7 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
 
   // Submit: consent first, then the version is saved and the success message appears ON Preview (no other step)
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview again");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview again");
   check("the consent box is ticked fresh each time Preview is entered", (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
@@ -491,7 +510,7 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   check("Submit records the consent and saves the version", consents("submit") === 1 && versionsOf() === 1);
   check("Preview shows 'Submitted · saved to My Profiles · v1' with a View in My Profiles link", (await okText()).startsWith("Submitted · saved to My Profiles · v1") && (await ev("document.querySelector('[data-submitted] a')?.getAttribute('href')"))?.startsWith("/profiles/"));
   const after = await bodyText();
-  check("there is no redirect and no form step: still on Preview, Download DOCX still there", (await ev("!!document.querySelector('[data-preview-step]')")) && after.includes("Download DOCX") && !after.includes("Submit your profile") && !after.includes("Open submission form"));
+  check("there is no redirect and no form step: still on Preview, Download PDF still there", (await ev("!!document.querySelector('[data-preview-step]')")) && after.includes("Download PDF") && !after.includes("Submit your profile") && !after.includes("Open submission form"));
 
   // Submitting again without editing reuses the saved version
   await click("Submit", "[data-preview-step] button");
@@ -504,7 +523,7 @@ await t.scenario("Preview step: exact DOCX, consent before Download / Submit, Ba
   await t.fill("Job title", "Staff Engineer");
   await sleep(200);
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview (edited)");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (edited)");
   check("after an edit the note says Submit will save a new version", (await bodyText()).includes("Submit saves this profile to My Profiles"));
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
@@ -527,7 +546,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await waitFor("!!document.querySelector('label input')", "external edit form");
   await waitFor("document.body.innerText.includes('Your session ends in')", "expiry banner (external)");
   const banner = await bodyText();
-  check("the expiry banner asks for a download and never says anything is saved", banner.includes("download your DOCX now. External profiles are not saved.") && !banner.includes("Save now") && !/changes are saved/.test(banner));
+  check("the expiry banner asks for a download and never says anything is saved", banner.includes("download your PDF now. External profiles are not saved.") && !banner.includes("Save now") && !/changes are saved/.test(banner));
   await signIn("member"); // resets the sign-in time
 
   const body = await bodyText();
@@ -544,14 +563,17 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await sleep(300);
   const since = sql("select now()");
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "external preview");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "external preview");
   const pbody = await bodyText();
-  check("external Preview offers Back to edit and Download DOCX, and no Submit", pbody.includes("← Back to edit") && pbody.includes("Download DOCX") && !(await ev("[...document.querySelectorAll('[data-preview-step] button')].some(b=>b.textContent.trim()==='Submit')")));
+  check("external Preview offers Back to edit and Download PDF, and no Submit", pbody.includes("← Back to edit") && pbody.includes("Download PDF") && !pbody.includes("DOCX") && !(await ev("[...document.querySelectorAll('[data-preview-step] button')].some(b=>b.textContent.trim()==='Submit')")));
   check("no 'saved' wording on external Preview", !pbody.includes("My Profiles"));
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
-  await click("Download DOCX");
-  await waitFor("document.body.innerText.includes('DOCX downloaded')", "external downloaded");
-  check("the external consent is recorded (metadata only) and a DOCX was handed to the browser", Number(sql(`select count(*) from audit_log where action='consent_download' and at >= '${since}' and detail->>'template'='external'`)) === 1 && (await ev("window.__blobs.length")) === 1);
+  const externalSha = await ev("document.querySelector('[data-pdf-preview=ready]').dataset.pdfSha256");
+  await click("Download PDF");
+  await waitFor("document.body.innerText.includes('PDF downloaded')", "external downloaded");
+  check("the external consent is recorded (metadata only) and a PDF was handed to the browser", Number(sql(`select count(*) from audit_log where action='consent_download' and at >= '${since}' and detail->>'template'='external'`)) === 1 && (await ev("window.__blobs.length")) === 1);
+  const externalPdf = await t.lastPdf();
+  check("the external PDF is named after the candidate and is the previewed file", externalPdf.isPdf && externalPdf.name === "E2E_External_Person-Engineer-InfoBeans.pdf" && externalPdf.sha256 === externalSha && externalPdf.text.includes("E2E External Person"), externalPdf.name);
   check("nothing was written to the database for the external profile", Number(sql("select count(*) from profiles where candidate_name='E2E External Person'")) === 0);
 
   // the API refuses external saves, signed in, with a clear 400; an internal save still works

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import DownloadDocxButton from "@/components/DownloadDocxButton";
+import DownloadPdfButton from "@/components/DownloadPdfButton";
 import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
@@ -75,7 +75,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
                       >
                         Open in Review
                       </Link>
-                      {full && <DownloadDocxButton template={full.template} data={full.data} versionId={v.id} />}
+                      {full && <DownloadPdfButton template={full.template} data={full.data} versionId={v.id} />}
                       {full && googleDocs && <GoogleDocsForVersion template={full.template} data={full.data} />}
                     </div>
                   </li>

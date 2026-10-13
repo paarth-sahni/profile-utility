@@ -1,11 +1,12 @@
 /**
  * Purpose: /manage/[id] — read-only view of any profile for managers and admins: its version history and a
- * preview of the chosen version (?v=<versionId>, default: the current one). No editing, no downloads.
+ * preview of the chosen version (?v=<versionId>, default: the current one). No editing; Download PDF and (for
+ * managers / admins) Open in Google Docs export the version shown.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import DownloadDocxButton from "@/components/DownloadDocxButton";
+import DownloadPdfButton from "@/components/DownloadPdfButton";
 import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
 import PageHero from "@/components/PageHero";
@@ -64,9 +65,9 @@ export default async function ManageProfilePage({
           <div>
             {shown ? (
               <>
-                {/* Read-only: exports are built in the browser from the version you are viewing; nothing is changed or saved. */}
+                {/* Read-only: exports are made from the version you are viewing; nothing is changed or saved. */}
                 <div className="mb-4 flex flex-wrap items-start gap-2">
-                  <DownloadDocxButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
+                  <DownloadPdfButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
                   {canUseGoogleDocs(user.role) && <GoogleDocsForVersion template={shown.template} data={shown.data} />}
                 </div>
                 <ProfilePreview template={shown.template} data={shown.data} />

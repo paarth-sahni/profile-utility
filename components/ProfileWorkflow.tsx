@@ -9,7 +9,7 @@ import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
 import PreviewStep, { type SubmittedVersion } from "@/components/PreviewStep";
-import { docxFileName } from "@/lib/docxReady";
+import { pdfFileName } from "@/lib/docxReady";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { labelForVersion } from "@/lib/versionLabel";
@@ -166,7 +166,7 @@ export default function ProfileWorkflow({
     initial ? { no: initial.versionNo, label: initial.label } : null,
   );
   const [dirty, setDirty] = useState(false);
-  const [downloaded, setDownloaded] = useState(false); // DOCX downloaded and not edited since
+  const [downloaded, setDownloaded] = useState(false); // PDF downloaded and not edited since
 
   // draft recovery (sessionStorage only; see lib/draft.ts)
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(null); // found on load, waiting for Restore/Discard
@@ -794,7 +794,7 @@ export default function ProfileWorkflow({
             <PreviewStep
               template={templateId}
               data={previewData}
-              fileName={docxFileName(templateId, previewData)}
+              fileName={pdfFileName(previewData)}
               docTitle={`${(previewData as { name?: string }).name?.trim() || "Profile"} — ${templateId} profile`}
               canGoogleDocs={canGoogleDocs}
               onBack={() => goTo(STEP_REVIEW)}

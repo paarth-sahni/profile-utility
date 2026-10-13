@@ -1,4 +1,3 @@
-import { saveAs } from "file-saver";
 import { fillTemplate } from "./docxFill";
 import type { ResumeData, TemplateId } from "./schemas";
 
@@ -15,11 +14,3 @@ export async function renderDocxBlob(id: TemplateId, data: ResumeData): Promise<
   });
 }
 
-export async function generateDocx(id: TemplateId, data: ResumeData, fileName: string): Promise<void> {
-  saveAs(await renderDocxBlob(id, data), fileName);
-}
-
-/** Saves an already rendered DOCX (the Preview step downloads the very file it shows). */
-export function saveDocxBlob(blob: Blob, fileName: string): void {
-  saveAs(blob, fileName);
-}

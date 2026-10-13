@@ -48,10 +48,10 @@ test("expiryMessage: nothing to say before the warning window", () => {
 });
 
 test("expiryMessage: the 5-minute warning asks to Submit from Preview when there is unsaved work", () => {
-  assert.equal(expiryMessage(5 * MIN, true), "Your session ends in 5 minutes — go to Preview and Submit to save your profile (or download your DOCX).");
-  assert.equal(expiryMessage(2 * MIN, true), "Your session ends in 2 minutes — go to Preview and Submit to save your profile (or download your DOCX).");
-  assert.equal(expiryMessage(60_000, true), "Your session ends in 1 minute — go to Preview and Submit to save your profile (or download your DOCX).");
-  assert.equal(expiryMessage(30_000, true), "Your session ends in less than a minute — go to Preview and Submit to save your profile (or download your DOCX).");
+  assert.equal(expiryMessage(5 * MIN, true), "Your session ends in 5 minutes — go to Preview and Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(2 * MIN, true), "Your session ends in 2 minutes — go to Preview and Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(60_000, true), "Your session ends in 1 minute — go to Preview and Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(30_000, true), "Your session ends in less than a minute — go to Preview and Submit to save your profile (or download your PDF).");
 });
 
 test("expiryMessage: without unsaved work it only reassures", () => {
@@ -65,8 +65,8 @@ test("expiryMessage: after the end it tells the user to sign in again", () => {
 
 test("expiryMessage for external profiles (never saved): asks for a download, never says anything is saved", () => {
   assert.equal(expiryMessage(30 * MIN, true, false), null);
-  assert.equal(expiryMessage(5 * MIN, true, false), "Your session ends in 5 minutes — download your DOCX now. External profiles are not saved.");
-  assert.equal(expiryMessage(30_000, true, false), "Your session ends in less than a minute — download your DOCX now. External profiles are not saved.");
+  assert.equal(expiryMessage(5 * MIN, true, false), "Your session ends in 5 minutes — download your PDF now. External profiles are not saved.");
+  assert.equal(expiryMessage(30_000, true, false), "Your session ends in less than a minute — download your PDF now. External profiles are not saved.");
   assert.equal(expiryMessage(2 * MIN, false, false), "Your session ends in 2 minutes.");
   assert.match(expiryMessage(0, true, false) ?? "", /session has ended.*kept in this tab/);
   for (const [canSave, ms] of [[true, 5 * MIN], [false, 5 * MIN], [true, 0], [false, 0]] as const) {

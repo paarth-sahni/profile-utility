@@ -29,14 +29,14 @@ export async function POST(request: Request) {
   } catch {
     return err(400, "BAD_REQUEST", "We could not read that request.");
   }
-  if (isExternalSave(body)) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the DOCX instead.");
+  if (isExternalSave(body)) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the PDF instead.");
   const payload = parseSavePayload(body);
   if (!payload) return err(400, "BAD_REQUEST", "That profile could not be saved. Please check it and try again.");
 
   try {
     return NextResponse.json(await saveVersion(payload));
   } catch (e) {
-    if (e instanceof ExternalNotSavedError) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the DOCX instead.");
+    if (e instanceof ExternalNotSavedError) return err(400, "EXTERNAL_NOT_SAVED", "External profiles are not saved. Download the PDF instead.");
     if (e instanceof ProfileNotFoundError) return err(404, "NOT_FOUND", "We could not find that profile.");
     console.error("[profiles] save failed");
     return err(500, "SAVE_FAILED", "We could not save your profile. Please try again.");

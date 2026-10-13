@@ -38,10 +38,10 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await openBlankForm();
   await fillRequired("E2E Draft Test"); // saving needs the required fields
   await sleep(700);
-  ageSession("member", "2 hours 1 minute");
-  // Preview, tick the consent box, Submit: recording the consent answers 401, which ends the session
+  // Preview while signed in, then the session ends: recording the consent for Submit answers 401
   await click("Preview →");
-  await waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview");
+  ageSession("member", "2 hours 1 minute");
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
   await waitFor("location.pathname.startsWith('/login')", "redirect to /login after 401");
@@ -56,6 +56,19 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await click("Restore");
   await waitFor("!!document.querySelector('label input')", "restored form");
   check("Restore brings the form back", (await getName()) === "E2E Draft Test");
+
+  // The session has already ended when Preview builds the PDF (POST /api/pdf answers 401): same redirect, same draft
+  await sleep(700);
+  ageSession("member", "2 hours 1 minute");
+  await click("Preview →");
+  await waitFor("location.pathname.startsWith('/login')", "redirect to /login after a 401 from /api/pdf");
+  check("a 401 while building the Preview PDF sends the user to /login", true);
+  check("the draft survives that redirect too", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Test");
+  await signIn("member");
+  await goto("/internal");
+  await waitFor("document.body.innerText.includes('Restore your unsaved changes?')", "restore prompt (2)");
+  await click("Restore");
+  await waitFor("!!document.querySelector('label input')", "restored form (2)");
   check("the prompt is gone after Restore", !(await bodyText()).includes("Restore your unsaved changes?"));
   await sleep(700);
   check("restored work is kept as a draft again", !!(await draftOf()));
@@ -75,7 +88,7 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await setName("E2E Draft Test 2");
   await waitFor("document.body.innerText.includes('go to Preview and Submit')", "banner (unsaved)");
   const unsaved = await bodyText();
-  check("banner with unsaved work says to go to Preview and Submit (or download), with no Save button", /Your session ends in [45] minutes? — go to Preview and Submit to save your profile \(or download your DOCX\)\./.test(unsaved) && !unsaved.includes("Save now") && !(await ev("[...document.querySelectorAll('[role=status] button, [role=alert] button')].length")));
+  check("banner with unsaved work says to go to Preview and Submit (or download), with no Save button", /Your session ends in [45] minutes? — go to Preview and Submit to save your profile \(or download your PDF\)\./.test(unsaved) && !unsaved.includes("Save now") && !(await ev("[...document.querySelectorAll('[role=status] button, [role=alert] button')].length")));
   check("the draft still protects the edit", JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2" || (await sleep(700), JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2"));
 });
 

@@ -1,19 +1,20 @@
 "use client";
 
 /**
- * Purpose: the Preview step. Shows the exact DOCX that is generated (see DocPreview) and offers the ways to finish:
- * "← Back to edit", "Download DOCX", "Open in Google Docs" (only when `canGoogleDocs`) and "Submit" (only when
+ * Purpose: the Preview step. Shows the exact PDF that is generated (see PdfPreview) and offers the ways to finish:
+ * "← Back to edit", "Download PDF" (saves the previewed PDF), "Open in Google Docs" (only when `canGoogleDocs`; it
+ * uploads the filled DOCX, which Google converts) and "Submit" (only when
  * `onSubmit` is given, i.e. internal profiles). A required consent checkbox must be ticked first; the consent is
  * recorded in the audit log (POST /api/consent) before the action runs, and the action is cancelled if that fails.
  * The validated profile comes from the workflow; nothing here edits it.
  */
-import { useRef, useState } from "react";
-import DocPreview from "@/components/DocPreview";
+import { useEffect, useRef, useState } from "react";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
-import { usePreviewDocx } from "@/components/usePreviewDocx";
+import PdfPreview from "@/components/PdfPreview";
+import { usePreviewPdf } from "@/components/usePreviewPdf";
 import { CONSENT_TEXT, type ConsentAction } from "@/lib/consent";
 import { ConsentError, recordConsent } from "@/lib/consentClient";
-import { saveDocxBlob } from "@/lib/generate";
+import { savePdf } from "@/lib/pdfClient";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
 
 /** The version Submit saved (or reused). */
@@ -28,21 +29,21 @@ export interface PreviewStepProps {
   template: TemplateId;
   /** The validated profile (the workflow validates before entering this step). */
   data: ResumeData;
-  /** Name of the downloaded file. */
+  /** Name of the downloaded PDF. */
   fileName: string;
   /** Title of the Google Doc. */
   docTitle: string;
   /** Only managers and admins get "Open in Google Docs". */
   canGoogleDocs: boolean;
   onBack: () => void;
-  /** Called once the DOCX was handed to the browser. */
+  /** Called once the PDF was handed to the browser. */
   onDownloaded: () => void;
   /** Internal profiles only: saves the profile (or reuses the saved version) and returns it; throws a readable error if it fails. */
   onSubmit?: () => Promise<SubmittedVersion>;
   submitError?: string | null;
   /** Shown above the buttons, e.g. what Submit will save. */
   note?: string | null;
-  /** Called when recording the consent answers 401, i.e. the sign-in ended. */
+  /** Called when the server answers 401 (consent or PDF), i.e. the sign-in ended. */
   onSessionEnded: () => void;
 }
 
@@ -59,7 +60,7 @@ export default function PreviewStep({
   note,
   onSessionEnded,
 }: PreviewStepProps) {
-  const { docx, retry } = usePreviewDocx(template, data);
+  const { pdf, retry } = usePreviewPdf(template, data);
   const [consent, setConsent] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [busy, setBusy] = useState<ConsentAction | null>(null);
@@ -67,7 +68,16 @@ export default function PreviewStep({
   const [submitted, setSubmitted] = useState<SubmittedVersion | null>(null);
   const checkbox = useRef<HTMLInputElement>(null);
 
-  const ready = docx.status === "ready";
+  const ready = pdf.status === "ready";
+  const sessionEnded = pdf.status === "error" && pdf.httpStatus === 401;
+
+  const endedReported = useRef(false);
+  useEffect(() => {
+    if (sessionEnded && !endedReported.current) {
+      endedReported.current = true;
+      onSessionEnded();
+    }
+  }, [sessionEnded, onSessionEnded]);
 
   /** True when the box is ticked; otherwise explains and moves focus to it. */
   const requireConsent = (): boolean => {
@@ -88,14 +98,14 @@ export default function PreviewStep({
   };
 
   const download = async () => {
-    if (docx.status !== "ready" || busy || !requireConsent()) return;
+    if (pdf.status !== "ready" || busy || !requireConsent()) return;
     setMessage(null);
     setBusy("download");
     try {
       await record("download");
-      saveDocxBlob(docx.blob, fileName);
+      savePdf(pdf.blob, fileName);
       onDownloaded();
-      setMessage({ kind: "ok", text: "DOCX downloaded — check your downloads." });
+      setMessage({ kind: "ok", text: "PDF downloaded — check your downloads." });
     } catch (e) {
       setMessage({ kind: "error", text: e instanceof Error ? e.message : "We could not download the file." });
     } finally {
@@ -126,23 +136,23 @@ export default function PreviewStep({
     <div className="space-y-5" data-preview-step>
       <div>
         <h2 className="text-lg font-medium text-ink-dark">Preview</h2>
-        <p className="mt-1 text-sm text-ink-light">This is the exact document that will be downloaded. Check it, then confirm below.</p>
+        <p className="mt-1 text-sm text-ink-light">This is the exact PDF that will be downloaded. Check it, then confirm below.</p>
       </div>
 
-      {docx.status === "loading" && (
+      {pdf.status === "loading" && (
         <div role="status" className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-ink-light">
           Building your preview…
         </div>
       )}
-      {docx.status === "error" && (
+      {pdf.status === "error" && (
         <div role="alert" className="space-y-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
-          <p className="whitespace-pre-wrap text-sm text-brand-700">{docx.message}</p>
+          <p className="whitespace-pre-wrap text-sm text-brand-700">{pdf.message}</p>
           <button type="button" onClick={retry} className={outline}>
             Try again
           </button>
         </div>
       )}
-      {docx.status === "ready" && <DocPreview blob={docx.blob} />}
+      {pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
 
       <div className="rounded-xl border border-gray-200 bg-cream p-4">
         <label className="flex items-start gap-3 text-sm text-ink">
@@ -185,13 +195,12 @@ export default function PreviewStep({
         </button>
         <div className="flex flex-wrap items-start gap-3">
           <button type="button" onClick={download} disabled={!ready || busy !== null} className={onSubmit ? outline : primary}>
-            {busy === "download" ? "Preparing…" : "Download DOCX"}
+            {busy === "download" ? "Preparing…" : "Download PDF"}
           </button>
           {canGoogleDocs && ready && (
             <OpenInGoogleDocsButton
               template={template}
               title={docTitle}
-              blob={docx.blob}
               variant="outline"
               prepare={() => {
                 if (!requireConsent()) return { ok: false, message: CONSENT_REQUIRED };

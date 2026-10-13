@@ -1,6 +1,6 @@
 /**
  * Purpose: decides whether a saved profile is complete enough to turn into a document, and says why not in
- * plain words. Shared by the "Download DOCX" and "Open in Google Docs" buttons on the saved-profile pages
+ * plain words. Shared by POST /api/pdf, the "Download PDF" and "Open in Google Docs" buttons on the saved-profile pages
  * (an incomplete draft must be finished on the Review screen first). Pure; unit-tested (lib/docxReady.test.ts).
  */
 import { describeFieldPath, findNAIssues, schemaFor, type ResumeData, type TemplateId } from "./schemas";
@@ -20,11 +20,6 @@ export function checkReadyForDocx(template: TemplateId, data: ResumeData): DocxR
   return { ok: true, data: parsed.data as ResumeData };
 }
 
-/** The file name used for downloads: "<Candidate_Name>_<template>_profile.docx". */
-export function docxFileName(template: TemplateId, data: ResumeData): string {
-  const who = (data as { name?: string }).name?.trim().replace(/\s+/g, "_") || "resume";
-  return `${who}_${template}_profile.docx`;
-}
 
 /** One part of a file name: spaces become "_", anything but letters, digits, "_" and "-" is removed. */
 const fileNamePart = (value: string | undefined): string =>

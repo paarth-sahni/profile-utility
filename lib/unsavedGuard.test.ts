@@ -68,7 +68,7 @@ test("hasUnsavedWork: saved and unedited is safe; saved then edited is not", () 
   assert.equal(hasUnsavedWork(work({ saved: true, dirty: true })), true);
 });
 
-test("hasUnsavedWork: a DOCX download since the last edit clears the warning", () => {
+test("hasUnsavedWork: a PDF download since the last edit clears the warning", () => {
   assert.equal(hasUnsavedWork(work({ downloaded: true })), false);
   assert.equal(hasUnsavedWork(work({ downloaded: true, dirty: true })), false);
   assert.equal(hasUnsavedWork(work({ saved: true, dirty: true, downloaded: true })), false);

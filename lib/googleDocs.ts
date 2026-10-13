@@ -42,7 +42,7 @@ const MESSAGES: Record<GoogleDocsErrorCode, string> = {
   token_expired: "Your Google sign-in expired. Please try again.",
   rate_limited: "Google is busy right now. Please wait a minute and try again.",
   network: "We could not reach Google. Check your connection and try again.",
-  upload_failed: "Google could not create the document. Please try again, or use Download DOCX instead.",
+  upload_failed: "Google could not create the document. Please try again, or use Download PDF instead.",
 };
 
 /** Plain-language text for any error thrown while opening in Google Docs (unknown errors get the generic one). */

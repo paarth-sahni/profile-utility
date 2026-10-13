@@ -10,6 +10,7 @@
  * Test data is named "E2E ..." and deleted when the run ends.
  */
 import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -124,6 +125,21 @@ export async function startHarness(title) {
     send,
     ev,
     waitFor,
+    /**
+     * The last PDF the page handed to the browser as a download (pages capture PDF blobs and download names with an
+     * init script, see e2e-ui.mjs): { name, isPdf, size, sha256, text }. Text is read with unpdf.
+     */
+    async lastPdf() {
+      const got = JSON.parse(
+        await ev(`(async()=>{const b=window.__blobs.at(-1); if(!b) return 'null'; const buf=new Uint8Array(await b.arrayBuffer()); let s=''; for(const x of buf) s+=String.fromCharCode(x); return JSON.stringify({name:window.__downloads.at(-1)??null,b64:btoa(s)})})()`),
+      );
+      if (!got) return { name: null, isPdf: false, size: 0, sha256: null, text: "" };
+      const bytes = Buffer.from(got.b64, "base64");
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const isPdf = bytes.subarray(0, 5).toString("latin1") === "%PDF-";
+      const text = isPdf ? (await extractText(await getDocumentProxy(new Uint8Array(bytes)), { mergePages: true })).text : "";
+      return { name: got.name, isPdf, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), text };
+    },
     /** Records one assertion. */
     check(name, ok, extra = "") {
       ok ? pass++ : fail++;
@@ -177,7 +193,7 @@ export async function startHarness(title) {
      */
     async submitViaPreview() {
       await h.click("Preview →");
-      await h.waitFor("!!document.querySelector('[data-doc-preview=ready]')", "preview ready");
+      await h.waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
       if (!(await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
       await h.click("Submit", "[data-preview-step] button");
       await h.waitFor("!!document.querySelector('[data-submitted]')", "submitted message");
