@@ -9,9 +9,12 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    paragraphs (the same way hasProjects / hasTeamSize already work); with paragraphLoop on, the tag paragraphs vanish and
    so does the whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). Two heading lines
    get an inline condition so no dangling " - " is left.
-2. Formatting (LOGO below):
+2. Formatting (FORMAT, LOGO, BULLET below):
    - the InfoBeans logo keeps its aspect ratio (cropped exactly to the artwork, box = the artwork's ratio) and sits
      directly below "A PROUD MEMBER OF", left edges aligned;
+   - one bullet style for every responsibility / highlight (one numbering definition: Lexend "•" at text size, 720/360
+     indent) with the same spacing between bullets;
+   - a blank line between the Role line and the project description and between the description and the bullets;
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -31,7 +34,8 @@ WRAPS = {
         (4, 4, "hasSpecialization"),  # header line
         (18, 20, "hasTech"),  # project: spacer + "Tools & Technologies" heading + value
         (26, 28, "hasRole"),  # project: spacer + "Role" heading + value
-        (34, 34, "hasDescription"),  # project: description paragraph
+        (34, 34, "hasDescription"),  # project: (blank line, see PRE_SPACERS) + description paragraph
+        (35, 37, "hasResponsibilities"),  # project: (blank line) + the bullet loop
         (46, 50, "hasCertifications"),  # sidebar: heading + items + spacer
         (51, 53, "hasTools"),  # sidebar: heading + value + spacer
         (60, 64, "hasDomains"),  # sidebar: heading + items + spacer
@@ -67,7 +71,42 @@ INLINE = {
 SPACER = '<w:p><w:pPr><w:jc w:val="left"/><w:rPr><w:color w:val="231f20"/></w:rPr></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
 SPACERS = {"internal": [(58, SPACER)], "external": []}
 
+# Blank lines BEFORE a paragraph, inside any condition that opens there: the internal project had none between the
+# Role / Project Link line and the description, nor between the description and the bullets. Same form as the
+# project's other spacers (e.g. paragraph 26, before "Role").
+PROJECT_SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
+PRE_SPACERS = {"internal": [(34, PROJECT_SPACER), (35, PROJECT_SPACER)], "external": []}
+
 # ---------------------------------------------------------------------------------------------------- 2. formatting
+# 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside a bullet (w:line 276), and
+# 1.5 lines from bullet to bullet: 0.35 lines = 4.8pt = 96 twips after each.
+ITEM_GAP = 96
+ITEM = {"before": "0", "after": str(ITEM_GAP), "line": "276", "lineRule": "auto"}
+
+# The one bullet: numbering definition used by every responsibility / highlight paragraph.
+BULLET_NUM_ID = "1"
+BULLET_LVL0 = (
+    '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="\u2022"/><w:lvlJc w:val="left"/>'
+    '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>'
+    '<w:rPr><w:rFonts w:ascii="Lexend" w:cs="Lexend" w:eastAsia="Lexend" w:hAnsi="Lexend"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:u w:val="none"/></w:rPr></w:lvl>'
+)
+BULLET_PPR = {
+    "numPr": f'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="{BULLET_NUM_ID}"/></w:numPr>',
+    "spacing": ITEM,
+    "ind": {"left": "720", "hanging": "360"},
+}
+
+# template -> {paragraph: changes}. "spacing" / "ind": attributes (the element is replaced), "numPr": xml.
+FORMAT = {
+    "internal": {
+        36: BULLET_PPR,  # project responsibilities
+    },
+    "external": {
+        41: BULLET_PPR,  # project responsibilities
+        54: BULLET_PPR,  # employer highlights (was its own numbering definition)
+    },
+}
+
 # The logo artwork inside the 1000x500 PNG (the rest is transparent): left, top, right, bottom in pixels.
 ART = (153, 141, 847, 359)
 ART_SIZE = (1000, 500)
@@ -100,14 +139,18 @@ def attrs(values: dict) -> str:
 
 
 def set_ppr(para: str, changes: dict) -> str:
-    """Sets / replaces ind and jc in the paragraph's properties, keeping the schema order."""
+    """Sets / replaces spacing, ind and numPr in the paragraph's properties, keeping the schema order."""
     m = re.search(r"<w:pPr>(.*?)</w:pPr>|<w:pPr/>", para, re.S)
     inner = m.group(1) or "" if m else ""
     children = {}
     for c in PPR_CHILD.finditer(inner):
         children[c.group(1) or c.group(2)] = c.group(0)
+    if "spacing" in changes:
+        children["spacing"] = f"<w:spacing {attrs(changes['spacing'])}/>"
     if "ind" in changes:
         children["ind"] = f"<w:ind {attrs(changes['ind'])}/>"
+    if "numPr" in changes:
+        children["numPr"] = changes["numPr"]
     if "jc" in changes:
         children["jc"] = f'<w:jc w:val="{changes["jc"]}"/>'
     ppr = "<w:pPr>" + "".join(children[k] for k in sorted(children, key=lambda k: PPR_ORDER.index(k) if k in PPR_ORDER else 99)) + "</w:pPr>"
@@ -166,6 +209,11 @@ def logo(para: str, name: str, xml: str) -> str:
     return para.replace(drawing, new)
 
 
+def numbering(xml: str) -> str:
+    """Every abstract numbering used for bullets gets the one bullet level 0 (the paragraphs all use numId 1 anyway)."""
+    return re.sub(r'<w:lvl w:ilvl="0">.*?</w:lvl>', lambda m: BULLET_LVL0 if "\u25cf" in m.group(0) else m.group(0), xml, flags=re.S)
+
+
 def patch(name: str) -> bytes:
     src = BACKUPS / f"{name}.before-optional-sections.docx"
     with zipfile.ZipFile(src) as zin:
@@ -186,14 +234,18 @@ def patch(name: str) -> bytes:
             for old, new in INLINE[name]:
                 if old in text:
                     text = text.replace(old, new)
+            change = FORMAT[name].get(i, {})
             if i == 0:
                 text = label(text, name)
             if "<w:drawing>" in text:
                 text = logo(text, name, xml)
+            if change:
+                text = set_ppr(text, change)
             opens = "".join(m for _, m in sorted(before.get(i, []), key=lambda t: -t[0]))  # outermost first
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
+            pre = "".join(xml_ for at, xml_ in PRE_SPACERS[name] if at == i)  # inside any condition that opens here
             extra = "".join(xml_ for at, xml_ in SPACERS[name] if at == i)  # still inside any condition that closes here
-            return opens + text + extra + closes
+            return opens + pre + text + extra + closes
 
         new_xml = PARA.sub(rebuild, xml)
         out = OUT / f"{name}.docx"
@@ -202,6 +254,8 @@ def patch(name: str) -> bytes:
                 data = zin.read(item.filename)
                 if item.filename == "word/document.xml":
                     data = new_xml.encode("utf8")
+                elif item.filename == "word/numbering.xml":
+                    data = numbering(data.decode("utf8")).encode("utf8")
                 zout.writestr(item, data)
     return out.read_bytes()
 

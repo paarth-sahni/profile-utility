@@ -246,6 +246,7 @@ console.log("project / employer headings: no dangling dashes, shared headings be
 // ------------------------------------------------- 3. formatting in the template XML (scripts/patch-templates.py)
 const ART_RATIO = (847 - 153) / (359 - 141); // the logo artwork inside its 1000x500 PNG
 for (const id of ["internal", "external"]) {
+  const zip = new PizZip(fs.readFileSync(`public/templates/${id}.docx`));
   const xml = templateXml[id];
   // logo: cropped to the artwork and drawn at the artwork's own ratio, positioned from the page margin
   const drawing = xml.match(/<w:drawing>.*?<\/w:drawing>/s)[0];
@@ -256,8 +257,19 @@ for (const id of ["internal", "external"]) {
   // the label: no tabs or padding, indented exactly to the logo's left edge
   const labelPara = xml.match(/<w:p[ >].*?<\/w:p>/s)[0];
   assert(/>A PROUD MEMBER OF</.test(labelPara) && !labelPara.includes("<w:tab/>") && /<w:ind w:left="\d+"/.test(labelPara), `${id}: "A PROUD MEMBER OF" has no tabs or padding spaces and a fixed indent`);
+  // bullets: one numbering definition, one indent, one bullet, one spacing
+  const paras = xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? [];
+  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlights)\}/.test(paras[n - 1]));
+  assert(bullets.length === (id === "internal" ? 1 : 2), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
+  for (const b of bullets) {
+    assert(/<w:numId w:val="1"\/>/.test(b) && /<w:ind w:left="720" w:hanging="360"\/>/.test(b) && /<w:spacing w:before="0" w:after="96" w:line="276" w:lineRule="auto"\/>/.test(b), `${id}: every bullet uses numbering 1, indent 720/360 and the item spacing`);
+  }
+  const numbering = zip.file("word/numbering.xml").asText();
+  const abstractId = numbering.match(/<w:num w:numId="1"[^>]*>\s*<w:abstractNumId w:val="(\d+)"/)[1];
+  const lvl0 = numbering.match(new RegExp(`<w:abstractNum [^>]*w:abstractNumId="${abstractId}".*?<w:lvl w:ilvl="0">(.*?)</w:lvl>`, "s"))[1];
+  assert(lvl0.includes('w:val="•"') && lvl0.includes('w:ascii="Lexend"') && lvl0.includes('<w:sz w:val="22"/>') && lvl0.includes('<w:ind w:left="720" w:hanging="360"/>'), `${id}: the bullet is a Lexend "•" at text size with a 720/360 indent`);
 }
-console.log("templates: logo ratio and position");
+console.log("templates: logo ratio and position, one bullet style");
 
 
 /** Every word on every page with its box (pt, from the top left), read with pdftotext -bbox. */
@@ -308,9 +320,10 @@ function inkBox(pdf, region) {
   return box && { x0: box.x0 / k, y0: box.y0 / k, x1: (box.x1 + 1) / k, y1: (box.y1 + 1) / k };
 }
 
+const LINE = 13.75; // one line of 11pt Lexend
 const near = (value, want, tol) => Math.abs(value - want) <= tol;
 
-/** The logo, measured on the PDF LibreOffice laid out. */
+/** Logo, bullets and blank lines, measured on the PDF LibreOffice laid out. */
 function checkGeometry(file, id, pdf) {
   const pages = wordsOf(pdf);
   // 1. logo: directly below "A PROUD MEMBER OF", left edges aligned, artwork ratio kept
@@ -324,6 +337,34 @@ function checkGeometry(file, id, pdf) {
   const ratio = (logo.x1 - logo.x0) / (logo.y1 - logo.y0);
   assert(Math.abs(ratio - ART_RATIO) / ART_RATIO < 0.04, `${file}: logo drawn at ${ratio.toFixed(3)}, the artwork is ${ART_RATIO.toFixed(3)} (stretched?)`);
   assert(logo.x0 > 306 && logo.y1 < 140, `${file}: the logo belongs in the top right`);
+
+  const SIDEBAR_X = 400; // internal sidebar column starts at ~421pt; external has one column
+  for (const words of pages) {
+    const main = linesOf(words.filter((w) => id === "external" || w.x0 < SIDEBAR_X));
+    // 2. bullets: same bullet position and size, same text indent, same spacing
+    const bulletAt = main.flatMap((l, n) => (l.words[0].t === "•" ? [n] : []));
+    for (const n of bulletAt) {
+      const [dot, text] = main[n].words;
+      const ref = main[bulletAt[0]].words;
+      assert(near(dot.x0, ref[0].x0, 0.3) && near(dot.x1 - dot.x0, ref[0].x1 - ref[0].x0, 0.3) && near(text.x0, ref[1].x0, 0.3), `${file}: bullets differ in position, size or indent`);
+      // continuation lines of this bullet sit at the text indent, 1.15 lines apart; the next bullet 1.5 lines down
+      let k = n + 1;
+      while (k < main.length && near(main[k].x0, text.x0, 0.5) && main[k].words[0].t !== "•") {
+        assert(near(main[k].y0 - main[k - 1].y0, 1.15 * LINE, 1), `${file}: lines inside a bullet must be 1.15 apart (${(main[k].y0 - main[k - 1].y0).toFixed(1)}pt)`);
+        k++;
+      }
+      if (k < main.length && main[k].words[0].t === "•") assert(near(main[k].y0 - main[k - 1].y0, 1.5 * LINE, 1.2), `${file}: bullets must be 1.5 lines apart (${(main[k].y0 - main[k - 1].y0).toFixed(1)}pt)`);
+    }
+    // 3. one blank line before the description and before the first bullet
+    for (const [n, l] of main.entries()) {
+      if (n === 0) continue;
+      const gap = l.y0 - main[n - 1].y1;
+      if (/^DESC-MARK/.test(l.text)) assert(gap > 10 && gap < 30, `${file}: one blank line must precede the description (gap ${gap.toFixed(1)}pt after "${main[n - 1].text}")`);
+      if (l.words[0].t === "•" && main[n - 1].words[0].t !== "•" && !near(main[n - 1].x0, main[n].words[1].x0, 0.5)) {
+        assert(gap > 10 && gap < 30, `${file}: one blank line must precede the bullets (gap ${gap.toFixed(1)}pt after "${main[n - 1].text}")`);
+      }
+    }
+  }
 }
 
 // ------------------------------------------------- 4. optional: PDFs through LibreOffice for a visual check
@@ -349,7 +390,14 @@ if (process.argv.includes("--pdf")) {
       id === "internal"
         ? { ...base, experienceSummary: "", certifications: [], tools: [], domains: [], projects: base.projects.slice(0, 1) } // keeps managerial + languages
         : { ...base, specialization: "", tools: [], projects: [] }; // keeps certifications + employers only
-    cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed]);
+    // long text everywhere: wrapping bullets and a wrapping description
+    const LONG = "LONG-MARK led a cross-functional team to migrate a fictional platform to the cloud, cutting batch runtimes and simplifying every release";
+    const long = {
+      ...base,
+      projects: base.projects.map((p) => ({ ...p, description: `DESC-MARK ${LONG}.`, responsibilities: [LONG, "RESP-MARK short", LONG] })),
+      ...(id === "external" ? { experience: base.experience.map((x) => ({ ...x, highlights: [LONG, "HIGH-MARK short"] })) } : {}),
+    };
+    cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed], [`${id}-long`, id, long]);
   }
   for (const [file, id, data] of cases) {
     const { out, zip } = render(id, data);

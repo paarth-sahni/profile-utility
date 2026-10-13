@@ -9,7 +9,7 @@
  * Flags (see scripts/patch-templates.py for where each wraps):
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
- *             hasRole, hasProjectLink, hasDescription
+ *             hasRole, hasProjectLink, hasDescription, hasResponsibilities
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities; per employer: hasPosition, hasDuration, hasHighlights
  * Required content (name, job title, overview, education, skills) has no flag.
@@ -104,6 +104,7 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
       description: text(p.description),
       hasDescription: real(p.description),
       responsibilities: clean(p.responsibilities),
+      hasResponsibilities: clean(p.responsibilities).length > 0,
     }));
   const certifications = clean(d.certifications);
   const tools = clean(d.tools);

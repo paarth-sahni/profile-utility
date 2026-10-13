@@ -52,13 +52,14 @@ test("internal: blank / N/A list items are dropped, lists are cleaned and joined
 test("internal: per-project flags follow each field", () => {
   const mk = (over: Partial<InternalResume["projects"][number]>) => (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], ...over }] }) as { projects: Record<string, unknown>[] }).projects[0];
   const full = mk({});
-  assert.deepEqual([full.hasDuration, full.hasTech, full.hasTeamSize, full.hasRole, full.hasProjectLink, full.hasDescription], [true, true, true, true, true, true]);
+  assert.deepEqual([full.hasDuration, full.hasTech, full.hasTeamSize, full.hasRole, full.hasProjectLink, full.hasDescription, full.hasResponsibilities], [true, true, true, true, true, true, true]);
   assert.equal(mk({ duration: "N/A" }).hasDuration, false);
   assert.equal(mk({ toolsAndTechnologies: [""] }).hasTech, false);
   assert.equal(mk({ teamSize: "n/a" }).hasTeamSize, false);
   assert.equal(mk({ role: " " }).hasRole, false);
   assert.equal(mk({ projectLink: "" }).hasProjectLink, false);
   assert.equal(mk({ description: "N/A" }).hasDescription, false);
+  assert.equal(mk({ responsibilities: ["", "N/A"] }).hasResponsibilities, false, "no bullets: no blank line before them either");
   assert.equal(mk({ role: "N/A" }).role, "", "an N/A value is emptied, never printed");
 });
 
