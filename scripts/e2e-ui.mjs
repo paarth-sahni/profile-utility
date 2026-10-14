@@ -640,13 +640,23 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   const above = await ev("(()=>{const c=document.querySelector('[data-primary-choice]'); const s=[...document.querySelectorAll('[data-preview-step] button')].find(b=>b.textContent.trim()==='Submit'); return !!c && !!s && (c.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING) > 0 && c.getBoundingClientRect().bottom <= s.getBoundingClientRect().top})()");
   check("the checkbox sits just above Submit", above);
   check("with no primary yet the box is ticked and locked ('first')", (await choice()) === "first" && JSON.stringify(await box()) === JSON.stringify({ checked: true, disabled: true }));
+  const layout = JSON.parse(await ev(`(()=>{const row=document.querySelector('[data-primary-choice]'); const box=row.querySelector('input'); const consent=document.querySelector('[data-preview-step] input[type=checkbox]');
+    const consentRow=consent.closest('.rounded-xl'); const label=[...row.querySelectorAll('span')].find(s=>s.textContent.trim()==='Mark as primary profile');
+    const probe=document.createElement('span'); probe.style.color='var(--color-brand-500)'; document.body.append(probe); const red=getComputedStyle(probe).color; probe.remove();
+    return JSON.stringify({ boxLeft: Math.round(box.getBoundingClientRect().left), consentLeft: Math.round(consent.getBoundingClientRect().left),
+      width: Math.round(row.getBoundingClientRect().width), consentWidth: Math.round(consentRow.getBoundingClientRect().width),
+      labelRed: !!label && getComputedStyle(label).color === red, reason: row.querySelector('[data-primary-reason]')?.textContent.trim() ?? null,
+      title: box.title, ariaDescription: box.getAttribute('aria-description') });})()`));
+  check("the primary row is full width with its box at the same left edge as the consent box", layout.boxLeft === layout.consentLeft && layout.width === layout.consentWidth, JSON.stringify(layout));
+  check("the label 'Mark as primary profile' is brand red", layout.labelRed, JSON.stringify(layout));
+  check("the locked box says why: a line under it plus a tooltip / aria-description", layout.reason === "This will be your primary profile" && layout.title === layout.reason && layout.ariaDescription === layout.reason, JSON.stringify(layout));
   const first = await tickConsentAndSubmit();
   check("the first submitted profile becomes primary", primaryName() === "E2E Primary One" && first.includes("your primary profile"), first);
-  check("after Submit the box says it is already primary", (await choice()) === "already");
+  check("after Submit the box says it is already primary", (await choice()) === "already" && (await ev("document.querySelector('[data-primary-reason]')?.textContent.trim()")) === "This is already your primary profile");
 
   // 2. a second profile: the box is free and unticked; ticking it saves and switches in one step
   await newProfile("E2E Primary Two");
-  check("for another profile the box is offered unticked", (await choice()) === "choose" && JSON.stringify(await box()) === JSON.stringify({ checked: false, disabled: false }));
+  check("for another profile the box is offered unticked, with no locked-reason line", (await choice()) === "choose" && JSON.stringify(await box()) === JSON.stringify({ checked: false, disabled: false }) && !(await ev("!!document.querySelector('[data-primary-reason]')")));
   await ev("document.querySelector('[data-primary-choice] input').click()");
   await tickConsentAndSubmit();
   check("Submit with the box ticked makes this profile primary (exactly one primary)", primaryName() === "E2E Primary Two");

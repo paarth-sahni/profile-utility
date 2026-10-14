@@ -8,7 +8,7 @@
  * recorded in the audit log (POST /api/consent) before the action runs, and the action is cancelled if that fails.
  * The validated profile comes from the workflow; nothing here edits it.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox";
 import { PRIMARY_EXPLANATION } from "@/components/MarkPrimaryButton";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
@@ -79,6 +79,9 @@ export default function PreviewStep({
   const [submitted, setSubmitted] = useState<SubmittedVersion | null>(null);
   const [makePrimary, setMakePrimary] = useState(false);
   const primaryLocked = primaryChoice === "already" || primaryChoice === "first";
+  const lockedReason =
+    primaryChoice === "already" ? "This is already your primary profile" : primaryChoice === "first" ? "This will be your primary profile" : null;
+  const primaryIds = useId();
   const checkbox = useRef<HTMLInputElement>(null);
 
   const ready = pdf.status === "ready";
@@ -193,22 +196,29 @@ export default function PreviewStep({
       {note && !submitted && <p className="text-sm text-ink-light">{note}</p>}
 
       {onSubmit && primaryChoice && (
-        <div className="flex justify-end" data-primary-choice={primaryChoice}>
-          <label className="flex max-w-md items-start gap-3 text-sm text-ink">
+        // same box and left edge as the consent checkbox above; locked boxes say why (visible line + tooltip)
+        <div className="rounded-xl border border-gray-200 bg-white p-4" data-primary-choice={primaryChoice}>
+          <label className="flex items-start gap-3 text-sm" title={lockedReason ?? undefined}>
             <input
               type="checkbox"
               checked={primaryLocked || makePrimary}
               disabled={primaryLocked || busy !== null}
               onChange={(e) => setMakePrimary(e.target.checked)}
+              title={lockedReason ?? undefined}
+              aria-description={lockedReason ?? undefined}
+              aria-describedby={`${primaryIds}-explain${lockedReason ? ` ${primaryIds}-reason` : ""}`}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[#EA1B3D] disabled:opacity-60"
             />
             <span>
-              Mark as primary profile
-              <span className="block text-xs text-ink-light">
+              <span className="font-medium text-brand-500">Mark as primary profile</span>
+              <span id={`${primaryIds}-explain`} className="block text-xs text-ink-light">
                 {PRIMARY_EXPLANATION}
-                {primaryChoice === "already" && " This is already your primary profile."}
-                {primaryChoice === "first" && " Your first submitted profile becomes your primary profile."}
               </span>
+              {lockedReason && (
+                <span id={`${primaryIds}-reason`} data-primary-reason className="mt-1 block text-xs text-ink">
+                  {lockedReason}
+                </span>
+              )}
             </span>
           </label>
         </div>
