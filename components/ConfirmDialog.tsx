@@ -7,7 +7,7 @@
  * focus starts on that button and returns to where it was when the dialog closes. Render it only while it
  * should be open (mounting opens it, unmounting closes it).
  */
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 interface ConfirmDialogProps {
   title: string;
@@ -18,9 +18,11 @@ interface ConfirmDialogProps {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Extra content under the message (e.g. a required checkbox). */
+  children?: ReactNode;
 }
 
-export default function ConfirmDialog({ title, message, confirmLabel, cancelLabel, onConfirm, onCancel }: ConfirmDialogProps) {
+export default function ConfirmDialog({ title, message, confirmLabel, cancelLabel, onConfirm, onCancel, children }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -62,6 +64,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
         <p id={messageId} className="mt-2 text-sm text-ink-light">
           {message}
         </p>
+        {children && <div className="mt-4">{children}</div>}
         <div className="mt-6 flex flex-wrap justify-end gap-2">
           <button
             ref={cancelRef}

@@ -160,8 +160,12 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   const manage = await bodyText();
   check("/manage/[id] has Download PDF and Open in Google Docs, and no DOCX download", manage.includes("Download PDF") && !manage.includes("DOCX") && (await googleButton()));
   const blobsBefore = await ev("window.__blobs.length");
-  await click("Download PDF");
+  const managerConsents = () => Number(sql(`select count(*) from audit_log where action='consent_download' and actor_id=(select id from auth.users where email='manager@example.test')`));
+  const consentsBefore = managerConsents();
+  await t.downloadWithConsent({ tryUnticked: true });
+  check("Download PDF on /manage/[id] asks for the consent tick first; unticked, nothing is downloaded", t.lastConsentCheck.blocked);
   await waitFor(`window.__blobs.length > ${blobsBefore}`, "manager PDF download");
+  check("the manager's consent was recorded before the download", managerConsents() === consentsBefore + 1);
   const managerPdf = await t.lastPdf();
   check("Download PDF on /manage/[id] saves a PDF named <Name>-<Job title>-InfoBeans.pdf", managerPdf.isPdf && managerPdf.name === "E2E_Docs_Person-Senior_Engineer-InfoBeans.pdf" && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
   check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in editor"));
@@ -199,7 +203,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await waitFor("document.body.innerText.includes('E2E Member Docs Person')", "member's profile page");
   check("a member sees Download PDF (no DOCX) but no Open in Google Docs on My Profiles", (await bodyText()).includes("Download PDF") && !(await bodyText()).includes("DOCX") && !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs"));
   const memberBlobs = await ev("window.__blobs.length");
-  await click("Download PDF");
+  await t.downloadWithConsent();
   await waitFor(`window.__blobs.length > ${memberBlobs}`, "member PDF download");
   const memberPdf = await t.lastPdf();
   check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === "E2E_Member_Docs_Person-Senior_Engineer-InfoBeans.pdf" && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);

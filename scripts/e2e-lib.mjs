@@ -192,6 +192,29 @@ export async function startHarness(title) {
      * From Edit details: Preview & Submit, tick the consent box and press Submit; resolves once the success message shows.
      * Saving is only possible this way (there is no Save button on Edit details). Returns the success text.
      */
+    /** Result of the last downloadWithConsent({ tryUnticked: true }). */
+    lastConsentCheck: { blocked: false },
+    /**
+     * My Profiles / Manage: Download PDF opens the consent dialog; ticks the box and confirms. With `tryUnticked`, first
+     * confirms without the tick and records whether that was refused (message shown, nothing downloaded).
+     */
+    async downloadWithConsent({ tryUnticked = false } = {}) {
+      const blobs = await h.ev("window.__blobs.length");
+      await h.click("Download PDF");
+      await h.waitFor("!!document.querySelector('dialog[open] input[type=checkbox]')", "consent dialog");
+      if (tryUnticked) {
+        await h.click("Download PDF", "dialog[open] button");
+        await sleep(300);
+        h.lastConsentCheck = {
+          blocked:
+            (await h.ev("document.querySelector('dialog[open]')?.innerText.includes('Please tick the box to confirm')")) === true &&
+            (await h.ev("window.__blobs.length")) === blobs,
+        };
+      }
+      await h.ev("document.querySelector('dialog[open] input[type=checkbox]').click()");
+      await sleep(100);
+      await h.click("Download PDF", "dialog[open] button");
+    },
     async submitViaPreview() {
       await h.click("Preview & Submit →");
       await h.waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");

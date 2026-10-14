@@ -29,6 +29,7 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    be ticked before Submit, Download or Google Docs. Each use is written to `audit_log` (`consent_submit`,
    `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
    content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
+   *Download PDF* on My Profiles and Manage asks for the same tick in a dialog and records `consent_download` the same way.
 
 **Submit** (internal only, on Preview & Submit) validates, records the consent and saves the profile as a new version in
 My Profiles (if nothing changed since the last save, that version is reused). Preview stays on screen and shows
@@ -122,7 +123,8 @@ position and ratio, bullets, blank lines, sidebar spacing). Open those PDFs to l
 - `lib/generate.ts` — fills the template in the browser (Google Docs upload only)
 - `components/ProfileWorkflow.tsx` — the steps, validation, saving and Submit
 - `components/ExternalForm.tsx`, `components/InternalForm.tsx` — the Edit details editors
-- `components/PreviewStep.tsx` — Preview step: consent checkbox, Download PDF / Google Docs / Submit
+- `components/PreviewStep.tsx` — Preview & Submit step: consent checkbox, Download PDF / Google Docs / Submit
+- `components/ConsentCheckbox.tsx` — the consent checkbox shared by Preview & Submit and the Download PDF dialog
 - `components/usePreviewPdf.ts` — builds the PDF once; the preview and the download use that Blob
 - `components/PdfPreview.tsx` — draws a PDF Blob in the page (pdf.js via `unpdf`)
 - `components/DownloadPdfButton.tsx` — Download PDF on My Profiles and Manage

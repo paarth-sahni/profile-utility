@@ -9,10 +9,11 @@
  * The validated profile comes from the workflow; nothing here edits it.
  */
 import { useEffect, useRef, useState } from "react";
+import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
 import PdfPreview from "@/components/PdfPreview";
 import { usePreviewPdf } from "@/components/usePreviewPdf";
-import { CONSENT_TEXT, type ConsentAction } from "@/lib/consent";
+import type { ConsentAction } from "@/lib/consent";
 import { ConsentError, recordConsent } from "@/lib/consentClient";
 import { savePdf } from "@/lib/pdfClient";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
@@ -22,8 +23,6 @@ export interface SubmittedVersion {
   profileId: string;
   versionNo: number;
 }
-
-const CONSENT_REQUIRED = "Please tick the box to confirm before you continue.";
 
 export interface PreviewStepProps {
   template: TemplateId;
@@ -155,27 +154,15 @@ export default function PreviewStep({
       {pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
 
       <div className="rounded-xl border border-gray-200 bg-cream p-4">
-        <label className="flex items-start gap-3 text-sm text-ink">
-          <input
-            ref={checkbox}
-            type="checkbox"
-            checked={consent}
-            aria-required="true"
-            aria-invalid={consentError ? "true" : undefined}
-            aria-describedby={consentError ? "consent-error" : undefined}
-            onChange={(e) => {
-              setConsent(e.target.checked);
-              if (e.target.checked) setConsentError(null);
-            }}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-[#EA1B3D]"
-          />
-          <span>{CONSENT_TEXT}</span>
-        </label>
-        {consentError && (
-          <p id="consent-error" role="alert" className="mt-2 text-sm text-brand-700">
-            {consentError}
-          </p>
-        )}
+        <ConsentCheckbox
+          inputRef={checkbox}
+          checked={consent}
+          error={consentError}
+          onChange={(checked) => {
+            setConsent(checked);
+            if (checked) setConsentError(null);
+          }}
+        />
       </div>
 
       {submitted && (
