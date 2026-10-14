@@ -259,9 +259,11 @@ the sign-in to keep it to the minimum.
 
 ## Roles and saving
 
-Only `team_member` and `admin` accounts can create profiles (Row Level Security: `profiles_insert_own`); managers and
-checkers can read everything but cannot save. A manager who presses *Submit* on an internal profile therefore gets the
-"could not save" message; they can still Download from Preview & Submit.
+Every signed-in role (`team_member`, `checker`, `manager`, `admin`) can create, save, submit and mark as primary their
+**own** profiles: the write policies check ownership only (migration `20261015120000_every_role_saves_own_profile.sql`).
+Nobody can write someone else's profile; checkers, managers and admins can still read everyone's (managers and admins
+through `/manage`, read-only). Generator, My Profiles and Submit are shown to every role; only Manage is limited to
+managers and admins.
 
 ## Primary profile
 

@@ -407,11 +407,28 @@ describe("roles cannot be changed by the person they belong to", () => {
 });
 
 describe("profiles: who may create and change them", () => {
-  test("checker and manager cannot create a profile", async () => {
-    for (const r of ["checker", "manager"] as const) {
-      const res = await db(r).from("profiles").insert({ owner_id: userId[r], template: "internal" }).select();
-      assert.ok(nothingHappened(res), `${r} created a profile`);
+  test("every role can create a profile they own (team member, checker, manager, admin)", async () => {
+    for (const r of ["member", "checker", "manager", "admin"] as const) {
+      const res = await db(r).from("profiles").insert({ owner_id: userId[r], template: "internal", candidate_name: "Own Scratch" }).select();
+      try {
+        assert.equal(res.error, null, `${r} could not create their own profile`);
+        assert.equal(rows(res).length, 1);
+      } finally {
+        for (const p of rows(res)) await db("admin").from("profiles").delete().eq("id", String(p.id));
+      }
     }
+  });
+
+  test("checker and manager cannot create, update or delete a profile owned by someone else", async () => {
+    for (const r of ["checker", "manager"] as const) {
+      assert.ok(nothingHappened(await db(r).from("profiles").insert({ owner_id: userId.member, template: "internal" }).select()), `${r} created a profile for member`);
+      for (const target of [profileA, profileB, profileC]) {
+        assert.ok(nothingHappened(await db(r).from("profiles").update({ candidate_name: "Tampered" }).eq("id", target).select()), `${r} updated ${target}`);
+        assert.ok(nothingHappened(await db(r).from("profiles").delete().eq("id", target).select()), `${r} deleted ${target}`);
+      }
+    }
+    const names = rows(await db("admin").from("profiles").select("candidate_name"));
+    assert.ok(names.every((n) => n.candidate_name !== "Tampered"));
   });
 
   test("a member cannot create a profile owned by someone else", async () => {
@@ -470,7 +487,7 @@ describe("save_profile_version runs as the caller", () => {
       });
       assert.equal(second.error, null);
       assert.equal((second.data as Row[])[0].new_version_no, 2);
-      // another member's profile cannot be saved onto, and a manager cannot save at all
+      // another member's profile cannot be saved onto, nor by a manager or a checker
       for (const [target, template] of [[profileB, "external"], [profileC, "internal"]] as const) {
         const intoOther = await db("member").rpc("save_profile_version", {
           p_profile_id: target, p_template: template, p_kind: "base", p_label: "x", p_parent: null,
@@ -485,10 +502,10 @@ describe("save_profile_version runs as the caller", () => {
       assert.notEqual(intoA.error, null, "member2 must not save onto member's profile");
       for (const r of ["manager", "checker"] as const) {
         const denied = await db(r).rpc("save_profile_version", {
-          p_profile_id: null, p_template: "internal", p_kind: "base", p_label: "x", p_parent: null,
-          p_source: "scratch", p_profile: { name: "x" }, p_flags: [], p_analysis: null, p_prompt_plan: null,
+          p_profile_id: pid, p_template: "internal", p_kind: "base", p_label: "x", p_parent: null,
+          p_source: "edit", p_profile: { name: "x" }, p_flags: [], p_analysis: null, p_prompt_plan: null,
         });
-        assert.notEqual(denied.error, null, `${r} must not be able to save`);
+        assert.notEqual(denied.error, null, `${r} must not be able to save onto member's profile`);
       }
     } finally {
       await db("admin").from("profiles").delete().eq("id", pid);
@@ -548,6 +565,59 @@ describe("primary profile: only the owner can set it", () => {
       if (before) await db("member").rpc("set_primary_profile", { p_profile_id: before });
     }
   });
+});
+
+describe("checker and manager: create, submit and set primary on their OWN profile; never on someone else's", () => {
+  const doc = { name: "Own Role Profile", jobTitle: "Lead", experienceSummary: "5+ Years", specialization: "", overview: "x" };
+  const submit = (r: RoleName, profileId: string | null, makePrimary: boolean) =>
+    db(r).rpc("submit_profile_version", {
+      p_profile_id: profileId, p_template: "internal", p_kind: "base", p_label: "", p_parent: null, p_source: profileId ? "edit" : "scratch",
+      p_profile: doc, p_flags: [], p_analysis: null, p_prompt_plan: null, p_make_primary: makePrimary,
+    });
+
+  for (const r of ["checker", "manager"] as const) {
+    test(`${r}: own profile works end to end, someone else's is refused`, async () => {
+      const before = rows(await db(r).from("profiles").select("id").eq("owner_id", userId[r]).eq("is_primary", true))[0]?.id ?? null;
+      const created: string[] = [];
+      try {
+        // create + submit (first profile becomes primary when there is none yet)
+        const first = await submit(r, null, false);
+        assert.equal(first.error, null, `${r} could not submit a new profile`);
+        const a = rows(first)[0];
+        created.push(String(a.profile_id));
+        assert.equal(rows(await db("admin").from("profiles").select("owner_id").eq("id", String(a.profile_id)))[0]?.owner_id, userId[r], "owned by the caller");
+        if (!before) assert.equal(a.is_primary, true, "the first profile becomes primary");
+        // a second profile with "Mark as primary": saves and switches
+        const second = await submit(r, null, true);
+        assert.equal(second.error, null);
+        const b = rows(second)[0];
+        created.push(String(b.profile_id));
+        assert.equal(b.is_primary, true);
+        // set primary back to the first, and save a new version of it
+        assert.equal((await db(r).rpc("set_primary_profile", { p_profile_id: a.profile_id })).error, null, `${r} could not set primary`);
+        const v2 = await submit(r, String(a.profile_id), false);
+        assert.equal(v2.error, null);
+        assert.equal(rows(v2)[0].new_version_no, 2);
+        assert.equal(rows(v2)[0].is_primary, true);
+        // archive and restore their own profile
+        assert.equal(rows(await db(r).from("profiles").update({ archived: false }).eq("id", String(b.profile_id)).select()).length, 1);
+
+        // someone else's profile: no save, no new version row, no update, no primary
+        for (const target of [profileA, profileC]) {
+          assert.notEqual((await submit(r, target, false)).error, null, `${r} saved onto ${target}`);
+          assert.ok(nothingHappened(await db(r).from("profile_versions").insert({ profile_id: target, version_no: 99, kind: "base", source: "edit", created_by: userId[r] }).select()), `${r} added a version to ${target}`);
+          assert.ok(nothingHappened(await db(r).from("profiles").update({ candidate_name: "Tampered" }).eq("id", target).select()), `${r} updated ${target}`);
+          assert.notEqual((await db(r).rpc("set_primary_profile", { p_profile_id: target })).error, null, `${r} set primary on ${target}`);
+        }
+        assert.equal(rows(await db("admin").from("profile_versions").select("id").eq("version_no", 99)).length, 0);
+        // and they still read everyone's profiles (read-only)
+        assert.ok(rows(await db(r).from("profiles").select("id").eq("id", profileA)).length === 1, `${r} can still read member's profile`);
+      } finally {
+        for (const id of created) await db("admin").from("profiles").delete().eq("id", id);
+        if (before) await db(r).rpc("set_primary_profile", { p_profile_id: before });
+      }
+    });
+  }
 });
 
 describe("audit_log", () => {

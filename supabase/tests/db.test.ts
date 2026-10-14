@@ -384,3 +384,32 @@ describe("primary profile through the data layer", () => {
     await assert.rejects(setPrimaryProfileAs(ctx.member, "not-a-uuid"), ProfileNotFoundError);
   });
 });
+
+describe("every role saves their OWN profile (checker and manager too), never someone else's", () => {
+  for (const who of ["checker", "manager"] as const) {
+    test(`${who} creates, submits, sets primary and lists their own profiles; cannot touch member's`, async () => {
+      const before = await primaryOf(ctx[who]);
+      const a = await saveVersionAs(ctx[who], internalPayload({ data: { ...INTERNAL_FIXTURE, name: `Ownrole ${who} One` } }));
+      const b = await saveVersionAs(ctx[who], internalPayload({ data: { ...INTERNAL_FIXTURE, name: `Ownrole ${who} Two` }, makePrimary: true }));
+      createdProfiles.push(a.profileId, b.profileId);
+      try {
+        assert.equal(b.isPrimary, true);
+        const a2 = await saveVersionAs(ctx[who], internalPayload({ profileId: a.profileId, source: "edit", data: { ...INTERNAL_FIXTURE, name: `Ownrole ${who} One` } }));
+        assert.equal(a2.versionNo, 2);
+        await setPrimaryProfileAs(ctx[who], a.profileId);
+        assert.equal(await primaryOf(ctx[who]), a.profileId);
+        const mine = await listMyProfilesAs(ctx[who]);
+        assert.ok([a.profileId, b.profileId].every((id) => mine.some((p) => p.id === id)), "My Profiles lists them");
+        assert.ok(mine.every((p) => p.template === "internal"));
+        // someone else's profile stays out of reach
+        const memberProfile = (await listMyProfilesAs(ctx.member))[0];
+        await assert.rejects(saveVersionAs(ctx[who], internalPayload({ profileId: memberProfile.id, source: "edit" })), ProfileNotFoundError);
+        await assert.rejects(setPrimaryProfileAs(ctx[who], memberProfile.id), ProfileNotFoundError);
+        assert.equal(await getMyProfileAs(ctx[who], memberProfile.id), null);
+      } finally {
+        if (before) await setPrimaryProfileAs(ctx[who], before);
+      }
+    });
+  }
+});
+
