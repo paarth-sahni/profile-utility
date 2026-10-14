@@ -2,11 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import DownloadPdfButton from "@/components/DownloadPdfButton";
-import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import MarkPrimaryButton, { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
-import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { getMyProfile, getVersion } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
 
@@ -22,7 +20,6 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
   if (!mine) notFound(); // missing OR somebody else's: same answer, nothing leaked
 
   const { profile, versions, latestVersionId } = mine;
-  const googleDocs = canUseGoogleDocs((await getCurrentUser())?.role); // managers and admins only
   const loaded = await Promise.all(versions.map((v) => getVersion(v.id)));
   const byId = new Map(versions.map((v, i) => [v.id, loaded[i]]));
   const latest = latestVersionId ? byId.get(latestVersionId) ?? loaded[0] : loaded[0];
@@ -81,7 +78,6 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
                         Open in editor
                       </Link>
                       {full && <DownloadPdfButton template={full.template} data={full.data} versionId={v.id} />}
-                      {full && googleDocs && <GoogleDocsForVersion template={full.template} data={full.data} />}
                     </div>
                   </li>
                 );

@@ -1,17 +1,15 @@
 "use client";
 
 /**
- * Purpose: the Preview step. Shows the exact PDF that is generated (see PdfPreview) and offers the ways to finish:
- * "← Back to edit", "Download PDF" (saves the previewed PDF), "Open in Google Docs" (only when `canGoogleDocs`; it
- * uploads the filled DOCX, which Google converts) and "Submit" (only when
- * `onSubmit` is given, i.e. internal profiles). A required consent checkbox must be ticked first; the consent is
+ * Purpose: the Preview (& Submit) step. Shows the exact PDF that is generated (see PdfPreview) and offers the ways to
+ * finish: "← Back to edit", "Download PDF" (saves the previewed PDF) and "Submit" (only when `onSubmit` is given, i.e.
+ * internal profiles). "Open in Google Docs" is not offered here: it is only on the /manage profile pages. A required consent checkbox must be ticked first; the consent is
  * recorded in the audit log (POST /api/consent) before the action runs, and the action is cancelled if that fails.
  * The validated profile comes from the workflow; nothing here edits it.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox";
 import { PRIMARY_EXPLANATION } from "@/components/MarkPrimaryButton";
-import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
 import PdfPreview from "@/components/PdfPreview";
 import { usePreviewPdf } from "@/components/usePreviewPdf";
 import type { ConsentAction } from "@/lib/consent";
@@ -39,10 +37,6 @@ export interface PreviewStepProps {
   data: ResumeData;
   /** Name of the downloaded PDF. */
   fileName: string;
-  /** Title of the Google Doc. */
-  docTitle: string;
-  /** Only managers and admins get "Open in Google Docs". */
-  canGoogleDocs: boolean;
   onBack: () => void;
   /** Called once the PDF was handed to the browser. */
   onDownloaded: () => void;
@@ -61,8 +55,6 @@ export default function PreviewStep({
   template,
   data,
   fileName,
-  docTitle,
-  canGoogleDocs,
   onBack,
   onDownloaded,
   onSubmit,
@@ -232,18 +224,6 @@ export default function PreviewStep({
           <button type="button" onClick={download} disabled={!ready || busy !== null} className={onSubmit ? outline : primary}>
             {busy === "download" ? "Preparing…" : "Download PDF"}
           </button>
-          {canGoogleDocs && ready && (
-            <OpenInGoogleDocsButton
-              template={template}
-              title={docTitle}
-              variant="outline"
-              prepare={() => {
-                if (!requireConsent()) return { ok: false, message: CONSENT_REQUIRED };
-                return { ok: true, data };
-              }}
-              beforeUpload={() => record("google_docs")}
-            />
-          )}
           {onSubmit && (
             <button type="button" onClick={submit} disabled={!ready || busy !== null} className={primary}>
               {busy === "submit" ? "Submitting…" : "Submit"}

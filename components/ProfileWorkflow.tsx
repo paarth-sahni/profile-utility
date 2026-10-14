@@ -125,14 +125,11 @@ export default function ProfileWorkflow({
   audience,
   initial,
   session,
-  canGoogleDocs = false,
   primaryProfileId = null,
 }: {
   audience: Audience;
   initial?: SavedInitial | null;
   session?: WorkflowSession | null;
-  /** Whether "Open in Google Docs" is offered on the Preview step (managers and admins only). */
-  canGoogleDocs?: boolean;
   /** Internal: the signed-in user's primary profile (null when none is marked yet). */
   primaryProfileId?: string | null;
 }) {
@@ -816,8 +813,6 @@ export default function ProfileWorkflow({
               template={templateId}
               data={previewData}
               fileName={pdfFileName(previewData)}
-              docTitle={`${(previewData as { name?: string }).name?.trim() || "Profile"} — ${templateId} profile`}
-              canGoogleDocs={canGoogleDocs}
               onBack={() => goTo(STEP_REVIEW)}
               onDownloaded={() => setDownloaded(true)}
               onSubmit={templateId === "internal" ? submitProfile : undefined}

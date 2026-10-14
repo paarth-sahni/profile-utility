@@ -95,19 +95,22 @@ const googleButton = () => ev("!!document.querySelector('[data-google-docs] butt
 const clickGoogle = () => click("Open in Google Docs");
 const statusText = () => ev("document.querySelector('[data-google-docs]')?.innerText ?? ''");
 
-await t.scenario("Open in Google Docs (managers and admins only)", async () => {
-  await signIn("admin"); // Google Docs is for managers and admins. Admin is used to save: only team members and admins may create profiles (RLS)
+await t.scenario("Open in Google Docs (only on the /manage profile pages, managers and admins)", async () => {
+  await signIn("admin"); // Google Docs is for managers and admins; the admin saves the profiles used here
   await goto("/internal");
   const saved = await saveProfile(COMPLETE);
   const incomplete = await saveProfile({ ...COMPLETE, name: "E2E Incomplete Person", overview: "" }, "Draft");
   await goto(`/profiles/${saved.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Docs Person')", "profile page");
+  check("My Profiles (/profiles/[id]) has no Open in Google Docs, even for an admin", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download PDF"));
+  await goto(`/manage/${saved.profileId}`);
+  await waitFor("document.body.innerText.includes('E2E Docs Person')", "manage page");
   if (!(await googleButton())) {
     console.log("SKIP  Open in Google Docs: NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set for the running dev server");
     return;
   }
 
-  check("the button shows on /profiles/[id]", true);
+  check("the button shows on /manage/[id] for an admin", true);
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "created message");
   const req = driveRequests.at(-1);
@@ -122,14 +125,14 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
 
   // Friendly errors
   for (const [mode, expected] of [["blocked", "blocked the Google sign-in window"], ["closed", "closed before you finished"], ["denied", "access was not granted"]]) {
-    await goto(`/profiles/${saved.profileId}`);
+    await goto(`/manage/${saved.profileId}`);
     await setMode(mode);
     await clickGoogle();
     await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", `error for ${mode}`);
     const text = await statusText();
     check(`"${mode}" shows a friendly message`, text.includes(expected) && !/token|undefined|Error/i.test(text), text);
   }
-  await goto(`/profiles/${saved.profileId}`);
+  await goto(`/manage/${saved.profileId}`);
   driveReply = { status: 403, body: { error: { errors: [{ reason: "accessNotConfigured" }] } } };
   await clickGoogle();
   await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", "api disabled");
@@ -137,7 +140,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   driveReply = { status: 200, body: { id: "e2e-doc", webViewLink: "https://docs.google.com/document/d/e2e-doc/edit" } };
 
   // An incomplete version is stopped before Google is contacted
-  await goto(`/profiles/${incomplete.profileId}`);
+  await goto(`/manage/${incomplete.profileId}`);
   const before = await gisCalls();
   await clickGoogle();
   await waitFor("!!document.querySelector('[data-google-docs] [role=alert]')", "incomplete message");
@@ -173,27 +176,22 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
   check("a manager can export the version they are viewing", true);
 
-  // Preview: Google Docs uploads the previewed file, after the consent box
-  await goto("/internal");
-  await ev("sessionStorage.clear()");
-  await goto("/internal");
-  await click("Get started");
-  await waitFor("!!document.querySelector('label input')", "edit form (manager)");
-  await t.fillRequired("E2E Google Preview");
-  await click("Preview & Submit →");
-  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (manager)");
-  check("a manager sees Open in Google Docs on Preview", await googleButton());
-  const since = sql("select now()");
-  const popups = await gisCalls();
-  const uploads = driveRequests.length;
-  await clickGoogle();
-  await sleep(500);
-  check("without the consent box: a message, no Google popup, no upload", (await statusText()).includes("Please tick the box") && (await gisCalls()) === popups && driveRequests.length === uploads);
-  await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
-  await clickGoogle();
-  await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "created from Preview");
-  check("with the box ticked the DOCX is uploaded to Google", driveRequests.length === uploads + 1 && driveRequests.at(-1).body.includes("E2E Google Preview"));
-  check("and the consent was recorded for google_docs", Number(sql(`select count(*) from audit_log where action='consent_google_docs' and at >= '${since}'`)) === 1);
+  // Preview & Submit never offers Google Docs, not even to a manager or an admin
+  for (const who of ["manager", "admin"]) {
+    await signIn(who);
+    await goto("/internal");
+    await ev("sessionStorage.clear()");
+    await goto("/internal");
+    await click("Get started");
+    await waitFor("!!document.querySelector('label input')", `edit form (${who})`);
+    await t.fillRequired(`E2E Google Preview ${who}`);
+    await click("Preview & Submit →");
+    await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", `preview (${who})`);
+    const body = await bodyText();
+    check(`a ${who} sees no Open in Google Docs on Preview & Submit; Download PDF and Submit stay`, !(await googleButton()) && !body.includes("Open in Google Docs") && body.includes("Download PDF") && (await ev("[...document.querySelectorAll('[data-preview-step] button')].some(b=>b.textContent.trim()==='Submit')")));
+    await goto("/profiles");
+    await ev("sessionStorage.clear()");
+  }
 
   // A plain member never sees Google Docs: not on Preview, not on My Profiles
   await signIn("member");

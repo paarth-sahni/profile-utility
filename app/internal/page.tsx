@@ -1,5 +1,5 @@
 import ProfileWorkflow from "@/components/ProfileWorkflow";
-import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { loadInitial } from "@/lib/db/initial";
 import { getMyPrimaryProfileId } from "@/lib/db/profiles";
 import { getSessionInfo } from "@/lib/sessionInfo";
@@ -14,7 +14,6 @@ export default async function InternalPage({ searchParams }: { searchParams: Pro
       audience="internal"
       initial={initial}
       session={session}
-      canGoogleDocs={canUseGoogleDocs(user?.role)}
       primaryProfileId={primaryProfileId}
     />
   );

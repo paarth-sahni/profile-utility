@@ -22,11 +22,10 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    - **← Back to edit** — keeps every edit.
    - **Download PDF** — all users. File name `<Name>-<Job_title>-InfoBeans.pdf`, e.g.
      `Abdul-Technology_Delivery_Manager-InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed).
-   - **Open in Google Docs** — managers and admins only (see below).
    - **Submit** — internal profiles only (see below).
 
    A **required consent checkbox** — "I confirm the information in this profile is accurate and may be shared" — must
-   be ticked before Submit, Download or Google Docs. Each use is written to `audit_log` (`consent_submit`,
+   be ticked before Submit or Download. Each use is written to `audit_log` (`consent_submit`,
    `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
    content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
    *Download PDF* on My Profiles and Manage asks for the same tick in a dialog and records `consent_download` the same way.
@@ -42,7 +41,7 @@ no further step and no external form link.
 |---|---|---|
 | Saved in the database | yes, by Submit on Preview: My Profiles, version history (Base, v2, v3, ...) | **never** |
 | Edit details | no save controls (same as external) | no save controls |
-| Last step | **Preview & Submit**: Back to edit, Download PDF, Submit (stays on the step), (Google Docs) | **Preview**: Back to edit, Download PDF, (Google Docs) |
+| Last step | **Preview & Submit**: Back to edit, Download PDF, Submit (stays on the step) | **Preview**: Back to edit, Download PDF |
 | Session-expiry banner | "go to Preview & Submit to save your profile (or download your PDF)", no button | "download your PDF now", no button |
 | Listed in My Profiles / Manage | yes | n/a |
 
@@ -123,7 +122,7 @@ position and ratio, bullets, blank lines, sidebar spacing). Open those PDFs to l
 - `lib/generate.ts` — fills the template in the browser (Google Docs upload only)
 - `components/ProfileWorkflow.tsx` — the steps, validation, saving and Submit
 - `components/ExternalForm.tsx`, `components/InternalForm.tsx` — the Edit details editors
-- `components/PreviewStep.tsx` — Preview & Submit step: consent checkbox, Download PDF / Google Docs / Submit
+- `components/PreviewStep.tsx` — Preview & Submit step: consent checkbox, Download PDF / Submit
 - `components/ConsentCheckbox.tsx` — the consent checkbox shared by Preview & Submit and the Download PDF dialog
 - `components/usePreviewPdf.ts` — builds the PDF once; the preview and the download use that Blob
 - `components/PdfPreview.tsx` — draws a PDF Blob in the page (pdf.js via `unpdf`)
@@ -166,10 +165,10 @@ npm run test:e2e
 `npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above, incl. a 401 from `/api/pdf` on Preview) and
 `scripts/e2e-ui.mjs`: the Preview step (the PDF itself drawn in the page, the downloaded PDF byte-identical to the
 previewed one (SHA-256) and named `<Name>-<Job_title>-InfoBeans.pdf`, no DOCX anywhere, `/api/pdf` refusing incomplete
-data, validation gate, consent before Download / Submit / Google Docs and its `audit_log` rows, Back keeps edits),
+data, validation gate, consent before Download / Submit and its `audit_log` rows, Back keeps edits),
 Download PDF on My Profiles, Manage and for external profiles, Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
-external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs for managers
-and admins only (Preview, My Profiles, Manage), previews hiding empty sections, automatic version labels (Base, v2, v3), saving only through Submit, the
+external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs only on
+/manage/[id] for managers and admins (never on Preview or My Profiles), previews hiding empty sections, automatic version labels (Base, v2, v3), saving only through Submit, the
 unsaved-changes dialog, optional-section notes and brand rules. Google is **stubbed** in the page (a fake token client;
 Drive requests are intercepted), so nothing real is called and the test can prove the token goes only to
 `www.googleapis.com`. The Google checks need `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to any value in `.env.local` before
@@ -218,12 +217,12 @@ which is safe to import from `proxy.ts`, client components and tests.
 
 ## Open in Google Docs
 
-An **Open in Google Docs** button sits next to *Download PDF* on Preview, on `/profiles/[id]` (every version) and on
-`/manage/[id]` (read-only; the manager view also has *Download PDF*). It is offered to **managers and admins only**
+An **Open in Google Docs** button sits next to *Download PDF* on the `/manage/[id]` profile pages only (read-only; not on
+Preview & Submit and not on My Profiles). It is offered to **managers and admins only**
 (`canUseGoogleDocs()` in `lib/authRules.ts`; the pages read the role on the server and do not render the button for
 anyone else). It is a product rule enforced by the pages: the export runs in the browser with the user's own Google
-token, so there is no server call to refuse. On Preview it uploads the filled DOCX of the profile being previewed (the
-same data the PDF is made from), after the consent box is ticked and recorded. It works entirely in the browser:
+token, so there is no server call to refuse. It uploads the filled DOCX of the version being viewed (the same data the PDF
+is made from). It works entirely in the browser:
 
 1. On click, Google Identity Services opens Google's own consent popup and returns a short-lived **access token**
    for the single scope `https://www.googleapis.com/auth/drive.file` (only files this app creates).
@@ -262,7 +261,7 @@ the sign-in to keep it to the minimum.
 
 Only `team_member` and `admin` accounts can create profiles (Row Level Security: `profiles_insert_own`); managers and
 checkers can read everything but cannot save. A manager who presses *Submit* on an internal profile therefore gets the
-"could not save" message; they can still Download and use Google Docs from Preview.
+"could not save" message; they can still Download from Preview & Submit.
 
 ## Primary profile
 
@@ -305,8 +304,8 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
    Preview; Preview has *Back to edit* and *Download PDF* only; the PDF is named after the candidate. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
    → `EXTERNAL_NOT_SAVED` (400).
-8. **Google Docs**: as `member@example.test` it is on neither Preview nor *My Profiles*; as `admin@example.test` or
-   `manager@example.test` it is on Preview, and on `/manage/[id]`; admins also see it on *My Profiles*.
+8. **Google Docs**: nobody sees it on Preview & Submit or on *My Profiles*; as `admin@example.test` or
+   `manager@example.test` it is on `/manage/[id]`.
 9. **Manage**: `/manage` as `manager@example.test` lists internal profiles only; *Download PDF* on `/manage/[id]` saves
    the version shown.
 10. **Saved versions**: on *My Profiles* → a profile → *Download PDF* on any version → that version as a PDF; an
