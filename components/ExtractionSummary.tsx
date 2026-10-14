@@ -5,8 +5,8 @@
  */
 export default function ExtractionSummary({ fileName }: { fileName: string | null }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-hairline bg-white px-4 py-3 text-sm text-ink shadow-sm">
-      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[11px] text-white" aria-hidden>
+    <div className="flex items-start gap-3 border border-hairline bg-white px-4 py-3 text-sm text-ink shadow-sm">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center bg-brand-500 text-[11px] text-white" aria-hidden>
         ✓
       </span>
       <p>

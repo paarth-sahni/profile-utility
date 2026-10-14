@@ -17,7 +17,7 @@ export default function DraftRestoreBanner({ savedAt, onRestore, onDiscard }: Dr
   return (
     <section
       aria-labelledby="draft-restore-title"
-      className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
+      className="mb-[clamp(1.25rem,3.5vh,2.25rem)] flex flex-wrap items-center justify-between gap-3 border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
     >
       <div>
         <h2 id="draft-restore-title" className="font-medium text-ink-dark">
@@ -31,14 +31,14 @@ export default function DraftRestoreBanner({ savedAt, onRestore, onDiscard }: Dr
         <button
           type="button"
           onClick={onRestore}
-          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+          className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
         >
           Restore
         </button>
         <button
           type="button"
           onClick={onDiscard}
-          className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition hover:bg-gray-50"
+          className="border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition hover:bg-gray-50"
         >
           Discard
         </button>

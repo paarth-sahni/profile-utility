@@ -15,7 +15,7 @@ function Chips({ items }: { items: string[] }) {
   return (
     <ul className="flex flex-wrap gap-1.5">
       {items.map((t, i) => (
-        <li key={i} className="rounded-2xl bg-cream px-2.5 py-1 text-xs text-ink">
+        <li key={i} className="bg-cream px-2.5 py-1 text-xs text-ink">
           {t}
         </li>
       ))}
@@ -56,7 +56,7 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
   const headline = [d.jobTitle, d.experienceSummary, d.specialization].filter(hasText).join(" · ");
 
   return (
-    <article className="space-y-5 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <article className="space-y-5 border border-gray-200 bg-white p-6 shadow-sm">
       <header>
         <h2 className="text-2xl font-medium text-ink-dark">{hasText(d.name) ? d.name : "Untitled profile"}</h2>
         {headline && <p className="text-sm text-ink-light">{headline}</p>}
@@ -82,10 +82,10 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
         <Section title="Skills">
           <ul className="flex flex-wrap gap-1.5">
             {sortedSkills.map((s, i) => (
-              <li key={i} className="inline-flex items-center gap-1.5 rounded-full bg-cream py-1 pl-3 pr-1 text-xs text-ink">
+              <li key={i} className="inline-flex items-center gap-1.5 bg-cream py-1 pl-3 pr-1 text-xs text-ink">
                 {s.name}
                 {formatRating(s.rating) && (
-                  <span className="rounded-full bg-white px-2 py-0.5 font-medium text-brand-600 ring-1 ring-hairline">{formatRating(s.rating)}</span>
+                  <span className="bg-white px-2 py-0.5 font-medium text-brand-600 ring-1 ring-hairline">{formatRating(s.rating)}</span>
                 )}
               </li>
             ))}
@@ -132,7 +132,7 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
               const duties = cleanList(p.responsibilities);
               const meta = [p.duration, p.role, hasText(p.teamSize) ? `Team: ${p.teamSize}` : ""].filter(hasText);
               return (
-                <div key={i} className="rounded-lg border border-hairline p-4">
+                <div key={i} className="border border-hairline p-4">
                   <p className="font-medium text-ink-dark">{hasText(p.title) ? p.title : hasText(p.client) ? p.client : "Project"}</p>
                   {meta.length > 0 && <p className="text-xs text-ink-light">{meta.join(" · ")}</p>}
                   {tech.length > 0 && (
@@ -160,7 +160,7 @@ export default function ProfilePreview({ template, data }: { template: TemplateI
               const highlights = cleanList(x.highlights);
               const meta = [x.position, x.duration].filter(hasText);
               return (
-                <div key={i} className="rounded-lg border border-hairline p-4">
+                <div key={i} className="border border-hairline p-4">
                   {hasText(x.company) && <p className="font-medium text-ink-dark">{x.company}</p>}
                   {meta.length > 0 && <p className="text-xs text-ink-light">{meta.join(" · ")}</p>}
                   {highlights.length > 0 && (

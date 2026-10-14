@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { clearDraftsOnSignOut, getSessionStorage } from "@/lib/draftStorage";
 
@@ -66,7 +65,7 @@ export default function UserMenu({ user }: { user: NavUser }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account menu for ${user.name}`}
-        className="flex items-center gap-2 rounded-full p-0.5 ring-1 ring-hairline md:pr-2 transition hover:ring-brand-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        className="flex items-center gap-2 rounded-full p-0.5 ring-1 ring-hairline md:pr-2 transition hover:ring-brand-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         <Avatar user={user} size="sm" />
         <svg
@@ -88,7 +87,7 @@ export default function UserMenu({ user }: { user: NavUser }) {
       {open && (
         <div
           role="menu"
-          className="animate-fade-up absolute right-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-xl border border-hairline bg-white shadow-lg"
+          className="animate-fade-up absolute right-0 top-full z-40 mt-2 w-72 overflow-hidden border border-hairline bg-white shadow-lg"
         >
           <div className="flex items-center gap-3 px-4 py-4">
             <Avatar user={user} size="lg" />
@@ -100,29 +99,11 @@ export default function UserMenu({ user }: { user: NavUser }) {
             </div>
           </div>
           <div className="border-t border-hairline p-1.5">
-            <Link
-              href="/profiles"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-600"
-            >
-              My Profiles
-            </Link>
-            {(user.role === "manager" || user.role === "admin") && (
-              <Link
-                href="/manage"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-600"
-              >
-                Manage
-              </Link>
-            )}
             <form action="/auth/signout" method="post" onSubmit={() => clearDraftsOnSignOut(getSessionStorage())}>
               <button
                 type="submit"
                 role="menuitem"
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-600"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-600"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

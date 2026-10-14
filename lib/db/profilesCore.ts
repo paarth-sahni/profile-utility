@@ -270,15 +270,17 @@ export async function searchProfilesByNameAs({ supabase }: DbContext, query: str
   }
   const parsed = z.array(searchRow).safeParse(data ?? []);
   if (!parsed.success) throw new Error("SEARCH_FAILED");
+  // Managers see each team member's primary profile only (other profiles / role versions are a later feature).
+  const primary = parsed.data.filter((r) => r.is_primary);
   const titles = new Map<string, string>();
-  if (parsed.data.length > 0) {
+  if (primary.length > 0) {
     const { data: cur } = await supabase
       .from("profiles")
       .select("id, current:profile_versions!profiles_current_version_fk(job_title)")
-      .in("id", parsed.data.map((r) => r.id));
+      .in("id", primary.map((r) => r.id));
     for (const c of cur ?? []) titles.set(c.id, jobTitleOf(c.current));
   }
-  return parsed.data.map((r) => ({
+  return primary.map((r) => ({
     id: r.id,
     template: r.template,
     candidateName: r.candidate_name,
@@ -293,72 +295,51 @@ export async function searchProfilesByNameAs({ supabase }: DbContext, query: str
 }
 
 /**
- * Any profile with its version history, for managers/admins; null if it does not exist. `otherProfiles` are the same
- * person's other internal profiles (newest first), so a manager can still open them from the primary one.
+ * A team member's PRIMARY profile for managers/admins, with its current version only; null when it does not exist or
+ * is not the member's primary profile (managers see nothing else for now: no other profiles, no version history).
  */
 export async function getProfileForManagerAs(
   { supabase }: DbContext,
   id: string,
-): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null; otherProfiles: ProfileSummary[] } | null> {
+): Promise<{ profile: ManagedProfileSummary; latestVersionId: string | null } | null> {
   await requireManagerAs(supabase);
   if (!uuid.safeParse(id).success) return null;
   const { data: p } = await supabase
     .from("profiles")
-    .select("id, owner_id, template, candidate_name, updated_at, current_version_id, is_primary, current:profile_versions!profiles_current_version_fk(job_title), owner:app_users!profiles_owner_id_fkey(full_name, email)")
+    .select("id, template, candidate_name, updated_at, current_version_id, is_primary, current:profile_versions!profiles_current_version_fk(job_title), owner:app_users!profiles_owner_id_fkey(full_name, email)")
     .eq("id", id)
+    .eq("is_primary", true)
     .maybeSingle();
   if (!p) return null;
-  const { data: vs } = await supabase
-    .from("profile_versions")
-    .select("id, version_no, kind, label, source, created_at")
-    .eq("profile_id", p.id)
-    .order("version_no", { ascending: false });
-  const versions: VersionSummary[] = (vs ?? []).map((v) => ({
-    id: v.id,
-    versionNo: v.version_no,
-    kind: v.kind as VersionSummary["kind"],
-    label: v.label,
-    source: v.source,
-    createdAt: v.created_at,
-  }));
   const owner = p.owner as unknown as { full_name: string | null; email: string | null } | null;
-  const { data: others } = await supabase
-    .from("profiles")
-    .select("id, template, candidate_name, updated_at, is_primary, current:profile_versions!profiles_current_version_fk(job_title), profile_versions!profile_versions_profile_id_fkey(count)")
-    .eq("owner_id", p.owner_id)
-    .eq("template", "internal")
-    .eq("archived", false)
-    .neq("id", p.id)
-    .order("updated_at", { ascending: false });
   return {
-    otherProfiles: (others ?? []).map((r) => ({
-      id: r.id,
-      template: r.template as TemplateId,
-      candidateName: r.candidate_name,
-      jobTitle: jobTitleOf(r.current),
-      isPrimary: r.is_primary,
-      versionCount: (r.profile_versions as unknown as { count: number }[])?.[0]?.count ?? 0,
-      updatedAt: r.updated_at,
-    })),
     profile: {
       id: p.id,
       template: p.template as TemplateId,
       candidateName: p.candidate_name,
       jobTitle: jobTitleOf(p.current),
       isPrimary: p.is_primary,
-      versionCount: versions.length,
+      versionCount: 1,
       updatedAt: p.updated_at,
       ownerName: owner?.full_name ?? "",
       ownerEmail: owner?.email ?? "",
       score: 0,
     },
-    versions,
-    latestVersionId: p.current_version_id ?? versions[0]?.id ?? null,
+    latestVersionId: p.current_version_id ?? null,
   };
 }
 
-/** One version of any profile, for managers/admins (read-only view); null if missing. */
+/** The current version of a primary profile, for managers/admins (read-only view); null otherwise. */
 export async function getVersionForManagerAs({ supabase }: DbContext, versionId: string): Promise<LoadedVersion | null> {
   await requireManagerAs(supabase);
+  if (!uuid.safeParse(versionId).success) return null;
+  // only the current version of a primary profile (the rest is not shown to managers for now)
+  const { data: owning } = await supabase
+    .from("profile_versions")
+    .select("id, profile:profiles!profile_versions_profile_id_fkey(is_primary, current_version_id)")
+    .eq("id", versionId)
+    .maybeSingle();
+  const profile = owning?.profile as unknown as { is_primary: boolean; current_version_id: string | null } | null;
+  if (!profile?.is_primary || profile.current_version_id !== versionId) return null;
   return fetchVersion(supabase, versionId);
 }

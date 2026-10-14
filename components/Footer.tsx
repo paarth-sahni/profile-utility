@@ -63,7 +63,7 @@ export default function Footer() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={s.label}
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-md border border-hairline bg-white text-ink transition-colors hover:border-ink hover:bg-ink hover:text-white"
+                className="flex h-[34px] w-[34px] items-center justify-center border border-hairline bg-white text-ink transition-colors hover:border-ink hover:bg-ink hover:text-white"
               >
                 <svg
                   width="16"

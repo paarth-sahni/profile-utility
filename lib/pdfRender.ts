@@ -17,6 +17,7 @@ import { execFile } from "node:child_process";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type PizZip from "pizzip";
 import { fillTemplate } from "./docxFill";
 import type { ResumeData, TemplateId } from "./schemas";
@@ -98,7 +99,7 @@ export async function convertDocxToPdf(docx: Uint8Array): Promise<Uint8Array> {
         `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>${fonts}</dir></fontconfig>\n`,
       );
       const args = [
-        `-env:UserInstallation=file://${path.join(dir, "lo-profile")}`,
+        `-env:UserInstallation=${pathToFileURL(path.join(dir, "lo-profile")).href}`, // a real file URL: file:///C:/... on Windows, file:///tmp/... on Linux
         "--headless",
         "--norestore",
         "--nologo",

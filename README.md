@@ -52,7 +52,7 @@ this rule, are not deleted, just not listed.
 
 Additional pages: **/instructions** (step-by-step generation process for each
 template) and **/style-guide** (the typography Style Guide PDF, embedded as-is
-from `public/style-guide/`).
+from `public/style-guide/`; no longer linked from the header or the Instructions page).
 
 ## PDF
 
@@ -72,6 +72,9 @@ same PDF.
 - Settings (optional): `SOFFICE_PATH` (default `soffice`), `PDF_FONTS_DIR` (default `public/fonts`).
 - Preview draws the PDF with pdf.js (through `unpdf`, loaded only on Preview) rather than an `<iframe>`: phones do not
   show a PDF inside a page (Android offers a download, iOS shows page 1 only).
+- My Profiles (`/profiles/[id]`) and the manager's page (`/manage/[id]`) show a saved profile as this same PDF
+  (`components/SavedProfileDocument.tsx`). A version that is incomplete, or a PDF service that is down, shows a short note
+  and the plain card view (`ProfilePreview`) instead of an empty page.
 - *Open in Google Docs* still uploads the filled DOCX (Google converts it); that is the only place a DOCX is made.
 
 ### Production server (go-live checklist)
@@ -277,8 +280,11 @@ Each team member has at most one **primary** internal profile: the one managers 
 - **Rules in the database:** `profiles.is_primary` with a unique index (one per owner). Nobody writes the column
   directly (no INSERT/UPDATE privilege); `set_primary_profile(id)` switches it atomically and only for the owner (a
   trigger refuses anyone else, admins included).
-- **/manage:** one row per team member: their primary profile, or their most recently updated one when none is
-  marked (there is no backfill). A profile's page lists the person's other profiles, read-only.
+- **/manage:** managers and admins see each team member's **primary profile only**: one row per member, opening it
+  shows that profile's current version (no version history, no other profiles; those are a later feature). Someone
+  without a primary profile is not listed until they mark one or submit (there is no backfill), and another profile's
+  id answers "not found". This is enforced in the data layer (`lib/db/profilesCore.ts`); the database policies
+  themselves still let a manager read other rows, which a later migration can tighten.
 
 ## Manual test list
 

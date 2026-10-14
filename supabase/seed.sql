@@ -120,6 +120,9 @@ begin
     '[{"path": "skills.0.rating", "reason": "rating inferred, please confirm"}]'::jsonb, null, null
   );
 
+  -- Alex's profile is the primary one (managers only see primary profiles).
+  update public.profiles set is_primary = true where owner_id = '00000000-0000-0000-0000-000000000101' and candidate_name = 'Alex Sample';
+
   -- Jamie Placeholder: internal, owner = member2 (a second team member, for member-vs-member isolation tests).
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000105","role":"authenticated"}', true);
 
@@ -153,6 +156,8 @@ begin
     }$json$::jsonb,
     '[]'::jsonb, null, null
   );
+
+  update public.profiles set is_primary = true where owner_id = '00000000-0000-0000-0000-000000000105' and candidate_name = 'Jamie Placeholder';
 
   -- Riley Example: external, owner = admin. v1 Base, then v2 edit.
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);

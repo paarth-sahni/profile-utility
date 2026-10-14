@@ -41,7 +41,7 @@ export default function SessionExpiryBanner({ remainingMs, canSave, saves = true
     <div
       role={ended ? "alert" : "status"}
       aria-live={ended ? "assertive" : "polite"}
-      className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
+      className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-brand-200 bg-warm px-4 py-3 text-sm text-ink"
     >
       <p>{message}</p>
     </div>

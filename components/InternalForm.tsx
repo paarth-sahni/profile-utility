@@ -158,7 +158,7 @@ export default function InternalForm({
           >
             <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
               <Field label="Skill" error={fe[`skills.${i}.name`]} value={s.name} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
-              <Field label="Rating out of 5 (e.g. 4)" error={fe[`skills.${i}.rating`]} value={s.rating} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, rating: v } : x)))} />
+              <Field label="Rating out of 5 (e.g. 4.5)" rating error={fe[`skills.${i}.rating`]} value={s.rating} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, rating: v } : x)))} />
             </div>
           </ItemCard>
         ))}

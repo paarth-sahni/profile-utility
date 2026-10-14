@@ -5,7 +5,7 @@ import type { Audience } from "@/components/ProfileWorkflow";
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center bg-brand-500 text-xs font-semibold text-white">
         {n}
       </span>
       <div>
@@ -18,7 +18,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <section className="border border-gray-200 bg-white p-6 shadow-sm">
       <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
       {children}
     </section>
@@ -238,11 +238,6 @@ export default function InstructionsContent({ audience }: { audience: Audience }
           <li>
             <strong>Formatting adjustments</strong> – To change the content, go back to Edit details and preview
             again. Managers and admins can also open the profile in Google Docs and adjust the formatting there.
-          </li>
-          <li>
-            <strong>Style Guide</strong> – Use the predefined{" "}
-            <Link href="/style-guide" className="text-brand-500 underline">document style guide</Link> to keep
-            fonts, headings, and spacing consistent throughout the profile.
           </li>
         </ul>
       </Card>

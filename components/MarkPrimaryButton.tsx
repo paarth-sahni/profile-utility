@@ -43,7 +43,7 @@ export default function MarkPrimaryButton({ profileId }: { profileId: string }) 
         type="button"
         onClick={() => setAsking(true)}
         disabled={busy}
-        className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
+        className="border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
       >
         {busy ? "Saving…" : "Mark as primary"}
       </button>
@@ -69,7 +69,7 @@ export default function MarkPrimaryButton({ profileId }: { profileId: string }) 
 /** The "Primary" badge. */
 export function PrimaryBadge() {
   return (
-    <span data-primary-badge className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-medium text-white">
+    <span data-primary-badge className="bg-brand-500 px-2.5 py-0.5 text-xs font-medium text-white">
       Primary
     </span>
   );

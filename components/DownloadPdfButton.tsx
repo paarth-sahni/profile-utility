@@ -71,7 +71,7 @@ export default function DownloadPdfButton({
         type="button"
         onClick={onClick}
         disabled={busy}
-        className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
+        className="border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
       >
         {busy ? "Preparing…" : "Download PDF"}
       </button>

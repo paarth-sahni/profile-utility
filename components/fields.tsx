@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useId, useState } from "react";
+import { acceptRatingInput } from "@/lib/rating";
 import { isNAValue } from "@/lib/schemas";
 import { addTags, hasOpenBracket, splitTags } from "@/lib/tags";
 
@@ -58,7 +59,7 @@ export function Section({
   actions?: ReactNode;
   onRemove?: () => void;
   defaultOpen?: boolean;
-  /** True when a required field inside needs attention: the section opens itself and its title turns red. */
+  /** True when a required field inside needs attention: the section is highlighted in yellow ("needs attention"). */
   invalid?: boolean;
   /** True for an OPTIONAL section with nothing real in it: shows that it will be left out of the document. */
   empty?: boolean;
@@ -77,14 +78,14 @@ export function Section({
     setOpen(signal.mode === "open");
   }
   return (
-    <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <section className={`border shadow-sm ${invalid ? "border-amber-300 bg-warm" : "border-gray-200 bg-white"}`} data-needs-attention={invalid ? "true" : undefined}>
       <div className="flex items-center justify-between gap-3 px-5 py-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls={bodyId}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+          className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           <svg
             width="16"
@@ -100,9 +101,9 @@ export function Section({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <h3 className={`truncate text-sm font-medium uppercase tracking-wide ${invalid ? "text-brand-600" : "text-gray-700"}`}>
+          <h3 className={`truncate text-sm font-medium uppercase tracking-wide ${invalid ? "text-ink-dark" : "text-gray-700"}`}>
             {title}
-            {invalid && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-brand-600">needs attention</span>}
+            {invalid && <span className="ml-2 text-xs font-medium normal-case tracking-normal text-amber-800">needs attention</span>}
             {empty && <span className="ml-2 text-xs font-normal normal-case tracking-normal text-gray-400">{LEFT_OUT_NOTE}</span>}
           </h3>
         </button>
@@ -114,7 +115,7 @@ export function Section({
                 type="button"
                 title="Remove section"
                 onClick={onRemove}
-                className="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+                className="p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
               >
                 ✕
               </button>
@@ -123,7 +124,7 @@ export function Section({
         )}
       </div>
       {/* kept mounted (just hidden) so nothing typed inside is ever lost */}
-      <div id={bodyId} hidden={!open} className="space-y-4 border-t border-hairline px-5 pb-5 pt-4">
+      <div id={bodyId} hidden={!open} className={`space-y-4 border-t px-5 pb-5 pt-4 ${invalid ? "border-amber-200" : "border-hairline"}`}>
         {children}
       </div>
     </section>
@@ -139,6 +140,7 @@ export function Field({
   maxWords,
   hint,
   error,
+  rating = false,
 }: {
   label: string;
   value: string;
@@ -153,9 +155,15 @@ export function Field({
   hint?: ReactNode;
   /** A problem with this field: highlights it in red and shows the message under it. */
   error?: string;
+  /** A skill rating: above 0 and at most 5, one decimal. Anything else cannot be typed. */
+  rating?: boolean;
 }) {
   const showNAHint = optional && isNAValue(value);
   const handleChange = (raw: string) => {
+    if (rating) {
+      onChange(acceptRatingInput(value, raw));
+      return;
+    }
     let v = numeric ? raw.replace(/[^0-9]/g, "") : raw;
     if (maxWords) {
       const words = v.split(/\s+/);
@@ -174,10 +182,11 @@ export function Field({
       <div className="relative">
         <input
           type="text"
-          inputMode={numeric ? "numeric" : undefined}
+          inputMode={rating ? "decimal" : numeric ? "numeric" : undefined}
+          maxLength={rating ? 3 : undefined}
           value={value}
           onChange={(e) => handleChange(e.target.value)}
-          className={`w-full rounded-md border py-2 pl-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+          className={`w-full border py-2 pl-3 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus ${
             optional ? "pr-8" : "pr-3"
           } ${error ? "border-brand-500 bg-brand-50/40" : showNAHint ? "border-amber-400" : "border-gray-300"}`}
         />
@@ -231,7 +240,7 @@ export function AreaField({
         value={value}
         rows={rows}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+        className={`w-full border px-3 py-2 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus ${
           error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
         }`}
       />
@@ -245,7 +254,7 @@ export function AddButton({ onClick, label }: { onClick: () => void; label: stri
     <button
       type="button"
       onClick={onClick}
-      className="rounded-md border border-dashed border-brand-300 px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+      className="border border-dashed border-brand-300 px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
     >
       + {label}
     </button>
@@ -264,7 +273,7 @@ export function ItemControls({
   onMove: (from: number, to: number) => void;
   onRemove: (index: number) => void;
 }) {
-  const btn = "rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
+  const btn = "p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <span className="flex shrink-0 items-center gap-0.5">
       <button type="button" title="Move up" className={btn} disabled={index === 0} onClick={() => onMove(index, index - 1)}>↑</button>
@@ -307,14 +316,14 @@ export function StringListEditor({
                 value={item}
                 rows={2}
                 onChange={(e) => update(i, e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               />
             ) : (
               <input
                 type="text"
                 value={item}
                 onChange={(e) => update(i, e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
               />
             )}
             <ItemControls
@@ -348,7 +357,7 @@ export function ItemCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <div className="border border-gray-200 bg-gray-50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-500">{title}</span>
         <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
@@ -361,7 +370,7 @@ export function ItemCard({
 /** Collapsed bar for an optional section the user removed; "Restore" brings the editor back. */
 export function RemovedSection({ title, onRestore }: { title: string; onRestore: () => void }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
+    <div className="flex items-center justify-between border border-dashed border-gray-300 bg-gray-50 px-5 py-3">
       <span className="text-sm text-gray-400">
         <span className="font-medium uppercase tracking-wide">{title}</span>
         <span className="ml-2">{LEFT_OUT_NOTE}</span>
@@ -404,12 +413,12 @@ export function TagInput({
     <div data-invalid={error ? "true" : undefined}>
       {label && <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>}
       <div
-        className={`flex flex-wrap items-center gap-1.5 rounded-md border bg-white px-2 py-1.5 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 ${
+        className={`flex flex-wrap items-center gap-1.5 border bg-white px-2 py-1.5 focus-within:border-focus focus-within:ring-1 focus-within:ring-focus ${
           error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
         }`}
       >
         {tags.map((t, i) => (
-          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 rounded-full bg-cream px-2.5 py-1 text-xs text-ink ring-1 ring-hairline">
+          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 bg-cream px-2.5 py-1 text-xs text-ink ring-1 ring-hairline">
             {t}
             <button
               type="button"

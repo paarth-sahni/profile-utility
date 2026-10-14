@@ -23,6 +23,7 @@
   --color-cream: #fff9ed; /* light cream — brand surface */
   --color-peach: #ffd0d8;
   --color-warm: #fff3d4;
+  --color-focus: #2563eb; /* focus ring: blue, so red stays reserved for errors */
   --color-brand-dark: #aa142d; /* dark red */
   --color-brand-deep: #7c2235; /* deep red */
 
@@ -90,4 +91,10 @@ body {
   .drawer-in {
     animation: none;
   }
+}
+
+/* one focus indicator for everything that can be focused: blue, never the browser's black ring */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }

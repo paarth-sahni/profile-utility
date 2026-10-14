@@ -82,7 +82,7 @@ export default function PdfPreview({ blob }: { blob: Blob }) {
 
   return (
     <div
-      className="rounded-xl border border-gray-200 bg-white shadow-sm"
+      className="border border-gray-200 bg-white shadow-sm"
       data-pdf-preview={state}
       data-pdf-pages={state === "ready" ? pages.length : undefined}
       data-pdf-sha256={hash ?? undefined}

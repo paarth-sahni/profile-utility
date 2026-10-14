@@ -109,8 +109,8 @@ describe("saveVersion: ownership", () => {
 });
 
 describe("manager/admin name search and read-only views", () => {
-  // The search lists ONE row per team member (their primary profile, else their latest), and a name matches when any of
-  // their profiles matches, so results are checked by WHO was found. Seeded people: Alex Sample (member), Jamie
+  // The search lists ONE row per team member and ONLY their primary profile (people without one are not listed), and a
+  // name matches when any of their profiles matches, so results are checked by WHO was found. Seeded people: Alex Sample (member), Jamie
   // Placeholder (member2), and Riley Example: the admin's EXTERNAL profile, which is never listed or searchable.
   const ALEX = "member@example.test";
   const JAMIE = "member2@example.test";
@@ -172,14 +172,23 @@ describe("manager/admin name search and read-only views", () => {
     assert.deepEqual(await searchProfilesByNameAs(ctx.manager, "_"), []);
   });
 
-  test("the manager finds a profile a member just saved", async () => {
+  test("a saved profile that is not primary is not shown to managers; once primary it is", async () => {
+    const before = await primaryOf(ctx.member);
     const saved = await saveVersionAs(ctx.member, internalPayload({ data: { ...INTERNAL_FIXTURE, name: "Zebediah Searchable" } }));
     createdProfiles.push(saved.profileId);
-    // the person is found; the row shows their primary profile (or their latest one)
-    const hits = await searchProfilesByNameAs(ctx.manager, "zebediah");
-    assert.equal(hits[0]?.ownerEmail, "member@example.test");
-    const shown = await getProfileForManagerAs(ctx.manager, hits[0].id);
-    assert.ok(hits[0].id === saved.profileId || shown?.otherProfiles.some((p) => p.id === saved.profileId), "the saved profile is reachable from the person's row");
+    try {
+      // the person is found by that name, but the row (and the page) is their primary profile, not the new one
+      const hits = (await searchProfilesByNameAs(ctx.manager, "zebediah")).filter((h) => h.ownerEmail === "member@example.test");
+      assert.equal(hits.length, 1);
+      assert.notEqual(hits[0].id, saved.profileId);
+      assert.equal(await getProfileForManagerAs(ctx.manager, saved.profileId), null, "a non-primary profile is not shown to managers");
+      await setPrimaryProfileAs(ctx.member, saved.profileId);
+      const after = (await searchProfilesByNameAs(ctx.manager, "zebediah")).filter((h) => h.ownerEmail === "member@example.test");
+      assert.equal(after[0]?.id, saved.profileId);
+      assert.equal((await getProfileForManagerAs(ctx.manager, saved.profileId))?.profile.isPrimary, true);
+    } finally {
+      if (before) await setPrimaryProfileAs(ctx.member, before);
+    }
   });
 
   for (const who of ["member", "member2", "checker"] as const) {
@@ -188,20 +197,24 @@ describe("manager/admin name search and read-only views", () => {
       await assert.rejects(searchProfilesByNameAs(ctx[who], ""), ForbiddenError);
       const alex = (await searchProfilesByNameAs(ctx.manager, "Alex Sample"))[0];
       await assert.rejects(getProfileForManagerAs(ctx[who], alex.id), ForbiddenError);
-      const history = await getProfileForManagerAs(ctx.manager, alex.id);
-      await assert.rejects(getVersionForManagerAs(ctx[who], history!.versions[0].id), ForbiddenError);
+      const page = await getProfileForManagerAs(ctx.manager, alex.id);
+      await assert.rejects(getVersionForManagerAs(ctx[who], page!.latestVersionId!), ForbiddenError);
     });
   }
 
-  test("the manager reads another user's history and versions", async () => {
-    // the seeded profile itself (the search shows the member's primary / latest profile, which tests may have added)
-    const { data } = await ctx.manager.supabase.from("profiles").select("id").eq("candidate_name", "Alex Sample").eq("owner_id", ctx.member.userId).single();
+  test("the manager reads another user's PRIMARY profile (current version only), nothing else", async () => {
+    // the seeded profile itself (the seed marks Alex's profile as primary; tests may have added others)
+    const { data } = await ctx.member.supabase.from("profiles").select("id").eq("candidate_name", "Alex Sample").eq("owner_id", ctx.member.userId).single();
     const alex = data!;
-    const history = await getProfileForManagerAs(ctx.manager, alex.id);
-    assert.equal(history?.profile.ownerEmail, "member@example.test");
-    assert.equal(history?.versions.length, 2);
-    const v = await getVersionForManagerAs(ctx.manager, history!.latestVersionId!);
+    const page = await getProfileForManagerAs(ctx.manager, alex.id);
+    assert.equal(page?.profile.ownerEmail, "member@example.test");
+    assert.equal(page?.profile.isPrimary, true);
+    const v = await getVersionForManagerAs(ctx.manager, page!.latestVersionId!);
     assert.equal((v?.data as { name: string }).name, "Alex Sample");
+    // an older version of the same profile is not shown (no version history for managers)
+    const { data: older } = await ctx.member.supabase.from("profile_versions").select("id").eq("profile_id", alex.id).neq("id", page!.latestVersionId!);
+    assert.ok((older ?? []).length >= 1, "the seeded profile has more than one version");
+    for (const o of older ?? []) assert.equal(await getVersionForManagerAs(ctx.manager, o.id), null);
   });
 
   test("an unknown profile id is null, not an error", async () => {
@@ -263,7 +276,7 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     assert.equal(typeof row?.jobTitle, "string", "manager search rows carry the job title");
     if (row?.id === internal.profileId) assert.equal(row.jobTitle, title, "manager search");
     assert.equal((await getMyProfileAs(ctx.member, internal.profileId))?.profile.jobTitle, title, "own profile page");
-    assert.equal((await getProfileForManagerAs(ctx.manager, internal.profileId))?.profile.jobTitle, title, "manager profile page");
+    assert.equal(await getProfileForManagerAs(ctx.manager, internal.profileId), null, "managers only open a primary profile");
     const { data: legacyRows } = await ctx.member.supabase.from("profiles").select("id").eq("candidate_name", "Zed Legacyexternal");
     for (const r of legacyRows ?? []) createdProfiles.push(r.id);
   });
@@ -365,11 +378,10 @@ describe("primary profile through the data layer", () => {
     assert.equal(hits.length, 1);
     assert.equal(hits[0].id, y.profileId);
     assert.equal(hits[0].isPrimary, true);
-    // its page lists the person's other profiles, read-only
+    // its page opens; the person's other profile does not (managers see the primary profile only)
     const page = await getProfileForManagerAs(ctx.manager, y.profileId);
     assert.equal(page?.profile.isPrimary, true);
-    assert.ok(page?.otherProfiles.some((p) => p.id === x.profileId && !p.isPrimary));
-    assert.ok(!page?.otherProfiles.some((p) => p.id === y.profileId), "the shown profile is not repeated");
+    assert.equal(await getProfileForManagerAs(ctx.manager, x.profileId), null, "a non-primary profile is not shown to managers");
     // switching with setPrimaryProfile
     await setPrimaryProfileAs(ctx.member, x.profileId);
     assert.equal(await primaryOf(ctx.member), x.profileId);

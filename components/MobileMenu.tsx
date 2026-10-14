@@ -18,6 +18,11 @@ export interface NavLink {
   external?: boolean;
 }
 
+/** True when `pathname` is this link's page; My Profiles and Manage also stay marked on their detail pages. */
+export function isActiveLink(pathname: string, href: string): boolean {
+  return pathname === href || ((href === "/profiles" || href === "/manage") && pathname.startsWith(`${href}/`));
+}
+
 export default function MobileMenu({ links }: { links: NavLink[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -53,7 +58,7 @@ export default function MobileMenu({ links }: { links: NavLink[] }) {
         aria-label="Open menu"
         aria-expanded={open}
         aria-controls="mobile-drawer"
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        className="flex h-10 w-10 shrink-0 items-center justify-center text-ink transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <line x1="4" y1="7" x2="20" y2="7" />
@@ -82,7 +87,7 @@ export default function MobileMenu({ links }: { links: NavLink[] }) {
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close menu"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-ink-light transition hover:bg-brand-50 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500"
+                className="flex h-10 w-10 items-center justify-center text-ink-light transition hover:bg-brand-50 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -93,8 +98,8 @@ export default function MobileMenu({ links }: { links: NavLink[] }) {
             <nav className="flex-1 overflow-y-auto p-3">
               <ul className="space-y-1">
                 {links.map((link) => {
-                  const active = !link.external && pathname === link.href;
-                  const cls = `flex items-center rounded-lg px-4 py-3 text-base font-medium transition-colors ${
+                  const active = !link.external && isActiveLink(pathname, link.href);
+                  const cls = `flex items-center px-4 py-3 text-base font-medium transition-colors ${
                     active ? "bg-brand-50 text-brand-600" : "text-ink hover:bg-gray-50"
                   }`;
                   return (

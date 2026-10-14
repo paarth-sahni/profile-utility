@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RATING_MESSAGE, isValidRating } from "./rating";
 
 /** Matches the placeholder the extraction LLM writes when it can't find a value: "N/A", "n/a", "NA", etc. */
 const NA_PATTERN = /^n\/?a$/i;
@@ -141,7 +142,7 @@ export const internalProjectSchema = z
 
 export const internalSkillSchema = z.object({
   name: nonEmpty("skill name"),
-  rating: nonEmpty("rating"),
+  rating: nonEmpty("rating").refine((v) => v === "" || isValidRating(v), RATING_MESSAGE),
 });
 
 export const internalResumeSchema = z.object({

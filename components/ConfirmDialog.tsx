@@ -55,7 +55,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel(); // click on the backdrop
       }}
-      className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-md border border-hairline bg-white p-0 text-ink shadow-lg backdrop:bg-ink/50"
+      className="m-auto w-[min(28rem,calc(100%-2rem))] border border-hairline bg-white p-0 text-ink shadow-lg backdrop:bg-ink/50"
     >
       <div className="p-6">
         <h2 id={titleId} className="text-lg font-medium text-ink-dark">
@@ -70,14 +70,14 @@ export default function ConfirmDialog({ title, message, confirmLabel, cancelLabe
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-focus"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+            className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2"
           >
             {confirmLabel}
           </button>

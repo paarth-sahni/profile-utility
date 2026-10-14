@@ -137,7 +137,7 @@ export default function PreviewStep({
     }
   };
 
-  const buttonBase = "rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50";
+  const buttonBase = "px-4 py-2 text-sm font-medium transition disabled:opacity-50";
   const primary = `${buttonBase} bg-brand-500 text-white shadow-sm hover:bg-brand-600`;
   const outline = `${buttonBase} border border-gray-300 text-ink hover:bg-gray-50`;
 
@@ -149,12 +149,12 @@ export default function PreviewStep({
       </div>
 
       {pdf.status === "loading" && (
-        <div role="status" className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-ink-light">
+        <div role="status" className="border border-gray-200 bg-white px-4 py-10 text-center text-sm text-ink-light">
           Building your preview…
         </div>
       )}
       {pdf.status === "error" && (
-        <div role="alert" className="space-y-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
+        <div role="alert" className="space-y-3 border border-brand-200 bg-brand-50 p-4">
           <p className="whitespace-pre-wrap text-sm text-brand-700">{pdf.message}</p>
           <button type="button" onClick={retry} className={outline}>
             Try again
@@ -163,7 +163,7 @@ export default function PreviewStep({
       )}
       {pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
 
-      <div className="rounded-xl border border-gray-200 bg-cream p-4">
+      <div className="border border-gray-200 bg-cream p-4">
         <ConsentCheckbox
           inputRef={checkbox}
           checked={consent}
@@ -176,7 +176,7 @@ export default function PreviewStep({
       </div>
 
       {submitted && (
-        <div role="status" data-submitted className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-ink shadow-sm">
+        <div role="status" data-submitted className="border border-gray-200 bg-white p-4 text-sm text-ink shadow-sm">
           Submitted &middot; saved to My Profiles &middot; v{submitted.versionNo}
           {submitted.isPrimary ? <> &middot; your primary profile</> : null} &middot;{" "}
           <a href={`/profiles/${submitted.profileId}`} className="font-medium text-brand-600 hover:underline">
@@ -189,7 +189,7 @@ export default function PreviewStep({
 
       {onSubmit && primaryChoice && (
         // same box and left edge as the consent checkbox above; locked boxes say why (visible line + tooltip)
-        <div className="rounded-xl border border-gray-200 bg-white p-4" data-primary-choice={primaryChoice}>
+        <div className="border border-gray-200 bg-white p-4" data-primary-choice={primaryChoice}>
           <label className="flex items-start gap-3 text-sm" title={lockedReason ?? undefined}>
             <input
               type="checkbox"

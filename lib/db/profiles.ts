@@ -67,7 +67,7 @@ export async function searchProfilesByName(query: string): Promise<ManagedProfil
 }
 
 /** Manager/admin only: any profile with its version history. */
-export async function getProfileForManager(id: string): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null; otherProfiles: ProfileSummary[] } | null> {
+export async function getProfileForManager(id: string): Promise<{ profile: ManagedProfileSummary; latestVersionId: string | null } | null> {
   return getProfileForManagerAs(await ctx(), id);
 }
 

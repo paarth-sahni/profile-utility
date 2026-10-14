@@ -11,11 +11,11 @@ export default function ProfileNotFound() {
   return (
     <div className="w-full text-ink">
       <main className="mx-auto w-full max-w-6xl px-4 py-16">
-        <div data-profile-not-found className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
+        <div data-profile-not-found className="border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
           <h1 className="text-lg font-medium text-ink-dark">{PROFILE_NOT_FOUND}</h1>
           <Link
             href="/profiles"
-            className="mt-6 inline-block rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600"
+            className="mt-6 inline-block bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600"
           >
             Go to My Profiles
           </Link>

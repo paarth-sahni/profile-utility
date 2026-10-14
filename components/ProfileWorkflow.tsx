@@ -140,8 +140,6 @@ export default function ProfileWorkflow({
   const [source, setSource] = useState<Source | null>(initial ? "saved" : null);
   const [data, setData] = useState<ResumeData | null>(initial?.data ?? null);
   const [errors, setErrors] = useState<FieldError[] | null>(null);
-  // field key ("name", "education.0.year") -> message, to mark the fields in red
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [scrollTick, setScrollTick] = useState(0);
   // the validated profile shown on the Preview step (set when entering it)
   const [previewData, setPreviewData] = useState<ResumeData | null>(null);
@@ -368,6 +366,10 @@ export default function ProfileWorkflow({
     return { data: result.data as ResumeData, list: [], byPath: {} };
   };
 
+  // field key ("name", "education.0.year") -> message: the fields that need attention are marked from the first render on
+  // Edit details (red border on the field, yellow section) and unmarked as soon as they are valid.
+  const fieldErrors: Record<string, string> = step === STEP_REVIEW && data ? checkProfile(data).byPath : {};
+
   /**
    * Re-validates the form right before Preview and Save: covers the uploaded-profile path and the blank-form path,
    * plus any edits made in the edit step; the "N/A" check only runs here. Shows the problems in the form and
@@ -378,11 +380,9 @@ export default function ProfileWorkflow({
     const r = checkProfile(data);
     if (r.data) {
       setErrors(null);
-      setFieldErrors({});
       return r.data;
     }
     setErrors(r.list);
-    setFieldErrors(r.byPath);
     setScrollTick((t) => t + 1);
     return null;
   };
@@ -402,6 +402,11 @@ export default function ProfileWorkflow({
     setErrors(null);
   };
 
+  // Every step opens at the top of the page, not where the previous step was scrolled to.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [step]);
+
   // After a failed check, bring the first marked field into view (its section opens itself first).
   useEffect(() => {
     if (scrollTick === 0) return;
@@ -419,7 +424,6 @@ export default function ProfileWorkflow({
     if (errors) {
       const r = checkProfile(d);
       setErrors(r.data ? null : r.list);
-      setFieldErrors(r.data ? {} : r.byPath);
     }
   };
 
@@ -575,18 +579,18 @@ export default function ProfileWorkflow({
       {step === 0 && (
         <section className="relative overflow-hidden bg-cream">
           {/* soft brand glow behind the title */}
-          <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-100/70 blur-3xl" aria-hidden />
-          <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-peach/60 blur-3xl" aria-hidden />
-          <div className="relative mx-auto max-w-[110rem] px-4 pb-6 pt-7 text-center">
+          <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 bg-brand-100/70 blur-3xl" aria-hidden />
+          <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 bg-peach/60 blur-3xl" aria-hidden />
+          <div className="relative mx-auto max-w-[110rem] px-4 pb-[clamp(1.5rem,5vh,3rem)] pt-[clamp(1.5rem,5vh,3rem)] text-center">
             <h1 className="text-3xl font-medium tracking-tight text-ink sm:text-4xl lg:text-5xl">Profile Generator</h1>
-            <p className="mx-auto mt-3 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
+            <p className="mx-auto mt-4 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
               {HERO_SUBTEXT[templateId]}
             </p>
           </div>
         </section>
       )}
 
-      <main className="mx-auto max-w-6xl px-4 pb-10 pt-5">
+      <main className="mx-auto max-w-6xl px-4 pb-14 pt-[clamp(1.25rem,4vh,2.5rem)]">
         {leaveGuard.pendingHref && (
           <ConfirmDialog
             title="Leave without saving?"
@@ -621,7 +625,7 @@ export default function ProfileWorkflow({
         {session && data && (
           <SessionExpiryBanner remainingMs={session.remainingMs} canSave={unsaved} saves={templateId === "internal"} />
         )}
-        <div className="mb-6">
+        <div className="mb-[clamp(1.5rem,4.5vh,2.75rem)]">
           <Stepper
             current={step}
             onNavigate={goTo}
@@ -632,26 +636,26 @@ export default function ProfileWorkflow({
 
         {/* ---------- STEP 0: start experience ---------- */}
         {step === 0 && (
-          <div className="animate-fade-up space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h3 className="mb-2 font-semibold text-ink-dark">{start.boxA.title}</h3>
-                <p className="mb-5 flex-1 text-sm text-ink-light">{start.boxA.body}</p>
+          <div className="animate-fade-up space-y-8">
+            <div className="grid gap-7 sm:grid-cols-2">
+              <div className="flex flex-col border border-gray-200 bg-white px-8 pb-6 pt-8 shadow-sm">
+                <h3 className="mb-3 font-semibold text-ink-dark">{start.boxA.title}</h3>
+                <p className="mb-5 flex-1 text-sm leading-relaxed text-ink-light">{start.boxA.body}</p>
                 <button
                   type="button"
                   onClick={() => setStep(STEP_UPLOAD)}
-                  className="self-start rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                  className="self-start bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
                 >
                   {start.boxA.cta}
                 </button>
               </div>
-              <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h3 className="mb-2 font-semibold text-ink-dark">{start.boxB.title}</h3>
-                <p className="mb-5 flex-1 text-sm text-ink-light">{start.boxB.body}</p>
+              <div className="flex flex-col border border-gray-200 bg-white px-8 pb-6 pt-8 shadow-sm">
+                <h3 className="mb-3 font-semibold text-ink-dark">{start.boxB.title}</h3>
+                <p className="mb-5 flex-1 text-sm leading-relaxed text-ink-light">{start.boxB.body}</p>
                 <button
                   type="button"
                   onClick={startBlankForm}
-                  className="self-start rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                  className="self-start bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
                 >
                   {start.boxB.cta}
                 </button>
@@ -663,19 +667,19 @@ export default function ProfileWorkflow({
         {/* ---------- STEP 1: upload profile ---------- */}
         {step === STEP_UPLOAD && (
           <div className="animate-fade-up space-y-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-2 font-semibold text-ink-dark">{start.uploadTitle}</h2>
               <p className="mb-4 text-sm text-ink-light">{start.uploadBody}</p>
 
               {source === "upload" && data && !uploading && (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-200 bg-cream p-3 text-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-gray-200 bg-cream p-3 text-sm">
                   <span className="text-ink">
                     Your uploaded profile{fileName ? ` (${fileName})` : ""} is ready to review.
                   </span>
                   <button
                     type="button"
                     onClick={() => goTo(STEP_REVIEW)}
-                    className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                    className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
                   >
                     Continue to review →
                   </button>
@@ -689,7 +693,7 @@ export default function ProfileWorkflow({
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
-                className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition ${
+                className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed px-6 py-12 text-center transition ${
                   dragging ? "border-brand-500 bg-brand-50" : "border-gray-300 bg-white"
                 }`}
               >
@@ -715,7 +719,7 @@ export default function ProfileWorkflow({
                       type="button"
                       disabled={uploading}
                       onClick={() => fileInput.current?.click()}
-                      className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
+                      className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
                     >
                       Choose a file
                     </button>
@@ -726,7 +730,7 @@ export default function ProfileWorkflow({
 
 
               {uploadError && !uploading && (
-                <div role="alert" className="mt-2 space-y-3 rounded-md border border-brand-200 bg-brand-50 p-3">
+                <div role="alert" className="mt-2 space-y-3 border border-brand-200 bg-brand-50 p-3">
                   <p className="text-sm text-brand-700">{uploadError}</p>
                   <div className="flex flex-wrap gap-3">
                     <button
@@ -735,14 +739,14 @@ export default function ProfileWorkflow({
                         setUploadError(null);
                         fileInput.current?.click();
                       }}
-                      className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                      className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
                     >
                       Try again
                     </button>
                     <button
                       type="button"
                       onClick={startBlankForm}
-                      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
+                      className="border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
                     >
                       Fill in the form manually instead
                     </button>
@@ -754,7 +758,7 @@ export default function ProfileWorkflow({
               type="button"
               onClick={() => goTo(0)}
               disabled={uploading}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-40"
+              className="border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-40"
             >
               ← Back
             </button>
@@ -773,14 +777,14 @@ export default function ProfileWorkflow({
             )}
 
             {errors && (
-              <div className="rounded-md border border-brand-200 bg-brand-50 p-3">
+              <div className="border border-brand-200 bg-brand-50 p-3">
                 <p className="mb-2 text-sm font-semibold text-brand-700">
                   Please fix {errors.length} {errors.length === 1 ? "issue" : "issues"} before continuing:
                 </p>
                 <ul className="space-y-1 text-sm text-brand-700">
                   {errors.map((err, i) => (
                     <li key={i}>
-                      <code className="rounded bg-brand-100 px-1 py-0.5 text-xs">{err.path}</code> — {err.message}
+                      <code className="bg-brand-100 px-1 py-0.5 text-xs">{err.path}</code> — {err.message}
                     </li>
                   ))}
                 </ul>
@@ -791,14 +795,14 @@ export default function ProfileWorkflow({
               <button
                 type="button"
                 onClick={() => goTo(fromScratch ? 0 : STEP_UPLOAD)}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
+                className="border border-gray-300 px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
               >
                 ← Back
               </button>
               <button
                 type="button"
                 onClick={enterPreview}
-                className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
               >
                 {templateId === "internal" ? "Preview & Submit →" : "Preview →"}
               </button>

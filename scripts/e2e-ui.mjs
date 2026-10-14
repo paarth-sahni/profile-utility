@@ -42,6 +42,12 @@ async function saveProfile(data, label = "Base", reviewFlags = []) {
   return saved;
 }
 
+/** Managers only see a team member's PRIMARY profile: make this one primary (local test DB only) before opening it on /manage. */
+function asPrimary(profileId) {
+  sql(`update profiles set is_primary = false where owner_id = (select owner_id from profiles where id = '${profileId}') and is_primary`);
+  sql(`update profiles set is_primary = true where id = '${profileId}'`);
+}
+
 // ---- Google stub: a fake GIS token client in the page, and Drive requests answered by the test
 await send("Page.addScriptToEvaluateOnNewDocument", {
   // every PDF blob given to URL.createObjectURL (file-saver does that for a download) is kept for inspection, and the
@@ -103,6 +109,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   await goto(`/profiles/${saved.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Docs Person')", "profile page");
   check("My Profiles (/profiles/[id]) has no Open in Google Docs, even for an admin", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download PDF"));
+  asPrimary(saved.profileId);
   await goto(`/manage/${saved.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Docs Person')", "manage page");
   if (!(await googleButton())) {
@@ -125,6 +132,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
 
   // Friendly errors
   for (const [mode, expected] of [["blocked", "blocked the Google sign-in window"], ["closed", "closed before you finished"], ["denied", "access was not granted"]]) {
+    asPrimary(saved.profileId);
     await goto(`/manage/${saved.profileId}`);
     await setMode(mode);
     await clickGoogle();
@@ -132,6 +140,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
     const text = await statusText();
     check(`"${mode}" shows a friendly message`, text.includes(expected) && !/token|undefined|Error/i.test(text), text);
   }
+  asPrimary(saved.profileId);
   await goto(`/manage/${saved.profileId}`);
   driveReply = { status: 403, body: { error: { errors: [{ reason: "accessNotConfigured" }] } } };
   await clickGoogle();
@@ -140,6 +149,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   driveReply = { status: 200, body: { id: "e2e-doc", webViewLink: "https://docs.google.com/document/d/e2e-doc/edit" } };
 
   // An incomplete version is stopped before Google is contacted
+  asPrimary(incomplete.profileId);
   await goto(`/manage/${incomplete.profileId}`);
   const before = await gisCalls();
   await clickGoogle();
@@ -158,6 +168,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
 
   // Manager: read-only page with both export buttons
   await signIn("manager");
+  asPrimary(saved.profileId);
   await goto(`/manage/${saved.profileId}`);
   await waitFor("document.body.innerText.includes('E2E Docs Person')", "manage page");
   const manage = await bodyText();
@@ -239,20 +250,39 @@ await t.scenario("previews hide empty sections and show ratings as x/5", async (
         emptyItems:[...a.querySelectorAll('li')].filter(li=>!li.textContent.trim()).length,
         skills:[...(sec('Skills')?.querySelectorAll('li')??[])].map(li=>li.innerText),
         tools:[...(sec('Tools')?.querySelectorAll('li')??[])].map(li=>li.textContent.trim()),
-        projectCards:(sec('Projects')?.querySelectorAll('.rounded-lg')??[]).length,
+        projectCards:(sec('Projects')?.querySelectorAll('div.border-hairline')??[]).length,
         projectBullets:(sec('Projects')?.querySelectorAll('ul.list-disc li')??[]).length,
         hasTeam:a.textContent.includes('Team:'), hasDash:a.textContent.includes('—'),
       })})()`);
   for (const [who, path] of [["member", `/profiles/${saved.profileId}`], ["manager", `/manage/${saved.profileId}`]]) {
     await signIn(who);
+    if (who === "manager") asPrimary(saved.profileId);
     await goto(path);
     await waitFor("document.body.innerText.includes('E2E Sparse Person')", `${who} preview`);
+    // this profile is incomplete (a lenient save), so the InfoBeans document cannot be made: a note, then the card view
+    await waitFor("!!document.querySelector('[data-saved-document=fallback] article')", `${who} card view`);
+    check(`${path.split("/")[1]}: an incomplete version shows the 'missing required details' note above the card view`, (await bodyText()).includes("missing required details"));
     const r = JSON.parse(await inspect());
     r.skills = r.skills.map((x) => x.replace(/\s+/g, " ").trim());
     check(`${path.split("/")[1]}: only sections with content are shown`, JSON.stringify(r.headings) === JSON.stringify(["Skills", "Tools", "Projects"]), JSON.stringify(r.headings));
     check(`${path.split("/")[1]}: ratings read x/5, a blank rating shows nothing, blank skills are dropped`, JSON.stringify(r.skills) === JSON.stringify(["Java 4/5", "SQL"]), JSON.stringify(r.skills));
     check(`${path.split("/")[1]}: blank chips and lone empty bullets are gone`, JSON.stringify(r.tools) === JSON.stringify(["Git"]) && r.emptyItems === 0 && r.projectBullets === 0, JSON.stringify(r));
     check(`${path.split("/")[1]}: an empty project is skipped and an N/A team size is hidden`, r.projectCards === 1 && !r.hasTeam && !r.hasDash, JSON.stringify(r));
+  }
+});
+
+await t.scenario("saved profiles show the InfoBeans document (the PDF from Preview) on My Profiles and Manage", async () => {
+  await signIn("member");
+  await goto("/internal");
+  const saved = await saveProfile({ ...COMPLETE, name: "E2E Document Person" });
+  for (const [who, path] of [["member", `/profiles/${saved.profileId}`], ["manager", `/manage/${saved.profileId}`]]) {
+    await signIn(who);
+    if (who === "manager") asPrimary(saved.profileId);
+    await goto(path);
+    await waitFor("!!document.querySelector('[data-saved-document=ready] [data-pdf-preview=ready]')", `${who}: the document`);
+    const doc = JSON.parse(await ev(`(()=>{const el=document.querySelector('[data-pdf-preview=ready]'); const c=[...el.querySelectorAll('canvas[data-pdf-page]')];
+      return JSON.stringify({canvases:c.length, text:el.querySelector('[data-pdf-text]')?.textContent??'', article:!!document.querySelector('article'), fallback:!!document.querySelector('[data-saved-document=fallback]')})})()`));
+    check(`${path.split("/")[1]}: shows the InfoBeans document (PDF pages drawn, the person's name in it), not the card layout`, doc.canvases > 0 && doc.text.includes("E2E Document Person") && !doc.article && !doc.fallback, JSON.stringify({ ...doc, text: doc.text.slice(0, 80) }));
   }
 });
 
@@ -306,11 +336,9 @@ await t.scenario("unsaved-changes dialog (branded) when leaving through an in-ap
   await t.fillRequired("E2E Leave Test");
   const nativeBefore = t.dialogs.length;
   const dialogOpen = () => ev("!!document.querySelector('dialog[open]')");
-  /** My Profiles is in the avatar menu (not the header row): open the menu, then click the link. */
+  /** My Profiles is a link in the header row. */
   const clickMyProfiles = async () => {
-    if (!(await ev("!!document.querySelector('a[role=menuitem]')"))) await ev("document.querySelector('header button[aria-haspopup]')?.click()");
-    await sleep(200);
-    await click("My Profiles", "a[role=menuitem]");
+    await click("My Profiles", "header nav a");
   };
   const beforeUnloadPrevented = () => ev("(()=>{const e=new Event('beforeunload',{cancelable:true}); window.dispatchEvent(e); return e.defaultPrevented})()");
 
@@ -377,6 +405,7 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
   const pages = [["member", "/profiles"], ["member", `/profiles/${saved.profileId}`], ["manager", "/manage"], ["manager", `/manage/${saved.profileId}`]];
   for (const [who, path] of pages) {
     await signIn(who);
+    if (who === "manager" && path.startsWith("/manage/")) asPrimary(saved.profileId);
     await goto(path);
     await waitFor("!!document.querySelector('main h1, section.bg-cream h1')", `${path} rendered`);
     const r = JSON.parse(await audit());
@@ -385,6 +414,49 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
     check(`${name}: no italics, no gradients, Lexend font`, r.italic === 0 && r.gradients === 0 && r.font, JSON.stringify(r));
     check(`${name}: uses the same cream hero band as the generator`, r.hero);
   }
+});
+
+await t.scenario("Edit details: fields needing attention are marked from the start; rating limits; blue focus; sharp corners", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "blank form");
+  // 1. marked at once: yellow sections and red required fields, with no failed Preview click needed
+  const marks = JSON.parse(await ev(`JSON.stringify({ sections: document.querySelectorAll('[data-needs-attention=true]').length, fields: document.querySelectorAll('label[data-invalid=true]').length, listShown: document.body.innerText.includes('before continuing') })`));
+  check("a fresh form already shows yellow 'needs attention' sections and red required fields", marks.sections >= 1 && marks.fields >= 1 && !marks.listShown, JSON.stringify(marks));
+  const yellow = await ev(`getComputedStyle(document.querySelector('[data-needs-attention=true]')).backgroundColor`);
+  const redBorder = await ev(`getComputedStyle(document.querySelector('label[data-invalid=true] input, label[data-invalid=true] textarea')).borderTopColor`);
+  check("the section is highlighted yellow and the field has the brand-red border", yellow === "rgb(255, 243, 212)" && redBorder === "rgb(234, 27, 61)", JSON.stringify({ yellow, redBorder }));
+  // 2. the marks go away as the fields are filled
+  await t.fillRequired("E2E Marks Person");
+  await sleep(300);
+  const left = await ev("document.querySelectorAll('[data-needs-attention=true], label[data-invalid=true]').length");
+  check("filling the required fields clears every mark", left === 0, String(left));
+  // 3. rating: above 0, at most 5, one decimal
+  const ratingBox = `[...document.querySelectorAll('label')].find(l=>l.querySelector('span')?.innerText.startsWith('Rating out of 5'))?.querySelector('input')`;
+  const typeRating = async (v) => { await ev(`(()=>{const el=${ratingBox}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(v)}); el.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(80); return ev(`${ratingBox}.value`); };
+  await typeRating("");
+  check("a rating above 5 cannot be typed (6 is ignored)", (await typeRating("6")) === "");
+  check("4.8 can be typed", (await typeRating("4.8")) === "4.8");
+  check("a second decimal is ignored (4.85 stays 4.8)", (await typeRating("4.85")) === "4.8");
+  check("5.5 is ignored (stays 4.8)", (await typeRating("5.5")) === "4.8");
+  await typeRating("0");
+  await sleep(200);
+  check("a rating of 0 is marked as needing attention with the explanation", (await ev("!!document.querySelector('[data-needs-attention=true]')")) && (await bodyText()).includes("Enter a rating above 0 and up to 5"));
+  await typeRating("4.5");
+  // 4. one blue focus ring for everything
+  const focus = await ev(`(()=>{ const root=getComputedStyle(document.documentElement).getPropertyValue('--color-focus').trim(); const rule=[...document.styleSheets].flatMap(s=>{try{return [...s.cssRules]}catch{return []}}).find(r=>r.selectorText===':focus-visible'); return JSON.stringify({ root, outline: rule?.style.outline ?? null, color: rule?.style.getPropertyValue('outline-color') || rule?.style.outline || null }) })()`);
+  check("the focus ring is the blue #2563EB (not the browser's black ring)", focus.includes("#2563eb") && JSON.parse(focus).outline !== null, focus);
+  // 5. sharp corners everywhere except the profile avatar
+  const round = JSON.parse(await ev(`JSON.stringify([...document.querySelectorAll('body *')].filter(e=>{const r=getComputedStyle(e); return ['borderTopLeftRadius','borderTopRightRadius','borderBottomLeftRadius','borderBottomRightRadius'].some(k=>r[k]!=='0px') && !e.closest('[aria-label^="Account menu"]') && !e.closest('ol')}).map(e=>e.tagName+'.'+String(e.className).slice(0,50)).slice(0,5))`));
+  check("no rounded corners on the Edit details page (only the profile menu and the stepper are round)", round.length === 0, JSON.stringify(round));
+  await goto("/profiles");
+  await waitFor("!!document.querySelector('main')", "My Profiles");
+  const round2 = JSON.parse(await ev(`JSON.stringify([...document.querySelectorAll('body *')].filter(e=>{const r=getComputedStyle(e); return ['borderTopLeftRadius','borderTopRightRadius','borderBottomLeftRadius','borderBottomRightRadius'].some(k=>r[k]!=='0px') && !e.closest('[aria-label^="Account menu"]') && !e.closest('ol')}).map(e=>e.tagName+'.'+String(e.className).slice(0,50)).slice(0,5))`));
+  check("no rounded corners on My Profiles either", round2.length === 0, JSON.stringify(round2));
+  await ev("sessionStorage.clear()");
 });
 
 await t.scenario("optional sections: 'left out of the document' notes, and only the required fields are enough", async () => {
@@ -598,7 +670,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await goto("/manage?q=E2E");
   await waitFor("document.body.innerText.includes('E2E')", "manage results");
   const found = await bodyText();
-  // one row per team member (their primary or latest profile), so the member appears once
+  // one row per team member (their primary profile), so the member appears once
   const memberOwner = sql("select coalesce(nullif(full_name,''), email) from app_users where email='member@example.test'");
   const memberRows = Number(await ev(`[...document.querySelectorAll('main ul li')].filter(li=>li.innerText.includes(${JSON.stringify("owner " + memberOwner)})).length`));
   check("Manage lists internal profiles only, one row per team member, named <Name>-<Role>-InfoBeans", memberRows === 1 && /E2E_[A-Za-z_]+-[A-Za-z_]+-InfoBeans/.test(found) && !found.includes("E2E_Legacy_External"), String(memberRows));
@@ -639,7 +711,7 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   check("the checkbox sits just above Submit", above);
   check("with no primary yet the box is ticked and locked ('first')", (await choice()) === "first" && JSON.stringify(await box()) === JSON.stringify({ checked: true, disabled: true }));
   const layout = JSON.parse(await ev(`(()=>{const row=document.querySelector('[data-primary-choice]'); const box=row.querySelector('input'); const consent=document.querySelector('[data-preview-step] input[type=checkbox]');
-    const consentRow=consent.closest('.rounded-xl'); const label=[...row.querySelectorAll('span')].find(s=>s.textContent.trim()==='Mark as primary profile');
+    const consentRow=consent.closest('div.border'); const label=[...row.querySelectorAll('span')].find(s=>s.textContent.trim()==='Mark as primary profile');
     const probe=document.createElement('span'); probe.style.color='var(--color-brand-500)'; document.body.append(probe); const red=getComputedStyle(probe).color; probe.remove();
     return JSON.stringify({ boxLeft: Math.round(box.getBoundingClientRect().left), consentLeft: Math.round(consent.getBoundingClientRect().left),
       width: Math.round(row.getBoundingClientRect().width), consentWidth: Math.round(consentRow.getBoundingClientRect().width),
@@ -692,27 +764,30 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   const twoVersions = Number(sql(`select count(*) from profile_versions where profile_id='${twoId}'`));
   check("saving a new version of another profile keeps the primary where it was", primaryName() === "E2E Primary One" && twoVersions === 2, JSON.stringify({ primary: primaryName(), twoVersions }));
 
-  // 5. Manage: the team member once, showing the primary profile; its page lists the other profile read-only
+  // 5. Manage: the team member once, showing the primary profile only; no other profiles, no version history
   await signIn("manager");
   await goto("/manage?q=E2E Primary");
   await waitFor("document.body.innerText.includes('E2E_Primary')", "manage results");
   const list = await bodyText();
   check("Manage shows the team member once, as their primary profile, with the Primary badge", list.includes("E2E_Primary_One") && !list.includes("E2E_Primary_Two") && (await ev("!!document.querySelector('main ul li [data-primary-badge]')")));
   await click("E2E_Primary_One", "main ul li a");
-  await waitFor("!!document.querySelector('[data-other-profiles]')", "other profiles");
-  const page = await ev("document.querySelector('[data-other-profiles]').innerText");
-  check("the primary profile's page lists the person's other profiles (read-only links)", page.includes("E2E_Primary_Two") && (await ev("[...document.querySelectorAll('[data-other-profiles] a')].every(a=>a.getAttribute('href').startsWith('/manage/'))")));
+  await waitFor("location.pathname.startsWith('/manage/') && document.body.innerText.includes('Primary profile')", "primary profile page");
+  const page = await bodyText();
+  check("the primary profile's page shows no other profiles and no version history", !(await ev("!!document.querySelector('[data-other-profiles]')")) && !page.includes("Other profiles") && !page.includes("Version history") && !page.includes("E2E_Primary_Two"));
+  const nonPrimaryId = sql("select id from profiles where candidate_name='E2E Primary Two' and owner_id=(select id from auth.users where email='member@example.test')");
+  await goto(`/manage/${nonPrimaryId}`);
+  await waitFor("!!document.querySelector('[data-profile-not-found]') || document.body.innerText.includes('could not be found')", "non-primary page");
+  check("a team member's non-primary profile is not available to a manager (same 'not found' answer)", !(await bodyText()).includes("Primary profile ·"));
 });
 
 await t.scenario("every top-nav link opens its page (no 404) for a signed-in user", async () => {
   await signIn("manager"); // managers see every link, Manage included
   const notFound = async () => /could not be found|\b404\b/i.test(await bodyText());
   const LINKS = [
+    ["ProfileHub", "/manage", "header nav a"],
     ["Generator", "/internal", "header nav a"],
+    ["My Profiles", "/profiles", "header nav a"],
     ["Instructions", "/internal/instructions", "header nav a"],
-    ["Style Guide", "/style-guide", "header nav a"],
-    ["My Profiles", "/profiles", "[role=menuitem]"],
-    ["Manage", "/manage", "[role=menuitem]"],
   ];
   for (const [label, path, selector] of LINKS) {
     await goto("/profiles"); // start on another page, then click the real link
@@ -731,6 +806,18 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
       const c = JSON.parse(colours);
       check("the start-page heading 'Profile Generator' is charcoal (--color-ink)", c.text === "Profile Generator" && c.heading === c.ink && c.inner === null, colours);
     }
+  }
+});
+
+await t.scenario("the header: ProfileHub only for managers and admins, no Style Guide for anyone", async () => {
+  const headerLinks = () => ev("[...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()).join('|')");
+  for (const [who, manage] of [["member", false], ["checker", false], ["manager", true], ["admin", true]]) {
+    await signIn(who);
+    await goto("/profiles");
+    await waitFor("!!document.querySelector('header nav a')", "header");
+    const links = await headerLinks();
+    check(`${who}: header is ${manage ? "ProfileHub | Generator | My Profiles | Instructions" : "Generator | Instructions | My Profiles"}`, links === (manage ? "ProfileHub|Generator|My Profiles|Instructions" : "Generator|Instructions|My Profiles"), links);
+    check(`${who}: no Style Guide link in the header`, !links.includes("Style Guide"));
   }
 });
 

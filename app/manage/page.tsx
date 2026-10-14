@@ -38,10 +38,10 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="Manage profiles" subtitle="Search team members by name: each shows their primary profile (or their latest one). Read-only." />
+      <PageHero title="Manage profiles" subtitle="Search team members by name. Each shows their primary profile. Read-only." compact />
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-10">
-        <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">
+      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5">
+        <Form action="/manage" className="flex flex-wrap items-end gap-3">
           <div className="min-w-[14rem] flex-1">
             <label htmlFor="manage-q" className="mb-1 block text-xs font-medium text-ink-light">
               Team member name
@@ -53,20 +53,20 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
               maxLength={100}
               defaultValue={q}
               placeholder="e.g. Alex Sample"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-full border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
-          <button type="submit" className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
+          <button type="submit" className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
             Search
           </button>
         </Form>
 
-        <div className="mt-8" aria-live="polite">
+        <div className="mt-5" aria-live="polite">
           {failed ? (
-            <p className="rounded-md border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700">We could not run that search. Please try again.</p>
+            <p className="border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700">We could not run that search. Please try again.</p>
           ) : results.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-              <p className="text-lg font-medium text-ink-dark">{q ? "No profiles match that name" : "No profiles saved yet"}</p>
+            <div className="border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+              <p className="text-lg font-medium text-ink-dark">{q ? "No primary profiles match that name" : "No primary profiles yet"}</p>
               {q && <p className="mt-1 text-sm text-ink-light">Check the spelling, or try part of the name.</p>}
             </div>
           ) : (
@@ -74,7 +74,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
               <p className="mb-3 text-sm text-ink-light">
                 {q ? `${results.length} ${results.length === 1 ? "result" : "results"} for “${q}”` : "Most recently updated team members"}
               </p>
-              <ul className="divide-y divide-hairline rounded-xl border border-gray-200 bg-white">
+              <ul className="divide-y divide-hairline border border-gray-200 bg-white">
                 {results.map((p) => (
                   <li key={p.id}>
                     <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
@@ -84,8 +84,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
                           {p.isPrimary && <PrimaryBadge />}
                         </p>
                         <p className="truncate text-xs text-ink-light">
-                          {p.template === "internal" ? "Internal" : "External"} · {p.versionCount} {p.versionCount === 1 ? "version" : "versions"} · owner{" "}
-                          {p.ownerName || p.ownerEmail || "unknown"}
+                          owner {p.ownerName || p.ownerEmail || "unknown"}
                         </p>
                       </div>
                       <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
