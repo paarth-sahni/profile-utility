@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SavePayload } from "@/lib/profilePayload";
 import {
+  getMyPrimaryProfileIdAs,
   getMyProfileAs,
   getProfileForManagerAs,
   getVersionAs,
@@ -35,6 +36,10 @@ async function ctx(): Promise<DbContext> {
 /** Saves a new immutable version (creating the profile when `payload.profileId` is empty). */
 export async function saveVersion(payload: SavePayload): Promise<{ profileId: string; versionId: string; versionNo: number; isPrimary: boolean }> {
   return saveVersionAs(await ctx(), payload);
+}
+
+export async function getMyPrimaryProfileId(): Promise<string | null> {
+  return getMyPrimaryProfileIdAs(await ctx());
 }
 
 export async function setPrimaryProfile(id: string): Promise<void> {

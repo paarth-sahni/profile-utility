@@ -7,7 +7,7 @@ import ExtractionSummary from "@/components/ExtractionSummary";
 import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
-import PreviewStep, { type SubmittedVersion } from "@/components/PreviewStep";
+import PreviewStep, { type PrimaryChoice, type SubmittedVersion } from "@/components/PreviewStep";
 import { pdfFileName } from "@/lib/docxReady";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
@@ -126,12 +126,15 @@ export default function ProfileWorkflow({
   initial,
   session,
   canGoogleDocs = false,
+  primaryProfileId = null,
 }: {
   audience: Audience;
   initial?: SavedInitial | null;
   session?: WorkflowSession | null;
   /** Whether "Open in Google Docs" is offered on the Preview step (managers and admins only). */
   canGoogleDocs?: boolean;
+  /** Internal: the signed-in user's primary profile (null when none is marked yet). */
+  primaryProfileId?: string | null;
 }) {
   const templateId = audience; // the route fixes the template
   const start = START[templateId];
@@ -160,6 +163,8 @@ export default function ProfileWorkflow({
 
   // saving to My Profiles (only through Submit on the Preview step)
   const [savedProfileId, setSavedProfileId] = useState<string | null>(initial?.profileId ?? null);
+  // the user's primary profile, kept up to date after Submit
+  const [primaryId, setPrimaryId] = useState<string | null>(primaryProfileId);
   const [lastVersionId, setLastVersionId] = useState<string | null>(initial?.versionId ?? null);
   const [savedInfo, setSavedInfo] = useState<{ no: number; label: string } | null>(
     initial ? { no: initial.versionNo, label: initial.label } : null,
@@ -433,7 +438,7 @@ export default function ProfileWorkflow({
    * Saves the current form as a new immutable version in My Profiles (internal profiles only). Validation is the
    * caller's job. Returns the saved version, or the message to show. Updates the saved-version state on success.
    */
-  const persist = async (): Promise<{ ok: true; profileId: string; versionNo: number } | { ok: false; message: string }> => {
+  const persist = async (makePrimary = false): Promise<{ ok: true; profileId: string; versionNo: number; isPrimary: boolean } | { ok: false; message: string }> => {
     const fail = (message: string) => ({ ok: false as const, message });
     if (!data || templateId !== "internal") return fail("This profile cannot be saved.");
     const effective: ResumeData = fromScratch
@@ -455,6 +460,7 @@ export default function ProfileWorkflow({
           reviewFlags: flagsNow,
           analysis: extraction?.analysis ?? restored?.analysis ?? null,
           promptPlan: extraction?.promptPlan ?? restored?.promptPlan ?? [],
+          makePrimary,
         }),
       });
       if (res.status === 401) {
@@ -472,7 +478,8 @@ export default function ProfileWorkflow({
         setData(effective);
         setSource("saved");
       }
-      return { ok: true, profileId: json.profileId, versionNo: json.versionNo };
+      if (json.isPrimary) setPrimaryId(json.profileId);
+      return { ok: true, profileId: json.profileId, versionNo: json.versionNo, isPrimary: !!json.isPrimary };
     } catch (e) {
       return fail(e instanceof Error ? e.message : "We could not save your profile. Please try again.");
     }
@@ -483,11 +490,32 @@ export default function ProfileWorkflow({
    * success message. When this exact content is already saved (nothing edited since), that version is reused instead
    * of creating an identical new one. Throws with a message to show on Preview if saving fails.
    */
-  const submitProfile = async (): Promise<SubmittedVersion> => {
-    if (savedInfo && savedProfileId && lastVersionId && !dirty) return { profileId: savedProfileId, versionNo: savedInfo.no };
-    const result = await persist();
+  const submitProfile = async (makePrimary: boolean): Promise<SubmittedVersion> => {
+    if (savedInfo && savedProfileId && lastVersionId && !dirty) {
+      // nothing to save again; "Mark as primary profile" alone is one call
+      if (makePrimary && primaryId !== savedProfileId) {
+        const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+        const res = await fetch(`${BASE}/api/profiles/${savedProfileId}/primary`, { method: "POST" });
+        if (res.status === 401) {
+          endSession();
+          throw new Error("Your session has ended. Please sign in again; your work is kept in this tab.");
+        }
+        if (!res.ok) throw new Error("Your profile is saved, but we could not mark it as primary. Please try again.");
+        setPrimaryId(savedProfileId);
+      }
+      return { profileId: savedProfileId, versionNo: savedInfo.no, isPrimary: (makePrimary || primaryId === savedProfileId) };
+    }
+    const result = await persist(makePrimary);
     if (!result.ok) throw new Error(result.message);
-    return { profileId: result.profileId, versionNo: result.versionNo };
+    return { profileId: result.profileId, versionNo: result.versionNo, isPrimary: result.isPrimary };
+  };
+
+  /** How "Mark as primary profile" is offered on Preview & Submit (internal only). */
+  const primaryChoice = (): PrimaryChoice | null => {
+    if (templateId !== "internal") return null;
+    if (primaryId === null) return "first";
+    if (savedProfileId && primaryId === savedProfileId) return "already";
+    return "choose";
   };
 
   /** What Submit will do, shown above the Preview buttons. */
@@ -795,6 +823,7 @@ export default function ProfileWorkflow({
               onBack={() => goTo(STEP_REVIEW)}
               onDownloaded={() => setDownloaded(true)}
               onSubmit={templateId === "internal" ? submitProfile : undefined}
+              primaryChoice={primaryChoice()}
               note={submitNote()}
               onSessionEnded={endSession}
             />

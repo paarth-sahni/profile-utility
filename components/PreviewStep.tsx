@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox";
+import { PRIMARY_EXPLANATION } from "@/components/MarkPrimaryButton";
 import OpenInGoogleDocsButton from "@/components/OpenInGoogleDocsButton";
 import PdfPreview from "@/components/PdfPreview";
 import { usePreviewPdf } from "@/components/usePreviewPdf";
@@ -22,7 +23,15 @@ import type { ResumeData, TemplateId } from "@/lib/schemas";
 export interface SubmittedVersion {
   profileId: string;
   versionNo: number;
+  /** Whether that profile is now the user's primary one. */
+  isPrimary: boolean;
 }
+
+/**
+ * "Mark as primary profile" above Submit (internal only): "choose" = the user may tick it; "already" = this profile is
+ * already primary; "first" = the user has no primary yet, so this first submitted profile becomes primary anyway.
+ */
+export type PrimaryChoice = "choose" | "already" | "first";
 
 export interface PreviewStepProps {
   template: TemplateId;
@@ -37,8 +46,10 @@ export interface PreviewStepProps {
   onBack: () => void;
   /** Called once the PDF was handed to the browser. */
   onDownloaded: () => void;
-  /** Internal profiles only: saves the profile (or reuses the saved version) and returns it; throws a readable error if it fails. */
-  onSubmit?: () => Promise<SubmittedVersion>;
+  /** Internal profiles only: saves the profile (or reuses the saved version), making it primary when asked; throws a readable error if it fails. */
+  onSubmit?: (makePrimary: boolean) => Promise<SubmittedVersion>;
+  /** With onSubmit: how "Mark as primary profile" is offered. */
+  primaryChoice?: PrimaryChoice | null;
   submitError?: string | null;
   /** Shown above the buttons, e.g. what Submit will save. */
   note?: string | null;
@@ -55,6 +66,7 @@ export default function PreviewStep({
   onBack,
   onDownloaded,
   onSubmit,
+  primaryChoice,
   submitError,
   note,
   onSessionEnded,
@@ -65,6 +77,8 @@ export default function PreviewStep({
   const [busy, setBusy] = useState<ConsentAction | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [submitted, setSubmitted] = useState<SubmittedVersion | null>(null);
+  const [makePrimary, setMakePrimary] = useState(false);
+  const primaryLocked = primaryChoice === "already" || primaryChoice === "first";
   const checkbox = useRef<HTMLInputElement>(null);
 
   const ready = pdf.status === "ready";
@@ -119,7 +133,8 @@ export default function PreviewStep({
     setBusy("submit");
     try {
       await record("submit");
-      setSubmitted(await onSubmit());
+      setSubmitted(await onSubmit(makePrimary && primaryChoice === "choose"));
+      setMakePrimary(false);
     } catch (e) {
       setMessage({ kind: "error", text: e instanceof Error ? e.message : "We could not submit your profile." });
     } finally {
@@ -167,7 +182,8 @@ export default function PreviewStep({
 
       {submitted && (
         <div role="status" data-submitted className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-ink shadow-sm">
-          Submitted &middot; saved to My Profiles &middot; v{submitted.versionNo} &middot;{" "}
+          Submitted &middot; saved to My Profiles &middot; v{submitted.versionNo}
+          {submitted.isPrimary ? <> &middot; your primary profile</> : null} &middot;{" "}
           <a href={`/profiles/${submitted.profileId}`} className="font-medium text-brand-600 hover:underline">
             View in My Profiles
           </a>
@@ -175,6 +191,28 @@ export default function PreviewStep({
       )}
 
       {note && !submitted && <p className="text-sm text-ink-light">{note}</p>}
+
+      {onSubmit && primaryChoice && (
+        <div className="flex justify-end" data-primary-choice={primaryChoice}>
+          <label className="flex max-w-md items-start gap-3 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={primaryLocked || makePrimary}
+              disabled={primaryLocked || busy !== null}
+              onChange={(e) => setMakePrimary(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[#EA1B3D] disabled:opacity-60"
+            />
+            <span>
+              Mark as primary profile
+              <span className="block text-xs text-ink-light">
+                {PRIMARY_EXPLANATION}
+                {primaryChoice === "already" && " This is already your primary profile."}
+                {primaryChoice === "first" && " Your first submitted profile becomes your primary profile."}
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button type="button" onClick={onBack} disabled={busy !== null} className={outline}>

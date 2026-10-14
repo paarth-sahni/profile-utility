@@ -118,6 +118,19 @@ export async function saveVersionAs(
   return { profileId: row.profile_id, versionId: row.new_version_id, versionNo: row.new_version_no, isPrimary: row.is_primary };
 }
 
+/** The caller's primary profile id (internal, not archived), or null when none is marked yet. */
+export async function getMyPrimaryProfileIdAs({ supabase, userId }: DbContext): Promise<string | null> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("owner_id", userId)
+    .eq("template", "internal")
+    .eq("archived", false)
+    .eq("is_primary", true)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
 /** Makes one of the caller's own internal profiles their primary one (atomic switch in the database). */
 export async function setPrimaryProfileAs({ supabase, userId }: DbContext, id: string): Promise<void> {
   if (!uuid.safeParse(id).success) throw new ProfileNotFoundError();
