@@ -755,4 +755,29 @@ await t.scenario("a profile that doesn't exist or isn't yours: a clear message a
   check("Go to My Profiles opens My Profiles", (await ev("location.pathname")) === "/profiles");
 });
 
+await t.scenario("checkers and managers create and submit their own profile like a team member", async () => {
+  for (const who of ["checker", "manager"]) {
+    await signIn(who);
+    await goto("/internal");
+    await ev("sessionStorage.clear()");
+    await goto("/internal");
+    const nav = await ev("JSON.stringify([...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()))");
+    await ev("document.querySelector('button[aria-label^=\"Account menu\"]').click()");
+    await waitFor("!!document.querySelector('[role=menuitem]')", "account menu");
+    const menu = await ev("JSON.stringify([...document.querySelectorAll('[role=menuitem]')].map(a=>a.textContent.trim()))");
+    check(`${who} sees Generator and My Profiles`, JSON.parse(nav).includes("Generator") && JSON.parse(menu).includes("My Profiles"), nav + menu);
+    await ev("document.body.click()");
+    await click("Get started");
+    await waitFor("!!document.querySelector('label input')", `edit form (${who})`);
+    const name = `E2E Own ${who}`;
+    await t.fillRequired(name);
+    const text = await t.submitViaPreview();
+    check(`${who} can Submit their own profile`, text.startsWith("Submitted · saved to My Profiles · v1"), text);
+    check(`the profile is owned by the ${who}`, sql(`select u.email from profiles p join auth.users u on u.id=p.owner_id where p.candidate_name='${name}'`) === `${who}@example.test`);
+    await goto("/profiles");
+    await waitFor(`document.body.innerText.includes('E2E_Own_${who}')`, `My Profiles (${who})`);
+    check(`${who}'s My Profiles lists it`, true);
+  }
+});
+
 await t.finish();
