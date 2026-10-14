@@ -673,14 +673,16 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   const twoId = sql(`select id from profiles where owner_id='${owner}' and candidate_name='E2E Primary Two'`);
   const twoVersion = sql(`select current_version_id from profiles where id='${twoId}'`);
   await goto(`/internal?version=${twoVersion}`);
-  await waitFor("!!document.querySelector('label input')", "edit form");
+  // wait until React has hydrated the form, or the typed change is lost and Submit reuses the unchanged version
+  await waitFor("[...document.querySelectorAll('label textarea')].some(i=>Object.keys(i).some(k=>k.startsWith('__reactProps')))", "hydrated edit form");
   await t.fill("Overview", "A changed overview.");
   await sleep(300);
   await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
   check("for a non-primary profile the box is offered unticked", (await choice()) === "choose");
   await tickConsentAndSubmit();
-  check("saving a new version of another profile keeps the primary where it was", primaryName() === "E2E Primary One" && Number(sql(`select count(*) from profile_versions where profile_id='${twoId}'`)) === 2);
+  const twoVersions = Number(sql(`select count(*) from profile_versions where profile_id='${twoId}'`));
+  check("saving a new version of another profile keeps the primary where it was", primaryName() === "E2E Primary One" && twoVersions === 2, JSON.stringify({ primary: primaryName(), twoVersions }));
 
   // 5. Manage: the team member once, showing the primary profile; its page lists the other profile read-only
   await signIn("manager");
@@ -692,6 +694,30 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   await waitFor("!!document.querySelector('[data-other-profiles]')", "other profiles");
   const page = await ev("document.querySelector('[data-other-profiles]').innerText");
   check("the primary profile's page lists the person's other profiles (read-only links)", page.includes("E2E_Primary_Two") && (await ev("[...document.querySelectorAll('[data-other-profiles] a')].every(a=>a.getAttribute('href').startsWith('/manage/'))")));
+});
+
+await t.scenario("every top-nav link opens its page (no 404) for a signed-in user", async () => {
+  await signIn("manager"); // managers see every link, Manage included
+  const notFound = async () => /could not be found|\b404\b/i.test(await bodyText());
+  const LINKS = [
+    ["Generator", "/internal", "header nav a"],
+    ["Instructions", "/internal/instructions", "header nav a"],
+    ["Style Guide", "/style-guide", "header nav a"],
+    ["My Profiles", "/profiles", "[role=menuitem]"],
+    ["Manage", "/manage", "[role=menuitem]"],
+  ];
+  for (const [label, path, selector] of LINKS) {
+    await goto("/profiles"); // start on another page, then click the real link
+    await waitFor("!!document.querySelector('header nav a')", "top nav");
+    if (selector === "[role=menuitem]") {
+      await ev("document.querySelector('button[aria-label^=\"Account menu\"]').click()");
+      await waitFor("!!document.querySelector('[role=menuitem]')", "account menu");
+    }
+    const clicked = await ev(`(()=>{const a=[...document.querySelectorAll(${JSON.stringify(selector)})].find(a=>a.textContent.trim()===${JSON.stringify(label)}); if(!a) return null; const href=a.getAttribute('href'); a.click(); return href})()`);
+    if (path !== "/profiles") await waitFor(`location.pathname === ${JSON.stringify(path)}`, `${label} page`);
+    await sleep(800);
+    check(`top nav "${label}" links to ${path} and opens without a 404`, clicked === path && (await ev("location.pathname")) === path && !(await notFound()), JSON.stringify({ clicked, at: await ev("location.pathname") }));
+  }
 });
 
 await t.finish();
