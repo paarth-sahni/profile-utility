@@ -409,6 +409,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   // required fields only
   await fill("Name", "E2E Required Only");
   await fill("Job title", "Engineer");
+  await fill("Years of Industry Experience", "4");
   await fill("Overview", "Only the overview.");
   await fill("Year", "2014");
   await fill("Qualification", "B.E.");
