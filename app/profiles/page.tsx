@@ -21,7 +21,7 @@ export default async function ProfilesPage() {
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="mb-8 flex justify-end">
           <Link href="/internal" className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600">
-            New profile
+            Create new profile
           </Link>
         </div>
 
