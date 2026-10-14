@@ -600,10 +600,98 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await goto("/manage?q=E2E");
   await waitFor("document.body.innerText.includes('E2E')", "manage results");
   const found = await bodyText();
-  check("Manage lists internal profiles only, named <Name>-<Role>-InfoBeans", found.includes("E2E_Api_External-a-InfoBeans") && !found.includes("E2E_Legacy_External"));
+  // one row per team member (their primary or latest profile), so the member appears once
+  const memberOwner = sql("select coalesce(nullif(full_name,''), email) from app_users where email='member@example.test'");
+  const memberRows = Number(await ev(`[...document.querySelectorAll('main ul li')].filter(li=>li.innerText.includes(${JSON.stringify("owner " + memberOwner)})).length`));
+  check("Manage lists internal profiles only, one row per team member, named <Name>-<Role>-InfoBeans", memberRows === 1 && /E2E_[A-Za-z_]+-[A-Za-z_]+-InfoBeans/.test(found) && !found.includes("E2E_Legacy_External"), String(memberRows));
   void acc;
   await goto("/profiles");
   await ev("sessionStorage.clear()");
+});
+
+await t.scenario("primary profile: first one automatic, the Submit checkbox, Mark as primary on My Profiles, Manage", async () => {
+  await signIn("member");
+  const owner = sql("select id from auth.users where email='member@example.test'");
+  sql(`update profiles set is_primary = false where owner_id = '${owner}'`); // start with no primary (local test DB only)
+  const primaryName = () => sql(`select candidate_name from profiles where owner_id='${owner}' and is_primary`);
+  const choice = () => ev("document.querySelector('[data-primary-choice]')?.dataset.primaryChoice ?? null");
+  const box = () => ev("(()=>{const i=document.querySelector('[data-primary-choice] input'); return i ? {checked:i.checked, disabled:i.disabled} : null})()");
+  const newProfile = async (name) => {
+    await goto("/internal");
+    await ev("sessionStorage.clear()");
+    await goto("/internal");
+    await click("Get started");
+    await waitFor("!!document.querySelector('label input')", "edit form");
+    await t.fillRequired(name);
+    await click("Preview & Submit →");
+    await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
+  };
+  const tickConsentAndSubmit = async () => {
+    if (!(await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
+    await click("Submit", "[data-preview-step] button");
+    await waitFor("!!document.querySelector('[data-submitted]')", "submitted message");
+    return ev("document.querySelector('[data-submitted]').innerText.replace(/\\s+/g,' ').trim()");
+  };
+
+  // 1. no primary yet: the box is ticked and locked, and the first submitted profile becomes primary
+  await newProfile("E2E Primary One");
+  const text = await bodyText();
+  check("Preview & Submit shows 'Mark as primary profile' with the one-line explanation", text.includes("Mark as primary profile") && text.includes("Your primary profile is the one managers will see and use."));
+  const above = await ev("(()=>{const c=document.querySelector('[data-primary-choice]'); const s=[...document.querySelectorAll('[data-preview-step] button')].find(b=>b.textContent.trim()==='Submit'); return !!c && !!s && (c.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING) > 0 && c.getBoundingClientRect().bottom <= s.getBoundingClientRect().top})()");
+  check("the checkbox sits just above Submit", above);
+  check("with no primary yet the box is ticked and locked ('first')", (await choice()) === "first" && JSON.stringify(await box()) === JSON.stringify({ checked: true, disabled: true }));
+  const first = await tickConsentAndSubmit();
+  check("the first submitted profile becomes primary", primaryName() === "E2E Primary One" && first.includes("your primary profile"), first);
+  check("after Submit the box says it is already primary", (await choice()) === "already");
+
+  // 2. a second profile: the box is free and unticked; ticking it saves and switches in one step
+  await newProfile("E2E Primary Two");
+  check("for another profile the box is offered unticked", (await choice()) === "choose" && JSON.stringify(await box()) === JSON.stringify({ checked: false, disabled: false }));
+  await ev("document.querySelector('[data-primary-choice] input').click()");
+  await tickConsentAndSubmit();
+  check("Submit with the box ticked makes this profile primary (exactly one primary)", primaryName() === "E2E Primary Two");
+
+  // 3. My Profiles: badge on the primary; Mark as primary on another, confirmed in the branded dialog
+  await goto("/profiles");
+  await waitFor("!!document.querySelector('[data-primary-badge]')", "primary badge");
+  const cardOf = (name) => `[...document.querySelectorAll('[data-profile-card]')].find(c=>c.innerText.includes(${JSON.stringify(name)}))`;
+  check("My Profiles shows the Primary badge on the primary profile only", await ev(`(()=>{const two=${cardOf("E2E_Primary_Two")}, one=${cardOf("E2E_Primary_One")}; return !!two?.querySelector('[data-primary-badge]') && !two.querySelector('[data-mark-primary]') && !one?.querySelector('[data-primary-badge]') && !!one?.querySelector('[data-mark-primary]')})()`));
+  await ev(`${cardOf("E2E_Primary_One")}.querySelector('[data-mark-primary] button').click()`);
+  await waitFor("!!document.querySelector('dialog[open]')", "confirm dialog");
+  const dialog = await ev("document.querySelector('dialog[open]').innerText");
+  check("the confirmation asks with the agreed wording", dialog.includes("Your primary profile is the one managers will see and use. Make this your primary profile?"), dialog);
+  await click("Cancel", "dialog[open] button");
+  await sleep(300);
+  check("Cancel changes nothing", primaryName() === "E2E Primary Two");
+  await ev(`${cardOf("E2E_Primary_One")}.querySelector('[data-mark-primary] button').click()`);
+  await waitFor("!!document.querySelector('dialog[open]')", "confirm dialog");
+  await click("Make primary", "dialog[open] button");
+  await waitFor(`!!(${cardOf("E2E_Primary_One")})?.querySelector('[data-primary-badge]')`, "badge moved");
+  check("Mark as primary switches it", primaryName() === "E2E Primary One");
+
+  // 4. a new version of the non-primary profile does not move the primary
+  const twoId = sql(`select id from profiles where owner_id='${owner}' and candidate_name='E2E Primary Two'`);
+  const twoVersion = sql(`select current_version_id from profiles where id='${twoId}'`);
+  await goto(`/internal?version=${twoVersion}`);
+  await waitFor("!!document.querySelector('label input')", "edit form");
+  await t.fill("Overview", "A changed overview.");
+  await sleep(300);
+  await click("Preview & Submit →");
+  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
+  check("for a non-primary profile the box is offered unticked", (await choice()) === "choose");
+  await tickConsentAndSubmit();
+  check("saving a new version of another profile keeps the primary where it was", primaryName() === "E2E Primary One" && Number(sql(`select count(*) from profile_versions where profile_id='${twoId}'`)) === 2);
+
+  // 5. Manage: the team member once, showing the primary profile; its page lists the other profile read-only
+  await signIn("manager");
+  await goto("/manage?q=E2E Primary");
+  await waitFor("document.body.innerText.includes('E2E_Primary')", "manage results");
+  const list = await bodyText();
+  check("Manage shows the team member once, as their primary profile, with the Primary badge", list.includes("E2E_Primary_One") && !list.includes("E2E_Primary_Two") && (await ev("!!document.querySelector('main ul li [data-primary-badge]')")));
+  await click("E2E_Primary_One", "main ul li a");
+  await waitFor("!!document.querySelector('[data-other-profiles]')", "other profiles");
+  const page = await ev("document.querySelector('[data-other-profiles]').innerText");
+  check("the primary profile's page lists the person's other profiles (read-only links)", page.includes("E2E_Primary_Two") && (await ev("[...document.querySelectorAll('[data-other-profiles] a')].every(a=>a.getAttribute('href').startsWith('/manage/'))")));
 });
 
 await t.finish();

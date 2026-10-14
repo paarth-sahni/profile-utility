@@ -264,6 +264,21 @@ Only `team_member` and `admin` accounts can create profiles (Row Level Security:
 checkers can read everything but cannot save. A manager who presses *Submit* on an internal profile therefore gets the
 "could not save" message; they can still Download and use Google Docs from Preview.
 
+## Primary profile
+
+Each team member has at most one **primary** internal profile: the one managers see and use
+(migration `20261014120000_primary_profile.sql`).
+
+- **Setting it:** *Mark as primary* on My Profiles (confirmed in a dialog), or the *Mark as primary profile* box above
+  *Submit* on Preview & Submit (saves the version and sets the primary in one call, `submit_profile_version`). The
+  first profile a person submits becomes primary automatically. Saving a new version never moves the primary; a
+  primary profile simply shows its newest version.
+- **Rules in the database:** `profiles.is_primary` with a unique index (one per owner). Nobody writes the column
+  directly (no INSERT/UPDATE privilege); `set_primary_profile(id)` switches it atomically and only for the owner (a
+  trigger refuses anyone else, admins included).
+- **/manage:** one row per team member: their primary profile, or their most recently updated one when none is
+  marked (there is no backfill). A profile's page lists the person's other profiles, read-only.
+
 ## Manual test list
 
 Everything below is also covered by `npm test`, `npm run test:db`, `npm run test:rls` and `npm run test:e2e`; run it by
