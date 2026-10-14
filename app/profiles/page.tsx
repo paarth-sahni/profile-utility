@@ -45,17 +45,8 @@ export default async function ProfilesPage() {
                 className="flex h-full flex-col rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-brand-300 hover:shadow-md"
               >
                 <Link href={`/profiles/${p.id}`} className="block flex-1 p-5 pb-3">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          p.template === "internal" ? "bg-cream text-ink" : "bg-brand-50 text-brand-700"
-                        }`}
-                      >
-                        {p.template === "internal" ? "Internal" : "External"}
-                      </span>
-                      {p.isPrimary && <PrimaryBadge />}
-                    </span>
+                  <div className="mb-3 flex min-h-[1.375rem] items-center justify-between gap-2">
+                    <span>{p.isPrimary && <PrimaryBadge />}</span>
                     <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
                   </div>
                   <p className="truncate text-lg font-medium text-ink-dark">{profileDisplayName(p.candidateName, p.jobTitle)}</p>

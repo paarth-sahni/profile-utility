@@ -595,7 +595,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await goto("/profiles");
   await waitFor("document.body.innerText.includes('E2E_Api_External-a-InfoBeans')", "My Profiles lists the internal profile as <Name>-<Role>-InfoBeans");
   const cards = JSON.parse(await ev("JSON.stringify([...document.querySelectorAll('main ul li a')].map(a=>a.innerText.replace(/\\s+/g,' ').trim()))"));
-  check("My Profiles lists internal profiles only", cards.every((c) => c.startsWith("Internal")) && !cards.some((c) => c.includes("E2E_Legacy_External")), JSON.stringify(cards));
+  check("My Profiles lists internal profiles only, with no Internal / External tag on the cards", cards.length > 0 && !cards.some((c) => c.includes("E2E_Legacy_External") || /^(Internal|External)\b/.test(c)), JSON.stringify(cards));
   await signIn("manager");
   await goto("/manage?q=E2E");
   await waitFor("document.body.innerText.includes('E2E')", "manage results");
