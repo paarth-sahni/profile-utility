@@ -37,13 +37,13 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="Manage profiles" subtitle="Search every saved internal profile by candidate name. Read-only." />
+      <PageHero title="Manage profiles" subtitle="Search every saved internal profile by team member name. Read-only." />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">
           <div className="min-w-[14rem] flex-1">
             <label htmlFor="manage-q" className="mb-1 block text-xs font-medium text-ink-light">
-              Candidate name
+              Team member name
             </label>
             <input
               id="manage-q"
