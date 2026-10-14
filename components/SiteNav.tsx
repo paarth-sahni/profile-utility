@@ -37,7 +37,7 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
             <Link href={home} className="flex min-w-0 flex-1 items-center gap-2">
               <ProfileGeneratorMark className="h-8 w-8 shrink-0" />
               <span className="truncate text-base font-medium text-ink">
-                InfoBeans <span className="text-brand-500">Profile Generator</span>
+                <span className="text-brand-500">Profile Generator</span>
               </span>
             </Link>
             {user && <UserMenu user={user} />}

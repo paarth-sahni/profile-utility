@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import Stepper from "@/components/Stepper";
 import UploadProgress from "@/components/UploadProgress";
 import ExtractionSummary from "@/components/ExtractionSummary";
-import ProfileGeneratorMark from "@/components/ProfileGeneratorMark";
 import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
@@ -554,13 +553,9 @@ export default function ProfileWorkflow({
           <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-100/70 blur-3xl" aria-hidden />
           <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-peach/60 blur-3xl" aria-hidden />
           <div className="relative mx-auto max-w-[110rem] px-4 pb-6 pt-7 text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-hairline">
-              <ProfileGeneratorMark className="h-9 w-9" />
-            </div>
             <h1 className="text-3xl font-medium tracking-tight text-ink-dark sm:text-4xl lg:text-5xl">
-              InfoBeans <span className="text-brand-500">Profile Generator</span>
+              <span className="text-brand-500">Profile Generator</span>
             </h1>
-            <span className="mx-auto mt-3 block h-1 w-14 rounded-full bg-brand-500" aria-hidden />
             <p className="mx-auto mt-3 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
               {HERO_SUBTEXT[templateId]}
             </p>
