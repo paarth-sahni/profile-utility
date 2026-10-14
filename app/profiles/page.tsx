@@ -27,7 +27,7 @@ export default async function ProfilesPage() {
           <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
             <p className="text-lg font-medium text-ink-dark">No saved profiles yet</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-ink-light">
-              Upload a resume or start from a blank form, then choose <strong>Submit</strong> on the Preview step. It will show
+              Upload a resume or start from a blank form, then choose <strong>Submit</strong> on the Preview &amp; Submit step. It will show
               up here.
             </p>
             <Link href="/internal" className="mt-6 inline-block rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">

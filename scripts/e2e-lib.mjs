@@ -188,11 +188,11 @@ export async function startHarness(title) {
       await sleep(300);
     },
     /**
-     * From Edit details: Preview, tick the consent box and press Submit; resolves once the success message shows.
+     * From Edit details: Preview & Submit, tick the consent box and press Submit; resolves once the success message shows.
      * Saving is only possible this way (there is no Save button on Edit details). Returns the success text.
      */
     async submitViaPreview() {
-      await h.click("Preview →");
+      await h.click("Preview & Submit →");
       await h.waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
       if (!(await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
       await h.click("Submit", "[data-preview-step] button");

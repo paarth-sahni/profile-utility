@@ -14,8 +14,9 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    section (`ExtractionSummary`).
 3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
    (name, job title, overview, one education entry, one skill) are marked in red when missing. There is **no save
-   control here**: an internal profile is saved only by **Submit** on Preview (below).
-4. **Preview** — pressing *Preview →* first validates the profile; if anything is missing you stay on (or return to)
+   control here**: an internal profile is saved only by **Submit** on Preview & Submit (below).
+4. **Preview & Submit** (internal; **Preview** for external, which has no Submit) — pressing *Preview & Submit →*
+   (*Preview →* for external) first validates the profile; if anything is missing you stay on (or return to)
    Edit details with the fields marked. Otherwise the server makes the **PDF** (`POST /api/pdf`, see [PDF](#pdf)) and
    the page draws that PDF (pdf.js): the same `Blob` is what *Download PDF* saves. Buttons:
    - **← Back to edit** — keeps every edit.
@@ -29,7 +30,7 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
    content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
 
-**Submit** (internal only, on Preview) validates, records the consent and saves the profile as a new version in
+**Submit** (internal only, on Preview & Submit) validates, records the consent and saves the profile as a new version in
 My Profiles (if nothing changed since the last save, that version is reused). Preview stays on screen and shows
 "Submitted · saved to My Profiles · v3" with a *View in My Profiles* link; *Download PDF* remains available. There is
 no further step and no external form link.
@@ -40,8 +41,8 @@ no further step and no external form link.
 |---|---|---|
 | Saved in the database | yes, by Submit on Preview: My Profiles, version history (Base, v2, v3, ...) | **never** |
 | Edit details | no save controls (same as external) | no save controls |
-| Preview | Back to edit, Download PDF, Submit (stays on Preview), (Google Docs) | Back to edit, Download PDF, (Google Docs) |
-| Session-expiry banner | "go to Preview and Submit to save your profile (or download your PDF)", no button | "download your PDF now", no button |
+| Last step | **Preview & Submit**: Back to edit, Download PDF, Submit (stays on the step), (Google Docs) | **Preview**: Back to edit, Download PDF, (Google Docs) |
+| Session-expiry banner | "go to Preview & Submit to save your profile (or download your PDF)", no button | "download your PDF now", no button |
 | Listed in My Profiles / Manage | yes | n/a |
 
 The server enforces it: `POST /api/profiles` answers **400 `EXTERNAL_NOT_SAVED`** for template `external`

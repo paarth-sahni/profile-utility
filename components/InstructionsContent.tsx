@@ -163,7 +163,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
             text-based PDF.
           </Step>
           <Step n={3} title="Edit details">
-            Review and edit profile section details, then press <strong>Preview</strong>. A <strong>Please double-check</strong> panel lists every value
+            Review and edit profile section details, then press <strong>Preview &amp; Submit</strong>. A <strong>Please double-check</strong> panel lists every value
             that had to be estimated or is still missing:
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
@@ -206,8 +206,8 @@ export default function InstructionsContent({ audience }: { audience: Audience }
               </li>
             </ul>
           </Step>
-          <Step n={4} title="Preview">
-            <strong>Preview</strong> shows the exact PDF that will be downloaded. If something is missing, you are
+          <Step n={4} title="Preview & Submit">
+            <strong>Preview &amp; Submit</strong> shows the exact PDF that will be downloaded. If something is missing, you are
             taken back to Edit details with the fields marked. Do a final review, tick the confirmation (&ldquo;I confirm
             the information in this profile is accurate and may be shared&rdquo;), then choose <strong>Submit</strong> to save the
             profile to <Link href="/profiles" className="text-brand-500 underline">My Profiles</Link> (a confirmation with its version number appears on the same screen), and <strong>Download PDF</strong> to keep a copy. <strong>← Back to
@@ -221,7 +221,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
         <ul className="list-disc space-y-2 pl-5 text-sm text-gray-600">
           <li>
             <strong>Validation errors</strong> – The error list highlights the fields that need attention. Fix them
-            in the form and press Preview again.
+            in the form and press Preview (Preview &amp; Submit for internal profiles) again.
           </li>
           <li>
             <strong>Template rendering errors</strong> – These usually occur when a required field is empty. Review

@@ -135,7 +135,7 @@ export default function PreviewStep({
   return (
     <div className="space-y-5" data-preview-step>
       <div>
-        <h2 className="text-lg font-medium text-ink-dark">Preview</h2>
+        <h2 className="text-lg font-medium text-ink-dark">{onSubmit ? "Preview & Submit" : "Preview"}</h2>
         <p className="mt-1 text-sm text-ink-light">This is the exact PDF that will be downloaded. Check it, then confirm below.</p>
       </div>
 

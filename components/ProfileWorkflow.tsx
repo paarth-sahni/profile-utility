@@ -112,7 +112,7 @@ const HERO_SUBTEXT: Record<TemplateId, string> = {
 
 const STEP_LABELS: Record<TemplateId, string[]> = {
   external: ["Start", "Upload resume", "Edit details", "Preview"],
-  internal: ["Start", "Upload resume", "Edit details", "Preview"],
+  internal: ["Start", "Upload resume", "Edit details", "Preview & Submit"],
 };
 
 
@@ -782,7 +782,7 @@ export default function ProfileWorkflow({
                 onClick={enterPreview}
                 className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
               >
-                Preview →
+                {templateId === "internal" ? "Preview & Submit →" : "Preview →"}
               </button>
             </div>
           </div>

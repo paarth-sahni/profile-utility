@@ -48,10 +48,10 @@ test("expiryMessage: nothing to say before the warning window", () => {
 });
 
 test("expiryMessage: the 5-minute warning asks to Submit from Preview when there is unsaved work", () => {
-  assert.equal(expiryMessage(5 * MIN, true), "Your session ends in 5 minutes — go to Preview and Submit to save your profile (or download your PDF).");
-  assert.equal(expiryMessage(2 * MIN, true), "Your session ends in 2 minutes — go to Preview and Submit to save your profile (or download your PDF).");
-  assert.equal(expiryMessage(60_000, true), "Your session ends in 1 minute — go to Preview and Submit to save your profile (or download your PDF).");
-  assert.equal(expiryMessage(30_000, true), "Your session ends in less than a minute — go to Preview and Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(5 * MIN, true), "Your session ends in 5 minutes — go to Preview & Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(2 * MIN, true), "Your session ends in 2 minutes — go to Preview & Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(60_000, true), "Your session ends in 1 minute — go to Preview & Submit to save your profile (or download your PDF).");
+  assert.equal(expiryMessage(30_000, true), "Your session ends in less than a minute — go to Preview & Submit to save your profile (or download your PDF).");
 });
 
 test("expiryMessage: without unsaved work it only reassures", () => {

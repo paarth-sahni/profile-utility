@@ -2,7 +2,7 @@
 
 /**
  * Purpose: warns, in the InfoBeans callout style, shortly before the hard sign-in limit ends the session
- * (5 minutes before). With unsaved work the text says to go to Preview and Submit (internal) or download (external);
+ * (5 minutes before). With unsaved work the text says to go to Preview & Submit (internal) or download (external);
  * there is no Save button, because profiles are only saved by Submit on Preview. It counts down from the time left that
  * the server measured at render (`remainingMs`), not from the browser's clock. Shows nothing until the warning
  * window opens. Announced politely to screen readers.

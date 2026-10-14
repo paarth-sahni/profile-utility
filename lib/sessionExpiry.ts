@@ -57,6 +57,6 @@ export function expiryMessage(remainingMs: number, canSave: boolean, saves: bool
   const m = minutesLeft(remainingMs);
   const when = remainingMs < 60_000 ? "in less than a minute" : m === 1 ? "in 1 minute" : `in ${m} minutes`;
   return canSave
-    ? `Your session ends ${when} — go to Preview and Submit to save your profile (or download your PDF).`
+    ? `Your session ends ${when} — go to Preview & Submit to save your profile (or download your PDF).`
     : `Your session ends ${when}. Your latest changes are saved.`;
 }

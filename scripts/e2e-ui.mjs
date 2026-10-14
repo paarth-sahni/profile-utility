@@ -148,7 +148,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "edit form");
   const calls = await gisCalls();
-  await click("Preview →");
+  await click("Preview & Submit →");
   await sleep(500);
   check("an incomplete form stays on Edit details with the errors shown", (await bodyText()).includes("before continuing") && !(await ev("!!document.querySelector('[data-preview-step]')")));
   check("and no Google popup was opened", (await gisCalls()) === calls);
@@ -176,7 +176,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "edit form (manager)");
   await t.fillRequired("E2E Google Preview");
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (manager)");
   check("a manager sees Open in Google Docs on Preview", await googleButton());
   const since = sql("select now()");
@@ -209,7 +209,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await click("Get started");
   await waitFor("!!document.querySelector('label input')", "edit form (member)");
   await t.fillRequired("E2E Member Preview");
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (member)");
   check("a member sees no Open in Google Docs on Preview", !(await googleButton()) && !(await bodyText()).includes("Open in Google Docs") && (await bodyText()).includes("Download PDF"));
   await goto("/profiles"); // leaving flushes the form above as a draft; clear it here so later scenarios start clean
@@ -411,7 +411,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await fill("Skill", "Java");
   await fill("Rating out of 5 (e.g. 4)", "4");
   await sleep(300);
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview of a profile with only the required fields");
   check("a profile with only the required fields reaches Preview (no validation errors)", !(await bodyText()).includes("before continuing"));
   await click("← Back to edit");
@@ -426,7 +426,7 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
 
   // required field cleared again -> clear error, naming the field
   await fill("Overview", "");
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("document.body.innerText.toLowerCase().includes('overview')", "overview error");
   check("a missing required field is reported and Preview is not entered", !(await ev("!!document.querySelector('[data-preview-step]')")));
 });
@@ -442,18 +442,18 @@ await t.scenario("Preview step: the PDF itself, consent before Download / Submit
   const consents = (action) => Number(sql(`select count(*) from audit_log where action='consent_${action}' and at >= '${since}' and actor_id=(select id from auth.users where email='member@example.test')`));
   const labels = () => ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
 
-  check("the steps are Start, Upload resume, Edit details, Preview (no Submit step)", (await labels()) === "Start|Upload resume|Edit details|Preview", await labels());
+  check("the internal steps are Start, Upload resume, Edit details, Preview & Submit (no separate Submit step)", (await labels()) === "Start|Upload resume|Edit details|Preview & Submit", await labels());
   check("there is no 'Submit Profile' link in the top menu", !(await ev("[...document.querySelectorAll('header a')].some(a=>/submit profile/i.test(a.textContent))")));
   const bodyBefore = await bodyText();
   check("Edit details no longer offers DOCX or Google Docs buttons", !bodyBefore.includes("DOCX ↓") && !bodyBefore.includes("Open in Google Docs"));
 
   // validation runs before Preview: an empty form stays on Edit
-  await click("Preview →");
+  await click("Preview & Submit →");
   await sleep(500);
   check("an incomplete profile does not enter Preview; the errors are shown on Edit details", (await bodyText()).includes("before continuing") && !(await ev("!!document.querySelector('[data-preview-step]')")));
 
   await t.fillRequired("E2E Preview Person");
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview rendered");
   const preview = JSON.parse(await ev(`(()=>{const el=document.querySelector('[data-pdf-preview=ready]'); const c=[...el.querySelectorAll('canvas[data-pdf-page]')];
     const inked=c.length>0 && c.every(cv=>{const d=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data; for(let i=0;i<d.length;i+=4*97) if(d[i]<200||d[i+1]<200||d[i+2]<200) return true; return false});
@@ -499,7 +499,7 @@ await t.scenario("Preview step: the PDF itself, consent before Download / Submit
   check("Back to edit keeps everything that was typed", (await t.getName()) === "E2E Preview Person");
 
   // Submit: consent first, then the version is saved and the success message appears ON Preview (no other step)
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview again");
   check("the consent box is ticked fresh each time Preview is entered", (await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked")) === false);
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
@@ -522,7 +522,7 @@ await t.scenario("Preview step: the PDF itself, consent before Download / Submit
   await waitFor("!!document.querySelector('label input')", "edit (again)");
   await t.fill("Job title", "Staff Engineer");
   await sleep(200);
-  await click("Preview →");
+  await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview (edited)");
   check("after an edit the note says Submit will save a new version", (await bodyText()).includes("Submit saves this profile to My Profiles"));
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
