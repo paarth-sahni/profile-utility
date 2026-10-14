@@ -1,6 +1,6 @@
 /**
  * Purpose: unit tests for what is REQUIRED and what is OPTIONAL in a profile (lib/schemas.ts). Required: name, job
- * title, overview, one education entry, at least one skill. Everything else may be empty, and blank / "N/A" items
+ * title, experience summary, overview, one education entry, at least one skill. Everything else may be empty, and blank / "N/A" items
  * inside optional lists do not count.
  */
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { blankResume, findNAIssues, schemaFor, type ExternalResume, type Interna
 const MIN_INTERNAL: InternalResume = {
   name: "Testy McSample",
   jobTitle: "Engineer",
-  experienceSummary: "",
+  experienceSummary: "8+ Years of Industry Experience",
   specialization: "",
   overview: "An overview.",
   education: [{ year: "2014", qualification: "B.E." }],
@@ -26,7 +26,7 @@ const MIN_INTERNAL: InternalResume = {
 const MIN_EXTERNAL: ExternalResume = {
   name: "Sample Person",
   jobTitle: "Data Engineer",
-  experienceSummary: "",
+  experienceSummary: "8+ Years of Industry Experience",
   specialization: "",
   overview: "An overview.",
   education: [{ year: "2016", qualification: "M.Sc." }],
@@ -50,7 +50,7 @@ test("a profile with only the required fields is valid (internal and external)",
 
 test("each required field is still required", () => {
   for (const [id, base] of [["internal", MIN_INTERNAL], ["external", MIN_EXTERNAL]] as const) {
-    for (const key of ["name", "jobTitle", "overview"] as const) {
+    for (const key of ["name", "jobTitle", "experienceSummary", "overview"] as const) {
       assert.deepEqual(paths(id, { ...clone(base), [key]: "  " }), [key], `${id}.${key}`);
     }
     assert.ok(paths(id, { ...clone(base), education: [] }).includes("education"), `${id}: education missing`);
@@ -66,7 +66,6 @@ test("each required field is still required", () => {
 test("optional lists and header lines may be empty, blank or N/A", () => {
   const internal = {
     ...clone(MIN_INTERNAL),
-    experienceSummary: "N/A",
     specialization: "N/A",
     certifications: [""],
     tools: ["", "N/A"],
@@ -75,7 +74,7 @@ test("optional lists and header lines may be empty, blank or N/A", () => {
     languages: [""],
   };
   assert.equal(schemaFor("internal").safeParse(internal).success, true);
-  assert.equal(schemaFor("external").safeParse({ ...clone(MIN_EXTERNAL), tools: [""], certifications: ["NA"], experienceSummary: "N/A" }).success, true);
+  assert.equal(schemaFor("external").safeParse({ ...clone(MIN_EXTERNAL), tools: [""], certifications: ["NA"] }).success, true);
 });
 
 test("specialization is still capped at 5 words when it is filled in", () => {
@@ -109,10 +108,12 @@ test("an experience entry that has any real content must name the company", () =
 test("findNAIssues: N/A in required fields is flagged, in optional places it is not", () => {
   const flagged = (id: "internal" | "external", data: InternalResume | ExternalResume) => findNAIssues(id, data).map((i) => i.path);
   assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), name: "N/A" }), ["Name"]);
+  assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), experienceSummary: "N/A" }), ["Experience Summary"]);
+  assert.deepEqual(flagged("external", { ...clone(MIN_EXTERNAL), experienceSummary: "n/a" }), ["Experience Summary"]);
   assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), overview: "n/a" }), ["Overview"]);
   assert.equal(flagged("internal", { ...clone(MIN_INTERNAL), education: [{ year: "N/A", qualification: "B.E." }] }).length, 1);
   assert.equal(flagged("internal", { ...clone(MIN_INTERNAL), skills: [{ name: "N/A", rating: "4" }] }).length, 1);
-  assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), experienceSummary: "N/A", specialization: "N/A", tools: ["N/A"], certifications: ["N/A"], domains: ["N/A"], languages: ["N/A"], managerialExperience: ["N/A"] }), []);
+  assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), specialization: "N/A", tools: ["N/A"], certifications: ["N/A"], domains: ["N/A"], languages: ["N/A"], managerialExperience: ["N/A"] }), []);
   const project = { duration: "N/A", title: "Billing", toolsAndTechnologies: ["N/A"], teamSize: "N/A", role: "N/A", projectLink: "N/A", description: "N/A", responsibilities: ["N/A"] };
   assert.deepEqual(flagged("internal", { ...clone(MIN_INTERNAL), projects: [project] }), [], "everything but the project name is optional");
   assert.equal(flagged("internal", { ...clone(MIN_INTERNAL), projects: [{ ...project, title: "N/A" }] }).length, 1, "the project name is not");
@@ -122,9 +123,9 @@ test("findNAIssues: N/A in required fields is flagged, in optional places it is 
 test("blankResume has a placeholder entry everywhere and becomes valid once only the required fields are filled", () => {
   const blank = blankResume("internal") as InternalResume;
   assert.ok(paths("internal", blank).length > 0, "a blank form is not valid yet");
-  const filled: InternalResume = { ...blank, name: "A", jobTitle: "B", overview: "C", education: [{ year: "2014", qualification: "B.E." }], skills: [{ name: "Java", rating: "4" }] };
+  const filled: InternalResume = { ...blank, name: "A", jobTitle: "B", experienceSummary: "4", overview: "C", education: [{ year: "2014", qualification: "B.E." }], skills: [{ name: "Java", rating: "4" }] };
   assert.equal(schemaFor("internal").safeParse(filled).success, true, "optional placeholders (blank lists and a blank project) are fine");
   const blankExt = blankResume("external") as ExternalResume;
-  const filledExt: ExternalResume = { ...blankExt, name: "A", jobTitle: "B", overview: "C", education: [{ year: "2016", qualification: "M.Sc." }], skills: ["Python"] };
+  const filledExt: ExternalResume = { ...blankExt, name: "A", jobTitle: "B", experienceSummary: "4+ Years of Industry Experience", overview: "C", education: [{ year: "2016", qualification: "M.Sc." }], skills: ["Python"] };
   assert.equal(schemaFor("external").safeParse(filledExt).success, true);
 });

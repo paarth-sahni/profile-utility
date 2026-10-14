@@ -44,7 +44,7 @@ const anyReal = (...values: (string | string[])[]): boolean =>
   values.some((v) => (Array.isArray(v) ? v.some(isRealText) : isRealText(v)));
 
 /*
- * REQUIRED in every profile: name, job title, overview, education (exactly one entry), at least one skill.
+ * REQUIRED in every profile: name, job title, experience summary, overview, education (exactly one entry), at least one skill.
  * Everything else is OPTIONAL and may be empty: experience summary, specialization, certifications, tools, domains,
  * languages, managerial experience, projects, and (external) experience entries. An optional section with nothing
  * real in it is left out of the generated document (heading included); see prepareData in lib/docxData.ts.
@@ -98,7 +98,7 @@ export const externalExperienceSchema = z
 export const externalResumeSchema = z.object({
   name: nonEmpty("name"),
   jobTitle: nonEmpty("jobTitle"),
-  experienceSummary: looseText(),
+  experienceSummary: nonEmpty("experienceSummary"),
   specialization: optionalMaxWords("specialization", 5),
   overview: nonEmpty("overview"),
   education: z
@@ -147,7 +147,7 @@ export const internalSkillSchema = z.object({
 export const internalResumeSchema = z.object({
   name: nonEmpty("name"),
   jobTitle: nonEmpty("jobTitle"),
-  experienceSummary: looseText(),
+  experienceSummary: nonEmpty("experienceSummary"),
   specialization: optionalMaxWords("specialization", 5),
   overview: nonEmpty("overview"),
   education: z
@@ -243,13 +243,13 @@ export function describeFieldPath(path: (string | number)[]): string {
 }
 
 /** Top-level fields that are optional, so a leftover "N/A" anywhere inside them is fine. */
-const OPTIONAL_TOP_LEVEL = new Set(["experienceSummary", "specialization", "certifications", "tools", "domains", "languages", "managerialExperience"]);
+const OPTIONAL_TOP_LEVEL = new Set(["specialization", "certifications", "tools", "domains", "languages", "managerialExperience"]);
 /** The one field of a project / experience entry that must be real when the entry is used. */
 const ENTRY_NAME_KEYS = new Set(["title", "client", "company"]);
 
 /** Optional places where a leftover "N/A" is fine: the optional top-level fields, and everything inside a project
  *  or experience entry except its name (the document simply leaves the field or section out). Required fields
- *  (name, job title, overview, education, skills) and entry names are still checked. */
+ *  (name, job title, experience summary, overview, education, skills) and entry names are still checked. */
 const isOptionalNAPath = (path: (string | number)[]): boolean => {
   const top = path[0];
   if (typeof top === "string" && OPTIONAL_TOP_LEVEL.has(top)) return true;

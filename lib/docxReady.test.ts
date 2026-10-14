@@ -39,7 +39,6 @@ test("a complete profile is ready and comes back validated", () => {
 test("a profile with only the required fields is ready, and its empty optional sections are fine", () => {
   const r = checkReadyForDocx("internal", {
     ...COMPLETE,
-    experienceSummary: "",
     specialization: "",
     projects: [],
     certifications: [],
@@ -49,6 +48,10 @@ test("a profile with only the required fields is ready, and its empty optional s
     languages: [],
   });
   assert.equal(r.ok, true);
+});
+
+test("a profile without an experience summary is not ready", () => {
+  assert.equal(checkReadyForDocx("internal", { ...COMPLETE, experienceSummary: "" }).ok, false);
 });
 
 test("an incomplete draft is not ready and the message points to Review", () => {

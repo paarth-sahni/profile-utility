@@ -13,7 +13,7 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 2. **Upload resume** — the file is read and pre-fills the form; a single note above the form asks you to review every
    section (`ExtractionSummary`).
 3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
-   (name, job title, overview, one education entry, one skill) are marked in red when missing. There is **no save
+   (name, job title, experience summary / years of experience, overview, one education entry, one skill) are marked in red when missing. There is **no save
    control here**: an internal profile is saved only by **Submit** on Preview & Submit (below).
 4. **Preview & Submit** (internal; **Preview** for external, which has no Submit) — pressing *Preview & Submit →*
    (*Preview →* for external) first validates the profile; if anything is missing you stay on (or return to)
@@ -268,7 +268,7 @@ Everything below is also covered by `npm test`, `npm run test:db`, `npm run test
 hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.test` (password `password123`).
 
 1. **Preview gate** (member, `/internal`): *Create a Profile from Scratch* → *Preview →* with nothing filled → stays on
-   Edit details, fields marked red. Fill name, job title, overview, year, qualification, one skill + rating → *Preview →*
+   Edit details, fields marked red. Fill name, job title, years of experience, overview, year, qualification, one skill + rating → *Preview & Submit →*
    → the PDF appears in the page (every page, readable on a phone too: try the browser's device mode).
 2. **Back keeps edits**: *← Back to edit* → everything typed is still there.
 3. **Consent**: on Preview press *Download PDF* and *Submit* without the box → a message, nothing happens. Tick it →

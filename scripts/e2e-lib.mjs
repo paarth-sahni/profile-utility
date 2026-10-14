@@ -176,10 +176,11 @@ export async function startHarness(title) {
     /** Types into the field whose label text is exactly `label` (ignoring "(optional)"), input or textarea. */
     fill: (label, value) =>
       ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>(l.querySelector('span')?.textContent??'').replace('(optional)','').trim()===${JSON.stringify(label)}); const i=l?.querySelector('input,textarea'); if(!i) return false; const proto=i.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement; Object.getOwnPropertyDescriptor(proto.prototype,'value').set.call(i,${JSON.stringify(value)}); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`),
-    /** Fills the internal blank form with only the required fields (name, job title, overview, education, one skill). */
+    /** Fills the internal blank form with only the required fields (name, job title, years of experience, overview, education, one skill). */
     async fillRequired(name) {
       await h.setName(name);
       await h.fill("Job title", "Engineer");
+      await h.fill("Years of Industry Experience", "4");
       await h.fill("Overview", "Only the overview.");
       await h.fill("Year", "2014");
       await h.fill("Qualification", "B.E.");

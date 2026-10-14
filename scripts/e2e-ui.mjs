@@ -556,6 +556,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
 
   await t.fill("Name", "E2E External Person");
   await t.fill("Job title", "Engineer");
+  await t.fill("Experience summary", "4+ Years of Industry Experience");
   await t.fill("Overview", "Only the overview.");
   await t.fill("Year", "2014");
   await t.fill("Qualification", "B.E.");

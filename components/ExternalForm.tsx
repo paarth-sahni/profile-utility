@@ -35,11 +35,11 @@ export default function ExternalForm({
 
   return (
     <Accordion expandTick={expandTick}>
-      <Section title="Profile" defaultOpen invalid={hasErrorUnder(fe, "name", "jobTitle", "overview")}>
+      <Section title="Profile" defaultOpen invalid={hasErrorUnder(fe, "name", "jobTitle", "experienceSummary", "overview")}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" error={fe["name"]} value={data.name} onChange={(v) => set("name", v)} />
           <Field label="Job title" error={fe["jobTitle"]} value={data.jobTitle} onChange={(v) => set("jobTitle", v)} />
-          <Field label="Experience summary" optional value={data.experienceSummary} onChange={(v) => set("experienceSummary", v)} />
+          <Field label="Experience summary" error={fe["experienceSummary"]} value={data.experienceSummary} onChange={(v) => set("experienceSummary", v)} />
           <Field
             label="Specialization"
             optional
