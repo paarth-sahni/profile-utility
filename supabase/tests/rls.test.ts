@@ -496,6 +496,60 @@ describe("save_profile_version runs as the caller", () => {
   });
 });
 
+describe("primary profile: only the owner can set it", () => {
+  const primaryOf = async (owner: RoleName): Promise<string | null> =>
+    (rows(await db("admin").from("profiles").select("id").eq("owner_id", userId[owner]).eq("is_primary", true))[0]?.id as string) ?? null;
+  const scratch = { name: "Primary Scratch", jobTitle: "Tester", experienceSummary: "1+ Years", specialization: "", overview: "x" };
+  const submit = (r: RoleName, profileId: string | null, makePrimary: boolean) =>
+    db(r).rpc("submit_profile_version", {
+      p_profile_id: profileId, p_template: "internal", p_kind: "base", p_label: "", p_parent: null, p_source: profileId ? "edit" : "scratch",
+      p_profile: scratch, p_flags: [], p_analysis: null, p_prompt_plan: null, p_make_primary: makePrimary,
+    });
+
+  test("nobody writes is_primary directly: not the owner, not an admin (insert or update)", async () => {
+    const before = await primaryOf("member");
+    for (const r of ["member", "admin"] as const) {
+      const res = await db(r).from("profiles").update({ is_primary: true }).eq("id", profileA).select();
+      assert.ok(nothingHappened(res), `${r} updated is_primary directly`);
+    }
+    const ins = await db("member").from("profiles").insert({ owner_id: userId.member, template: "internal", candidate_name: "x", is_primary: true }).select();
+    assert.notEqual(ins.error, null, "a profile cannot be inserted as primary");
+    assert.equal(await primaryOf("member"), before);
+  });
+
+  test("nobody else can make someone's profile primary through the function (member2, checker, manager, admin)", async () => {
+    const before = await primaryOf("member");
+    for (const r of ["member2", "checker", "manager", "admin"] as const) {
+      const res = await db(r).rpc("set_primary_profile", { p_profile_id: profileA });
+      assert.notEqual(res.error, null, `${r} set member's primary`);
+    }
+    assert.equal(await primaryOf("member"), before);
+  });
+
+  test("the owner switches atomically; Submit with the box saves and switches; a new version keeps the primary", async () => {
+    const before = await primaryOf("member");
+    const created: string[] = [];
+    try {
+      const x = rows(await submit("member", null, false))[0];
+      const y = rows(await submit("member", null, true))[0];
+      created.push(String(x.profile_id), String(y.profile_id));
+      assert.equal(y.is_primary, true, "Submit with the box makes the profile primary");
+      assert.equal(await primaryOf("member"), y.profile_id);
+      assert.equal((await db("member").rpc("set_primary_profile", { p_profile_id: x.profile_id })).error, null, "the owner may switch");
+      const mine = rows(await db("member").from("profiles").select("id,is_primary").eq("is_primary", true));
+      assert.deepEqual(mine.map((p) => p.id), [x.profile_id], "exactly one primary after the switch");
+      const v2 = rows(await submit("member", String(y.profile_id), false))[0];
+      assert.equal(v2.is_primary, false, "a new version of another profile does not take the primary");
+      assert.equal(await primaryOf("member"), x.profile_id);
+      // someone else's profile cannot become the caller's primary either
+      assert.notEqual((await db("member").rpc("set_primary_profile", { p_profile_id: profileC })).error, null);
+    } finally {
+      for (const id of created) await db("admin").from("profiles").delete().eq("id", id);
+      if (before) await db("member").rpc("set_primary_profile", { p_profile_id: before });
+    }
+  });
+});
+
 describe("audit_log", () => {
   test("members and checkers read nothing; manager and admin read; nobody can change or delete a row", async () => {
     // make sure at least one row exists (the seed and the tests above already wrote some)

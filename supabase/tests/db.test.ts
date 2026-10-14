@@ -101,47 +101,49 @@ describe("saveVersion: ownership", () => {
 });
 
 describe("manager/admin name search and read-only views", () => {
-  // Riley Example is an EXTERNAL seeded profile (used by the RLS tests): external profiles are no longer listed or searchable.
-  const SEEDED = ["Alex Sample", "Jamie Placeholder", "Riley Example"];
-  const LISTED = ["Alex Sample", "Jamie Placeholder"];
+  // The search lists ONE row per team member (their primary profile, else their latest), and a name matches when any of
+  // their profiles matches, so results are checked by WHO was found. Seeded people: Alex Sample (member), Jamie
+  // Placeholder (member2), and Riley Example: the admin's EXTERNAL profile, which is never listed or searchable.
+  const ALEX = "member@example.test";
+  const JAMIE = "member2@example.test";
+  const SEEDED = [ALEX, JAMIE, "admin@example.test"];
 
   for (const who of ["manager", "admin"] as const) {
     test(`${who} finds a seeded profile by a partial name`, async () => {
       const hits = await searchProfilesByNameAs(ctx[who], "alex samp");
-      assert.equal(hits[0]?.candidateName, "Alex Sample");
-      assert.equal(hits[0]?.ownerEmail, "member@example.test");
-      assert.equal(hits[0]?.versionCount, 2);
+      assert.equal(hits[0]?.ownerEmail, ALEX);
     });
 
-    test(`${who}: an empty query lists every seeded profile`, async () => {
-      const names = (await searchProfilesByNameAs(ctx[who], "")).map((h) => h.candidateName);
-      for (const n of LISTED) assert.ok(names.includes(n), `${n} missing`);
-      assert.ok(!names.includes("Riley Example"), "an external profile must not be listed");
+    test(`${who}: an empty query lists every seeded person once`, async () => {
+      const hits = await searchProfilesByNameAs(ctx[who], "");
+      const owners = hits.map((h) => h.ownerEmail);
+      for (const o of [ALEX, JAMIE]) assert.equal(owners.filter((x) => x === o).length, 1, `${o} must be listed exactly once`);
+      assert.ok(!hits.some((h) => h.candidateName === "Riley Example"), "an external profile must not be listed");
     });
   }
 
   test("a similar (misspelled) name still matches (trigram)", async () => {
     const hits = await searchProfilesByNameAs(ctx.manager, "Jamie Placeholdr");
-    assert.equal(hits[0]?.candidateName, "Jamie Placeholder");
+    assert.equal(hits[0]?.ownerEmail, JAMIE);
   });
 
   // Typos and prefixes (pg_trgm word_similarity + word-prefix match). Only the seeded names are asserted, because
   // real people's profiles may also exist in a developer's local database.
-  const names = async (q: string): Promise<string[]> => (await searchProfilesByNameAs(ctx.manager, q)).map((h) => h.candidateName);
+  const names = async (q: string): Promise<string[]> => (await searchProfilesByNameAs(ctx.manager, q)).map((h) => h.ownerEmail);
 
   for (const q of ["alx", "aelx", "alex sampl", "alex", "Alex Samp", "sam", "lex"]) {
-    test(`"${q}" finds Alex Sample and no other seeded profile`, async () => {
+    test(`"${q}" finds Alex Sample and no other seeded person`, async () => {
       const found = (await names(q)).filter((n) => SEEDED.includes(n));
-      assert.deepEqual(found, ["Alex Sample"]);
+      assert.deepEqual(found, [ALEX]);
     });
   }
 
   test("a full name does not drag in similar-sounding names (Sample vs Example)", async () => {
-    assert.deepEqual((await names("Alex Sample")).filter((n) => SEEDED.includes(n)), ["Alex Sample"]);
+    assert.deepEqual((await names("Alex Sample")).filter((n) => SEEDED.includes(n)), [ALEX]);
   });
 
   test("a short typo of another name finds that person only", async () => {
-    assert.deepEqual((await names("jmie")).filter((n) => SEEDED.includes(n)), ["Jamie Placeholder"]);
+    assert.deepEqual((await names("jmie")).filter((n) => SEEDED.includes(n)), [JAMIE]);
     assert.deepEqual((await names("riley")).filter((n) => SEEDED.includes(n)), [], "the external Riley Example is not searchable");
   });
 
@@ -153,7 +155,7 @@ describe("manager/admin name search and read-only views", () => {
 
   test("the best match ranks first", async () => {
     const hits = await searchProfilesByNameAs(ctx.manager, "alex sampl");
-    assert.equal(hits[0]?.candidateName, "Alex Sample");
+    assert.equal(hits[0]?.ownerEmail, ALEX);
     assert.ok(hits[0].score > 0.8);
   });
 
@@ -181,7 +183,9 @@ describe("manager/admin name search and read-only views", () => {
   }
 
   test("the manager reads another user's history and versions", async () => {
-    const alex = (await searchProfilesByNameAs(ctx.manager, "Alex Sample"))[0];
+    // the seeded profile itself (the search shows the member's primary / latest profile, which tests may have added)
+    const { data } = await ctx.manager.supabase.from("profiles").select("id").eq("candidate_name", "Alex Sample").eq("owner_id", ctx.member.userId).single();
+    const alex = data!;
     const history = await getProfileForManagerAs(ctx.manager, alex.id);
     assert.equal(history?.profile.ownerEmail, "member@example.test");
     assert.equal(history?.versions.length, 2);

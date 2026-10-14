@@ -139,13 +139,13 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "archived": boolean,"candidate_name": string,"created_at": string,"current_version_id": string | null,"id": string,"owner_id": string,"template": Database["public"]['Enums']["template_kind"],"updated_at": string
+                    "archived": boolean,"candidate_name": string,"created_at": string,"current_version_id": string | null,"id": string,"is_primary": boolean,"owner_id": string,"template": Database["public"]['Enums']["template_kind"],"updated_at": string
                   }
                   Insert: {
-                    "archived"?: boolean,"candidate_name"?: string,"created_at"?: string,"current_version_id"?: string | null,"id"?: string,"owner_id": string,"template": Database["public"]['Enums']["template_kind"],"updated_at"?: string
+                    "archived"?: boolean,"candidate_name"?: string,"created_at"?: string,"current_version_id"?: string | null,"id"?: string,"is_primary"?: boolean,"owner_id": string,"template": Database["public"]['Enums']["template_kind"],"updated_at"?: string
                   }
                   Update: {
-                    "archived"?: boolean,"candidate_name"?: string,"created_at"?: string,"current_version_id"?: string | null,"id"?: string,"owner_id"?: string,"template"?: Database["public"]['Enums']["template_kind"],"updated_at"?: string
+                    "archived"?: boolean,"candidate_name"?: string,"created_at"?: string,"current_version_id"?: string | null,"id"?: string,"is_primary"?: boolean,"owner_id"?: string,"template"?: Database["public"]['Enums']["template_kind"],"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -355,7 +355,15 @@ isOneToOne: false
                            },
 "search_profiles_by_name":
 { Args: { "p_query": string }; Returns: {
-              "candidate_name": string,"id": string,"owner_email": string,"owner_id": string,"owner_name": string,"score": number,"template": Database["public"]['Enums']["template_kind"],"updated_at": string,"version_count": number
+              "candidate_name": string,"id": string,"is_primary": boolean,"owner_email": string,"owner_id": string,"owner_name": string,"score": number,"template": Database["public"]['Enums']["template_kind"],"updated_at": string,"version_count": number
+            }[]
+                           },
+"set_primary_profile":
+{ Args: { "p_profile_id": string }; Returns: undefined
+                           },
+"submit_profile_version":
+{ Args: { "p_analysis": Json,"p_flags": Json,"p_kind": Database["public"]['Enums']["version_kind"],"p_label": string,"p_make_primary": boolean,"p_parent": string,"p_profile": Json,"p_profile_id": string,"p_prompt_plan": (string)[],"p_source": string,"p_template": Database["public"]['Enums']["template_kind"] }; Returns: {
+              "is_primary": boolean,"new_version_id": string,"new_version_no": number,"profile_id": string
             }[]
                            }
           }

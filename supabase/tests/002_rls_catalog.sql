@@ -68,6 +68,14 @@ begin
                           'version_skills', 'version_list_items', 'version_experience', 'experience_highlights',
                           'version_review_flags', 'audit_log'));
   assert v_bad is null, 'mutating policy on immutable table: ' || v_bad;
+
+  -- 7. profiles.is_primary: no INSERT or UPDATE privilege for signed-in users (only set_primary_profile changes it)
+  assert not exists (select 1 from information_schema.column_privileges
+                     where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_primary'
+                       and grantee in ('authenticated', 'anon', 'PUBLIC') and privilege_type in ('INSERT', 'UPDATE')),
+    'authenticated can write profiles.is_primary directly';
+  assert exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'profiles_one_primary_per_owner'),
+    'one-primary-per-owner index missing';
 end $$;
 
 select 'RLS CATALOG CHECK PASSED' as result;

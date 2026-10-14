@@ -136,5 +136,55 @@ begin
   assert bad is null, 'anon can execute: ' || coalesce(bad, '');
 end $$;
 
+-- 5. Primary profile (20261014120000_primary_profile.sql) --------------------------------------
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a2', 'Other@InfoBeans.com');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated"}', true);
+do $$
+declare
+  v_doc jsonb := (select doc from fixtures where template = 'internal' limit 1);
+  a record; b record; c record; n int;
+  v_a1 uuid := '00000000-0000-0000-0000-0000000000a1';
+begin
+  delete from public.profiles where owner_id = v_a1;  -- start from "no profiles, no primary"
+  -- first submitted profile becomes primary automatically
+  select * into a from public.submit_profile_version(null, 'internal', 'base', '', null, 'scratch', v_doc, '[]', null, null, false);
+  assert a.is_primary, 'first submitted profile must become primary';
+  -- a second profile without the box: the first stays primary
+  select * into b from public.submit_profile_version(null, 'internal', 'base', '', null, 'scratch', v_doc, '[]', null, null, false);
+  assert not b.is_primary, 'a later profile must not take over the primary on its own';
+  -- a new version of the primary profile keeps it primary (and does not move it)
+  select * into c from public.submit_profile_version(a.profile_id, 'internal', 'base', '', null, 'edit', v_doc, '[]', null, null, false);
+  assert c.profile_id = a.profile_id and c.is_primary and c.new_version_no = 2, 'a new version keeps its profile primary';
+  -- a new version of a non-primary profile does not change the primary
+  perform public.submit_profile_version(b.profile_id, 'internal', 'base', '', null, 'edit', v_doc, '[]', null, null, false);
+  assert (select id from public.profiles where owner_id = v_a1 and is_primary) = a.profile_id, 'saving another profile must not move the primary';
+  -- Submit with the box ticked: saves and switches in one step
+  select * into c from public.submit_profile_version(b.profile_id, 'internal', 'base', '', null, 'edit', v_doc, '[]', null, null, true);
+  assert c.is_primary, 'submit with p_make_primary must make the profile primary';
+  select count(*) into n from public.profiles where owner_id = v_a1 and is_primary;
+  assert n = 1, 'exactly one primary after a switch, found ' || n;
+  -- switch back with set_primary_profile
+  perform public.set_primary_profile(a.profile_id);
+  assert (select array_agg(id) from public.profiles where owner_id = v_a1 and is_primary) = array[a.profile_id], 'set_primary_profile switches atomically';
+  -- the unique index: a second primary cannot exist
+  begin
+    update public.profiles set is_primary = true where id = b.profile_id;
+    raise exception 'FAIL: two primaries accepted';
+  exception when unique_violation then null; end;
+  -- an archived profile cannot become primary
+  update public.profiles set archived = true where id = b.profile_id;
+  begin perform public.set_primary_profile(b.profile_id); raise exception 'FAIL: archived profile made primary';
+  exception when invalid_parameter_value then null; end;
+  -- someone else cannot set it, neither through the function nor directly (trigger), even as the table owner
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a2","role":"authenticated"}', true);
+  begin perform public.set_primary_profile(a.profile_id); raise exception 'FAIL: non-owner set primary';
+  exception when insufficient_privilege then null; end;
+  begin update public.profiles set is_primary = false where id = a.profile_id; raise exception 'FAIL: non-owner cleared primary';
+  exception when insufficient_privilege then null; end;
+  perform set_config('request.jwt.claims', '', true);
+  begin perform public.set_primary_profile(a.profile_id); raise exception 'FAIL: unauthenticated set primary';
+  exception when invalid_authorization_specification then null; end;
+end $$;
+
 rollback;
 \echo SMOKE TEST PASSED
