@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import DownloadPdfButton from "@/components/DownloadPdfButton";
 import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
+import MarkPrimaryButton, { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
 import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
@@ -36,9 +37,12 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <Link href="/profiles" className="text-sm font-medium text-brand-600 hover:underline">
-            ← My Profiles
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link href="/profiles" className="text-sm font-medium text-brand-600 hover:underline">
+              ← My Profiles
+            </Link>
+            {profile.template === "internal" && (profile.isPrimary ? <PrimaryBadge /> : <MarkPrimaryButton profileId={profile.id} />)}
+          </div>
           {latestVersionId && (
             <Link
               href={`${home}?version=${latestVersionId}`}

@@ -87,9 +87,11 @@ const envelope = z.object({
   reviewFlags: z.array(reviewFlagSchema).max(200).default([]),
   analysis: resumeAnalysisSchema.nullish(),
   promptPlan: z.array(z.string().max(100)).max(50).default([]),
+  /** "Mark as primary profile" on Preview & Submit: saves and makes this profile primary in one step. */
+  makePrimary: z.boolean().default(false),
 });
 
-export type SavePayload = Omit<z.infer<typeof envelope>, "data"> & { data: ResumeData };
+export type SavePayload = Omit<z.infer<typeof envelope>, "data" | "makePrimary"> & { data: ResumeData; makePrimary?: boolean };
 
 /** Parses an untrusted save request body; returns null if anything is off (no details leaked), including any template but "internal". */
 export function parseSavePayload(body: unknown): SavePayload | null {

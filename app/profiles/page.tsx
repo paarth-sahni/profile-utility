@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import MarkPrimaryButton, { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
 import { listMyProfiles } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
@@ -38,18 +39,22 @@ export default async function ProfilesPage() {
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {profiles.map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/profiles/${p.id}`}
-                  className="block h-full rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-brand-300 hover:shadow-md"
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        p.template === "internal" ? "bg-cream text-ink" : "bg-brand-50 text-brand-700"
-                      }`}
-                    >
-                      {p.template === "internal" ? "Internal" : "External"}
+              <li
+                key={p.id}
+                data-profile-card={p.id}
+                className="flex h-full flex-col rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-brand-300 hover:shadow-md"
+              >
+                <Link href={`/profiles/${p.id}`} className="block flex-1 p-5 pb-3">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          p.template === "internal" ? "bg-cream text-ink" : "bg-brand-50 text-brand-700"
+                        }`}
+                      >
+                        {p.template === "internal" ? "Internal" : "External"}
+                      </span>
+                      {p.isPrimary && <PrimaryBadge />}
                     </span>
                     <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
                   </div>
@@ -58,6 +63,11 @@ export default async function ProfilesPage() {
                     {p.versionCount} {p.versionCount === 1 ? "version" : "versions"}
                   </p>
                 </Link>
+                {!p.isPrimary && (
+                  <div className="px-5 pb-4">
+                    <MarkPrimaryButton profileId={p.id} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

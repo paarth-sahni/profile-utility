@@ -15,6 +15,7 @@ import {
   listMyProfilesAs,
   saveVersionAs,
   searchProfilesByNameAs,
+  setPrimaryProfileAs,
   type DbContext,
   type LoadedVersion,
   type ManagedProfileSummary,
@@ -32,8 +33,12 @@ async function ctx(): Promise<DbContext> {
 }
 
 /** Saves a new immutable version (creating the profile when `payload.profileId` is empty). */
-export async function saveVersion(payload: SavePayload): Promise<{ profileId: string; versionId: string; versionNo: number }> {
+export async function saveVersion(payload: SavePayload): Promise<{ profileId: string; versionId: string; versionNo: number; isPrimary: boolean }> {
   return saveVersionAs(await ctx(), payload);
+}
+
+export async function setPrimaryProfile(id: string): Promise<void> {
+  return setPrimaryProfileAs(await ctx(), id);
 }
 
 /** The signed-in user's own profiles, newest first. */
@@ -57,7 +62,7 @@ export async function searchProfilesByName(query: string): Promise<ManagedProfil
 }
 
 /** Manager/admin only: any profile with its version history. */
-export async function getProfileForManager(id: string): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null } | null> {
+export async function getProfileForManager(id: string): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null; otherProfiles: ProfileSummary[] } | null> {
   return getProfileForManagerAs(await ctx(), id);
 }
 

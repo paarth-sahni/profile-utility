@@ -51,6 +51,8 @@ export interface ProfileSummary {
   candidateName: string;
   /** Job title of the current version ("" when unknown); with the name it makes the display name. */
   jobTitle: string;
+  /** The owner's primary profile: the one managers see and use. */
+  isPrimary: boolean;
   versionCount: number;
   updatedAt: string;
 }
@@ -85,7 +87,7 @@ export interface LoadedVersion {
 export async function saveVersionAs(
   { supabase, userId }: DbContext,
   p: SavePayload,
-): Promise<{ profileId: string; versionId: string; versionNo: number }> {
+): Promise<{ profileId: string; versionId: string; versionNo: number; isPrimary: boolean }> {
   if ((p.template as string) !== "internal") throw new ExternalNotSavedError(); // second line of defence behind the API route
   if (p.profileId) {
     const { data: owned } = await supabase.from("profiles").select("id").eq("id", p.profileId).eq("owner_id", userId).maybeSingle();
@@ -97,7 +99,8 @@ export async function saveVersionAs(
     const { data: last } = await supabase.from("profile_versions").select("version_no").eq("profile_id", p.profileId).order("version_no", { ascending: false }).limit(1).maybeSingle();
     nextNo = (last?.version_no ?? 0) + 1;
   }
-  const { data, error } = await supabase.rpc("save_profile_version", {
+  // submit_profile_version saves and, in the same transaction, sets the primary when asked (or for the first profile)
+  const { data, error } = await supabase.rpc("submit_profile_version", {
     p_profile_id: p.profileId ?? null,
     p_template: p.template,
     p_kind: p.kind,
@@ -108,19 +111,27 @@ export async function saveVersionAs(
     p_flags: p.reviewFlags,
     p_analysis: p.analysis ?? null,
     p_prompt_plan: p.promptPlan,
+    p_make_primary: p.makePrimary ?? false,
   });
   const row = Array.isArray(data) ? data[0] : null;
   if (error || !row) throw new Error("SAVE_FAILED");
-  const { data: v } = await supabase.from("profile_versions").select("profile_id").eq("id", row.new_version_id).single();
-  if (!v) throw new Error("SAVE_FAILED");
-  return { profileId: v.profile_id, versionId: row.new_version_id, versionNo: row.new_version_no };
+  return { profileId: row.profile_id, versionId: row.new_version_id, versionNo: row.new_version_no, isPrimary: row.is_primary };
+}
+
+/** Makes one of the caller's own internal profiles their primary one (atomic switch in the database). */
+export async function setPrimaryProfileAs({ supabase, userId }: DbContext, id: string): Promise<void> {
+  if (!uuid.safeParse(id).success) throw new ProfileNotFoundError();
+  const { data: owned } = await supabase.from("profiles").select("id").eq("id", id).eq("owner_id", userId).eq("template", "internal").eq("archived", false).maybeSingle();
+  if (!owned) throw new ProfileNotFoundError();
+  const { error } = await supabase.rpc("set_primary_profile", { p_profile_id: id });
+  if (error) throw new Error("SET_PRIMARY_FAILED");
 }
 
 /** The signed-in user's own INTERNAL profiles, newest first. */
 export async function listMyProfilesAs({ supabase, userId }: DbContext): Promise<ProfileSummary[]> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, current:profile_versions!profiles_current_version_fk(job_title), profile_versions!profile_versions_profile_id_fkey(count)")
+    .select("id, template, candidate_name, updated_at, is_primary, current:profile_versions!profiles_current_version_fk(job_title), profile_versions!profile_versions_profile_id_fkey(count)")
     .eq("owner_id", userId)
     .eq("template", "internal") // external profiles are never saved; any old ones are not listed
     .eq("archived", false)
@@ -131,6 +142,7 @@ export async function listMyProfilesAs({ supabase, userId }: DbContext): Promise
     template: r.template as TemplateId,
     candidateName: r.candidate_name,
     jobTitle: jobTitleOf(r.current),
+    isPrimary: r.is_primary,
     versionCount: (r.profile_versions as unknown as { count: number }[])?.[0]?.count ?? 0,
     updatedAt: r.updated_at,
   }));
@@ -144,7 +156,7 @@ export async function getMyProfileAs(
   if (!uuid.safeParse(id).success) return null;
   const { data: p } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, current_version_id, current:profile_versions!profiles_current_version_fk(job_title)")
+    .select("id, template, candidate_name, updated_at, current_version_id, is_primary, current:profile_versions!profiles_current_version_fk(job_title)")
     .eq("id", id)
     .eq("owner_id", userId)
     .maybeSingle();
@@ -168,6 +180,7 @@ export async function getMyProfileAs(
       template: p.template as TemplateId,
       candidateName: p.candidate_name,
       jobTitle: jobTitleOf(p.current),
+      isPrimary: p.is_primary,
       versionCount: versions.length,
       updatedAt: p.updated_at,
     },
@@ -221,6 +234,7 @@ const searchRow = z.object({
   version_count: z.number(),
   updated_at: z.string(),
   score: z.number(),
+  is_primary: z.boolean(),
 });
 
 /** Throws ForbiddenError unless the caller is a manager or admin (role read from the database, not the client). */
@@ -256,6 +270,7 @@ export async function searchProfilesByNameAs({ supabase }: DbContext, query: str
     template: r.template,
     candidateName: r.candidate_name,
     jobTitle: titles.get(r.id) ?? "",
+    isPrimary: r.is_primary,
     versionCount: r.version_count,
     updatedAt: r.updated_at,
     ownerName: r.owner_name ?? "",
@@ -264,16 +279,19 @@ export async function searchProfilesByNameAs({ supabase }: DbContext, query: str
   }));
 }
 
-/** Any profile with its version history, for managers/admins; null if it does not exist. */
+/**
+ * Any profile with its version history, for managers/admins; null if it does not exist. `otherProfiles` are the same
+ * person's other internal profiles (newest first), so a manager can still open them from the primary one.
+ */
 export async function getProfileForManagerAs(
   { supabase }: DbContext,
   id: string,
-): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null } | null> {
+): Promise<{ profile: ManagedProfileSummary; versions: VersionSummary[]; latestVersionId: string | null; otherProfiles: ProfileSummary[] } | null> {
   await requireManagerAs(supabase);
   if (!uuid.safeParse(id).success) return null;
   const { data: p } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, current_version_id, current:profile_versions!profiles_current_version_fk(job_title), owner:app_users!profiles_owner_id_fkey(full_name, email)")
+    .select("id, owner_id, template, candidate_name, updated_at, current_version_id, is_primary, current:profile_versions!profiles_current_version_fk(job_title), owner:app_users!profiles_owner_id_fkey(full_name, email)")
     .eq("id", id)
     .maybeSingle();
   if (!p) return null;
@@ -291,12 +309,30 @@ export async function getProfileForManagerAs(
     createdAt: v.created_at,
   }));
   const owner = p.owner as unknown as { full_name: string | null; email: string | null } | null;
+  const { data: others } = await supabase
+    .from("profiles")
+    .select("id, template, candidate_name, updated_at, is_primary, current:profile_versions!profiles_current_version_fk(job_title), profile_versions!profile_versions_profile_id_fkey(count)")
+    .eq("owner_id", p.owner_id)
+    .eq("template", "internal")
+    .eq("archived", false)
+    .neq("id", p.id)
+    .order("updated_at", { ascending: false });
   return {
+    otherProfiles: (others ?? []).map((r) => ({
+      id: r.id,
+      template: r.template as TemplateId,
+      candidateName: r.candidate_name,
+      jobTitle: jobTitleOf(r.current),
+      isPrimary: r.is_primary,
+      versionCount: (r.profile_versions as unknown as { count: number }[])?.[0]?.count ?? 0,
+      updatedAt: r.updated_at,
+    })),
     profile: {
       id: p.id,
       template: p.template as TemplateId,
       candidateName: p.candidate_name,
       jobTitle: jobTitleOf(p.current),
+      isPrimary: p.is_primary,
       versionCount: versions.length,
       updatedAt: p.updated_at,
       ownerName: owner?.full_name ?? "",

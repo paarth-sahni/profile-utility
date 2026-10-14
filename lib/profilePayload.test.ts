@@ -42,3 +42,9 @@ test("isExternalSave recognises exactly the external case (for the specific 400 
   assert.equal(isExternalSave(null), false);
   assert.equal(isExternalSave("external"), false);
 });
+
+test("makePrimary (\"Mark as primary profile\" on Submit) defaults to false and must be a boolean", () => {
+  assert.equal(parseSavePayload(body("internal", internalData))?.makePrimary, false);
+  assert.equal(parseSavePayload({ ...body("internal", internalData), makePrimary: true })?.makePrimary, true);
+  assert.equal(parseSavePayload({ ...body("internal", internalData), makePrimary: "yes" }), null);
+});
