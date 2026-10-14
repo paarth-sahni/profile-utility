@@ -581,9 +581,7 @@ export default function ProfileWorkflow({
           <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-brand-100/70 blur-3xl" aria-hidden />
           <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-peach/60 blur-3xl" aria-hidden />
           <div className="relative mx-auto max-w-[110rem] px-4 pb-6 pt-7 text-center">
-            <h1 className="text-3xl font-medium tracking-tight text-ink-dark sm:text-4xl lg:text-5xl">
-              <span className="text-brand-500">Profile Generator</span>
-            </h1>
+            <h1 className="text-3xl font-medium tracking-tight text-ink sm:text-4xl lg:text-5xl">Profile Generator</h1>
             <p className="mx-auto mt-3 text-sm text-ink-light sm:text-base xl:whitespace-nowrap xl:text-[clamp(12px,0.9vw,16px)]">
               {HERO_SUBTEXT[templateId]}
             </p>

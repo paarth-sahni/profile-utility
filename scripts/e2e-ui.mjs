@@ -717,6 +717,12 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
     if (path !== "/profiles") await waitFor(`location.pathname === ${JSON.stringify(path)}`, `${label} page`);
     await sleep(800);
     check(`top nav "${label}" links to ${path} and opens without a 404`, clicked === path && (await ev("location.pathname")) === path && !(await notFound()), JSON.stringify({ clicked, at: await ev("location.pathname") }));
+    if (label === "Generator") {
+      // the start-page heading uses the theme's charcoal text colour (--color-ink), not the brand red
+      const colours = await ev(`(()=>{const h=document.querySelector('section.bg-cream h1'); const probe=document.createElement('span'); probe.style.color='var(--color-ink)'; document.body.append(probe); const ink=getComputedStyle(probe).color; probe.remove(); return JSON.stringify({ heading: h && getComputedStyle(h).color, ink, inner: h?.querySelector('span') ? getComputedStyle(h.querySelector('span')).color : null, text: h?.textContent.trim() })})()`);
+      const c = JSON.parse(colours);
+      check("the start-page heading 'Profile Generator' is charcoal (--color-ink)", c.text === "Profile Generator" && c.heading === c.ink && c.inner === null, colours);
+    }
   }
 });
 
