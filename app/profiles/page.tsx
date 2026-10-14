@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import PageHero from "@/components/PageHero";
 import { listMyProfiles } from "@/lib/db/profiles";
+import { profileDisplayName } from "@/lib/docxReady";
 
 export const metadata: Metadata = { title: "My Profiles — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export default async function ProfilesPage() {
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="My Profiles" subtitle="Internal profiles you have saved. Only you can see them." />
+      <PageHero title="My Profiles" />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="mb-8 flex justify-end">
@@ -52,7 +53,7 @@ export default async function ProfilesPage() {
                     </span>
                     <span className="text-xs text-ink-light">{fmt(p.updatedAt)}</span>
                   </div>
-                  <p className="truncate text-lg font-medium text-ink-dark">{p.candidateName || "Untitled profile"}</p>
+                  <p className="truncate text-lg font-medium text-ink-dark">{profileDisplayName(p.candidateName, p.jobTitle)}</p>
                   <p className="mt-1 text-sm text-ink-light">
                     {p.versionCount} {p.versionCount === 1 ? "version" : "versions"}
                   </p>

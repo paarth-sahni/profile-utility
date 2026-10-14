@@ -164,7 +164,7 @@ await t.scenario("Open in Google Docs (managers and admins only)", async () => {
   await waitFor(`window.__blobs.length > ${blobsBefore}`, "manager PDF download");
   const managerPdf = await t.lastPdf();
   check("Download PDF on /manage/[id] saves a PDF named <Name>-<Job title>-InfoBeans.pdf", managerPdf.isPdf && managerPdf.name === "E2E_Docs_Person-Senior_Engineer-InfoBeans.pdf" && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
-  check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in Review"));
+  check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in editor"));
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
   check("a manager can export the version they are viewing", true);
@@ -588,14 +588,14 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   sql(`insert into profiles (owner_id, template, candidate_name) values ('${owner}', 'external', 'E2E Legacy External')`);
   const acc = await post("internal");
   await goto("/profiles");
-  await waitFor("document.body.innerText.includes('E2E Api External')", "My Profiles lists the internal profile");
+  await waitFor("document.body.innerText.includes('E2E_Api_External-a-InfoBeans')", "My Profiles lists the internal profile as <Name>-<Role>-InfoBeans");
   const cards = JSON.parse(await ev("JSON.stringify([...document.querySelectorAll('main ul li a')].map(a=>a.innerText.replace(/\\s+/g,' ').trim()))"));
-  check("My Profiles lists internal profiles only", cards.every((c) => c.startsWith("Internal")) && !cards.some((c) => c.includes("E2E Legacy External")), JSON.stringify(cards));
+  check("My Profiles lists internal profiles only", cards.every((c) => c.startsWith("Internal")) && !cards.some((c) => c.includes("E2E_Legacy_External")), JSON.stringify(cards));
   await signIn("manager");
   await goto("/manage?q=E2E");
   await waitFor("document.body.innerText.includes('E2E')", "manage results");
   const found = await bodyText();
-  check("Manage lists internal profiles only", found.includes("E2E Api External") && !found.includes("E2E Legacy External"));
+  check("Manage lists internal profiles only, named <Name>-<Role>-InfoBeans", found.includes("E2E_Api_External-a-InfoBeans") && !found.includes("E2E_Legacy_External"));
   void acc;
   await goto("/profiles");
   await ev("sessionStorage.clear()");

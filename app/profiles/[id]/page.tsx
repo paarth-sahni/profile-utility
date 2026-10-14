@@ -7,6 +7,7 @@ import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
 import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { getMyProfile, getVersion } from "@/lib/db/profiles";
+import { profileDisplayName } from "@/lib/docxReady";
 
 export const metadata: Metadata = { title: "Profile — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="w-full text-ink">
       <PageHero
-        title={profile.candidateName || "Untitled profile"}
+        title={profileDisplayName(profile.candidateName, profile.jobTitle)}
         subtitle={`${profile.template === "internal" ? "Internal" : "External"} profile · ${profile.versionCount} ${profile.versionCount === 1 ? "version" : "versions"}`}
       />
 
@@ -43,7 +44,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
               href={`${home}?version=${latestVersionId}`}
               className="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600"
             >
-              Open latest in Review
+              Open latest in editor
             </Link>
           )}
         </div>
@@ -73,7 +74,7 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
                         href={`${home}?version=${v.id}`}
                         className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50"
                       >
-                        Open in Review
+                        Open in editor
                       </Link>
                       {full && <DownloadPdfButton template={full.template} data={full.data} versionId={v.id} />}
                       {full && googleDocs && <GoogleDocsForVersion template={full.template} data={full.data} />}

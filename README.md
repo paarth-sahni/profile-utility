@@ -283,7 +283,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 6. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
    `profiles` until you Submit. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
    *View in My Profiles* link (no new step, no form link); Download PDF still works. *My Profiles* lists it. Submit
-   again without edits → still v1. Edit, Preview, Submit → v2, then v3 (labels are automatic: Base, v2, v3). Open a version from My Profiles ("Open in Review"), edit, Preview, Submit → a new version of the same profile. The top and mobile menus have no "Submit Profile" link.
+   again without edits → still v1. Edit, Preview, Submit → v2, then v3 (labels are automatic: Base, v2, v3). Open a version from My Profiles ("Open in editor"), edit, Preview, Submit → a new version of the same profile. The top and mobile menus have no "Submit Profile" link.
 7. **External**: `/external` → blank form → no save controls; steps are Start, Upload resume, Edit details,
    Preview; Preview has *Back to edit* and *Download PDF* only; the PDF is named after the candidate. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
@@ -293,7 +293,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 9. **Manage**: `/manage` as `manager@example.test` lists internal profiles only; *Download PDF* on `/manage/[id]` saves
    the version shown.
 10. **Saved versions**: on *My Profiles* → a profile → *Download PDF* on any version → that version as a PDF; an
-    incomplete draft shows "Open in Review to finish it" instead.
+    incomplete draft shows "Open in editor to finish it" instead.
 11. **Converter missing** (staging only): stop the app, start it with `SOFFICE_PATH=/nonexistent npm run dev` → Preview
     shows "PDF creation is not available on this server right now"; the server log has
     `[pdf] could not make the PDF (CONVERTER_MISSING)` and no profile content.

@@ -241,6 +241,12 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     const found = await searchProfilesByNameAs(ctx.manager, "Zed Legacy");
     assert.ok(found.some((p) => p.id === internal.profileId), "the manager finds the internal profile");
     assert.ok(found.every((p) => p.template === "internal"), "the manager search never returns an external profile");
+    // the display name <Name>-<Role>-InfoBeans needs the current version's job title in every listing
+    const title = MINIMAL_INTERNAL_FIXTURE.jobTitle;
+    assert.equal(mine.find((p) => p.id === internal.profileId)?.jobTitle, title, "My Profiles list");
+    assert.equal(found.find((p) => p.id === internal.profileId)?.jobTitle, title, "manager search");
+    assert.equal((await getMyProfileAs(ctx.member, internal.profileId))?.profile.jobTitle, title, "own profile page");
+    assert.equal((await getProfileForManagerAs(ctx.manager, internal.profileId))?.profile.jobTitle, title, "manager profile page");
     const { data: legacyRows } = await ctx.member.supabase.from("profiles").select("id").eq("candidate_name", "Zed Legacyexternal");
     for (const r of legacyRows ?? []) createdProfiles.push(r.id);
   });

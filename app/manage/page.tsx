@@ -9,6 +9,7 @@ import ManageAccessDenied from "@/components/ManageAccessDenied";
 import PageHero from "@/components/PageHero";
 import { getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, searchProfilesByName, type ManagedProfileSummary } from "@/lib/db/profiles";
+import { profileDisplayName } from "@/lib/docxReady";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Manage profiles — Profile Generator" };
@@ -77,7 +78,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
                   <li key={p.id}>
                     <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink-dark">{p.candidateName || "Untitled profile"}</p>
+                        <p className="truncate font-medium text-ink-dark">{profileDisplayName(p.candidateName, p.jobTitle)}</p>
                         <p className="truncate text-xs text-ink-light">
                           {p.template === "internal" ? "Internal" : "External"} · {p.versionCount} {p.versionCount === 1 ? "version" : "versions"} · owner{" "}
                           {p.ownerName || p.ownerEmail || "unknown"}

@@ -13,6 +13,7 @@ import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
 import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, getProfileForManager, getVersionForManager } from "@/lib/db/profiles";
+import { profileDisplayName } from "@/lib/docxReady";
 
 export const metadata: Metadata = { title: "Profile (read-only) — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export default async function ManageProfilePage({
   return (
     <div className="w-full text-ink">
       <PageHero
-        title={profile.candidateName || "Untitled profile"}
+        title={profileDisplayName(profile.candidateName, profile.jobTitle)}
         subtitle={`${profile.template === "internal" ? "Internal" : "External"} profile · ${profile.versionCount} ${profile.versionCount === 1 ? "version" : "versions"} · owner ${profile.ownerName || profile.ownerEmail || "unknown"} · read-only`}
       />
 

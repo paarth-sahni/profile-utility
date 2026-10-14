@@ -13,10 +13,10 @@ export function checkReadyForDocx(template: TemplateId, data: ResumeData): DocxR
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     const where = first.path.length ? describeFieldPath(first.path as (string | number)[]) : "profile";
-    return { ok: false, message: `Incomplete: ${where} — ${first.message}. Open in Review to finish it.` };
+    return { ok: false, message: `Incomplete: ${where} — ${first.message}. Open in editor to finish it.` };
   }
   const na = findNAIssues(template, parsed.data);
-  if (na.length > 0) return { ok: false, message: `Fix "${na[0].path}" in Review before downloading.` };
+  if (na.length > 0) return { ok: false, message: `Fix "${na[0].path}" in the editor before downloading.` };
   return { ok: true, data: parsed.data as ResumeData };
 }
 
@@ -31,8 +31,12 @@ const fileNamePart = (value: string | undefined): string =>
     .replace(/^[_-]+|[_-]+$/g, "");
 
 /** The PDF download name: "<Name>-<Job_title>-InfoBeans.pdf", e.g. "Abdul-Technology_Delivery_Manager-InfoBeans.pdf". */
-export function pdfFileName(data: ResumeData): string {
-  const { name, jobTitle } = data as { name?: string; jobTitle?: string };
+export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }): string {
   const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean);
   return `${parts.join("-")}-InfoBeans.pdf`;
+}
+
+/** How a saved profile is named in My Profiles and Manage: the PDF name without ".pdf", e.g. "Abdul-Technology_Delivery_Manager-InfoBeans". */
+export function profileDisplayName(name: string, jobTitle: string): string {
+  return pdfFileName({ name, jobTitle }).replace(/\.pdf$/, "");
 }

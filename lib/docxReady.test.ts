@@ -1,7 +1,7 @@
 /** Purpose: unit tests for the "is this saved profile complete enough to export?" check and the file name. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkReadyForDocx, pdfFileName } from "./docxReady";
+import { checkReadyForDocx, pdfFileName, profileDisplayName } from "./docxReady";
 import type { InternalResume } from "./schemas";
 
 const COMPLETE: InternalResume = {
@@ -57,7 +57,7 @@ test("a profile without an experience summary is not ready", () => {
 test("an incomplete draft is not ready and the message points to Review", () => {
   const r = checkReadyForDocx("internal", { ...COMPLETE, name: "" });
   assert.equal(r.ok, false);
-  if (!r.ok) assert.match(r.message, /^Incomplete: .* — .*Open in Review to finish it\.$/);
+  if (!r.ok) assert.match(r.message, /^Incomplete: .* — .*Open in editor to finish it\.$/);
 });
 
 
@@ -71,4 +71,10 @@ test("pdfFileName is <Name>-<Job title>-InfoBeans.pdf with underscores and no un
 test("pdfFileName falls back to Profile and drops an empty job title", () => {
   assert.equal(pdfFileName({ ...COMPLETE, name: "  ", jobTitle: "" }), "Profile-InfoBeans.pdf");
   assert.equal(pdfFileName({ ...COMPLETE, name: "???", jobTitle: "Lead" }), "Profile-Lead-InfoBeans.pdf");
+});
+
+test("profileDisplayName is the PDF name without .pdf (My Profiles and Manage)", () => {
+  assert.equal(profileDisplayName("Abdul", "Technology Delivery Manager"), "Abdul-Technology_Delivery_Manager-InfoBeans");
+  assert.equal(profileDisplayName("", ""), "Profile-InfoBeans");
+  assert.equal(profileDisplayName("Ana", ""), "Ana-InfoBeans");
 });

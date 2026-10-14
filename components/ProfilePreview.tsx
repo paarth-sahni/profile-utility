@@ -33,7 +33,7 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-/** Read-only view of a saved profile version (no editing; use "Open in Review" to change it). Like the Word
+/** Read-only view of a saved profile version (no editing; use "Open in editor" to change it). Like the Word
  *  document, it leaves out anything that is blank or "N/A", and sections with nothing to show disappear. */
 export default function ProfilePreview({ template, data }: { template: TemplateId; data: ResumeData }) {
   const d = data as InternalResume & ExternalResume;

@@ -49,9 +49,17 @@ export interface ProfileSummary {
   id: string;
   template: TemplateId;
   candidateName: string;
+  /** Job title of the current version ("" when unknown); with the name it makes the display name. */
+  jobTitle: string;
   versionCount: number;
   updatedAt: string;
 }
+
+/** The job title from an embedded current version (PostgREST returns an object, or an array for some relations). */
+const jobTitleOf = (current: unknown): string => {
+  const row = (Array.isArray(current) ? current[0] : current) as { job_title?: string } | null | undefined;
+  return row?.job_title ?? "";
+};
 
 export interface VersionSummary {
   id: string;
@@ -112,7 +120,7 @@ export async function saveVersionAs(
 export async function listMyProfilesAs({ supabase, userId }: DbContext): Promise<ProfileSummary[]> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, profile_versions!profile_versions_profile_id_fkey(count)")
+    .select("id, template, candidate_name, updated_at, current:profile_versions!profiles_current_version_fk(job_title), profile_versions!profile_versions_profile_id_fkey(count)")
     .eq("owner_id", userId)
     .eq("template", "internal") // external profiles are never saved; any old ones are not listed
     .eq("archived", false)
@@ -122,6 +130,7 @@ export async function listMyProfilesAs({ supabase, userId }: DbContext): Promise
     id: r.id,
     template: r.template as TemplateId,
     candidateName: r.candidate_name,
+    jobTitle: jobTitleOf(r.current),
     versionCount: (r.profile_versions as unknown as { count: number }[])?.[0]?.count ?? 0,
     updatedAt: r.updated_at,
   }));
@@ -135,7 +144,7 @@ export async function getMyProfileAs(
   if (!uuid.safeParse(id).success) return null;
   const { data: p } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, current_version_id")
+    .select("id, template, candidate_name, updated_at, current_version_id, current:profile_versions!profiles_current_version_fk(job_title)")
     .eq("id", id)
     .eq("owner_id", userId)
     .maybeSingle();
@@ -158,6 +167,7 @@ export async function getMyProfileAs(
       id: p.id,
       template: p.template as TemplateId,
       candidateName: p.candidate_name,
+      jobTitle: jobTitleOf(p.current),
       versionCount: versions.length,
       updatedAt: p.updated_at,
     },
@@ -233,10 +243,19 @@ export async function searchProfilesByNameAs({ supabase }: DbContext, query: str
   }
   const parsed = z.array(searchRow).safeParse(data ?? []);
   if (!parsed.success) throw new Error("SEARCH_FAILED");
+  const titles = new Map<string, string>();
+  if (parsed.data.length > 0) {
+    const { data: cur } = await supabase
+      .from("profiles")
+      .select("id, current:profile_versions!profiles_current_version_fk(job_title)")
+      .in("id", parsed.data.map((r) => r.id));
+    for (const c of cur ?? []) titles.set(c.id, jobTitleOf(c.current));
+  }
   return parsed.data.map((r) => ({
     id: r.id,
     template: r.template,
     candidateName: r.candidate_name,
+    jobTitle: titles.get(r.id) ?? "",
     versionCount: r.version_count,
     updatedAt: r.updated_at,
     ownerName: r.owner_name ?? "",
@@ -254,7 +273,7 @@ export async function getProfileForManagerAs(
   if (!uuid.safeParse(id).success) return null;
   const { data: p } = await supabase
     .from("profiles")
-    .select("id, template, candidate_name, updated_at, current_version_id, owner:app_users!profiles_owner_id_fkey(full_name, email)")
+    .select("id, template, candidate_name, updated_at, current_version_id, current:profile_versions!profiles_current_version_fk(job_title), owner:app_users!profiles_owner_id_fkey(full_name, email)")
     .eq("id", id)
     .maybeSingle();
   if (!p) return null;
@@ -277,6 +296,7 @@ export async function getProfileForManagerAs(
       id: p.id,
       template: p.template as TemplateId,
       candidateName: p.candidate_name,
+      jobTitle: jobTitleOf(p.current),
       versionCount: versions.length,
       updatedAt: p.updated_at,
       ownerName: owner?.full_name ?? "",
