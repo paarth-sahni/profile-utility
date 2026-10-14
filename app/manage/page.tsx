@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
+import { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
 import { getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, searchProfilesByName, type ManagedProfileSummary } from "@/lib/db/profiles";
@@ -37,7 +38,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="Manage profiles" subtitle="Search every saved internal profile by team member name. Read-only." />
+      <PageHero title="Manage profiles" subtitle="Search team members by name: each shows their primary profile (or their latest one). Read-only." />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
         <Form action="/manage" className="mt-6 flex flex-wrap items-end gap-3">
@@ -71,14 +72,17 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
           ) : (
             <>
               <p className="mb-3 text-sm text-ink-light">
-                {q ? `${results.length} ${results.length === 1 ? "result" : "results"} for “${q}”` : "Most recently updated profiles"}
+                {q ? `${results.length} ${results.length === 1 ? "result" : "results"} for “${q}”` : "Most recently updated team members"}
               </p>
               <ul className="divide-y divide-hairline rounded-xl border border-gray-200 bg-white">
                 {results.map((p) => (
                   <li key={p.id}>
                     <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink-dark">{profileDisplayName(p.candidateName, p.jobTitle)}</p>
+                        <p className="flex items-center gap-2 font-medium text-ink-dark">
+                          <span className="truncate">{profileDisplayName(p.candidateName, p.jobTitle)}</span>
+                          {p.isPrimary && <PrimaryBadge />}
+                        </p>
                         <p className="truncate text-xs text-ink-light">
                           {p.template === "internal" ? "Internal" : "External"} · {p.versionCount} {p.versionCount === 1 ? "version" : "versions"} · owner{" "}
                           {p.ownerName || p.ownerEmail || "unknown"}

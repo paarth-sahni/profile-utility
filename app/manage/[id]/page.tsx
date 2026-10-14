@@ -1,7 +1,8 @@
 /**
  * Purpose: /manage/[id] — read-only view of any profile for managers and admins: its version history and a
  * preview of the chosen version (?v=<versionId>, default: the current one). No editing; Download PDF and (for
- * managers / admins) Open in Google Docs export the version shown.
+ * managers / admins) Open in Google Docs export the version shown. "Primary" marks the team member's primary profile;
+ * their other profiles are listed read-only below the version history.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import { notFound, redirect } from "next/navigation";
 import DownloadPdfButton from "@/components/DownloadPdfButton";
 import GoogleDocsForVersion from "@/components/GoogleDocsForVersion";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
+import { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
 import ProfilePreview from "@/components/ProfilePreview";
 import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
@@ -44,7 +46,7 @@ export default async function ManageProfilePage({
     throw e;
   }
   if (!found) notFound();
-  const { profile, versions, latestVersionId } = found;
+  const { profile, versions, latestVersionId, otherProfiles } = found;
 
   // Only versions that belong to this profile can be shown.
   const shownId = versions.find((v) => v.id === wanted)?.id ?? latestVersionId;
@@ -58,9 +60,12 @@ export default async function ManageProfilePage({
       />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-10">
-        <Link href="/manage" className="mb-8 inline-block text-sm font-medium text-brand-600 hover:underline">
-          ← Manage profiles
-        </Link>
+        <div className="mb-8 flex flex-wrap items-center gap-4">
+          <Link href="/manage" className="text-sm font-medium text-brand-600 hover:underline">
+            ← Manage profiles
+          </Link>
+          {profile.isPrimary && <PrimaryBadge />}
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
           <div>
@@ -99,6 +104,26 @@ export default async function ManageProfilePage({
                 </li>
               ))}
             </ol>
+            {otherProfiles.length > 0 && (
+              <section className="mt-8" data-other-profiles>
+                <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-ink-light">Other profiles of this team member</h2>
+                <ul className="space-y-3">
+                  {otherProfiles.map((o) => (
+                    <li key={o.id}>
+                      <Link href={`/manage/${o.id}`} className="block rounded-xl border border-gray-200 bg-white p-4 hover:border-brand-300">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate font-medium text-ink-dark">{profileDisplayName(o.candidateName, o.jobTitle)}</p>
+                          {o.isPrimary && <PrimaryBadge />}
+                        </div>
+                        <p className="mt-0.5 text-xs text-ink-light">
+                          {o.versionCount} {o.versionCount === 1 ? "version" : "versions"} · {fmt(o.updatedAt)}
+                        </p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </aside>
         </div>
       </main>
