@@ -736,4 +736,25 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
   }
 });
 
+await t.scenario("a profile that doesn't exist or isn't yours: a clear message and Go to My Profiles, not the generic 404", async () => {
+  const MESSAGE = "This profile doesn't exist or you don't have access to it";
+  const otherMembers = sql("select p.id from profiles p join auth.users u on u.id=p.owner_id where u.email='member2@example.test' and p.template='internal' limit 1");
+  const cases = [
+    ["member", "/profiles/00000000-0000-0000-0000-00000000dead", "a missing id"],
+    ["member", "/profiles/not-a-uuid", "a malformed id"],
+    ["member", `/profiles/${otherMembers}`, "another member's profile"],
+    ["manager", "/manage/00000000-0000-0000-0000-00000000dead", "a missing id on Manage"],
+  ];
+  for (const [who, path, what] of cases) {
+    await signIn(who);
+    await goto(path);
+    await waitFor("!!document.querySelector('[data-profile-not-found]') || document.body.innerText.includes('could not be found')", `${path} rendered`);
+    const body = await bodyText();
+    check(`${what}: shows "${MESSAGE}" with Go to My Profiles, not the generic 404`, body.includes(MESSAGE) && !body.includes("could not be found") && (await ev("[...document.querySelectorAll('[data-profile-not-found] a')].some(a=>a.textContent.trim()==='Go to My Profiles' && a.getAttribute('href')==='/profiles')")), body.slice(0, 160));
+  }
+  await click("Go to My Profiles", "[data-profile-not-found] a");
+  await waitFor("location.pathname === '/profiles'", "My Profiles");
+  check("Go to My Profiles opens My Profiles", (await ev("location.pathname")) === "/profiles");
+});
+
 await t.finish();
