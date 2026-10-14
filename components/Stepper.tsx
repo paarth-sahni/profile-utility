@@ -1,6 +1,6 @@
 "use client";
 
-const DEFAULT_STEPS = ["Start", "Upload resume", "Review & Generate"];
+const DEFAULT_STEPS = ["Start", "Upload profile", "Review & Generate"];
 
 export default function Stepper({
   current,

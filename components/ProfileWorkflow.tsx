@@ -110,8 +110,8 @@ const HERO_SUBTEXT: Record<TemplateId, string> = {
 };
 
 const STEP_LABELS: Record<TemplateId, string[]> = {
-  external: ["Start", "Upload resume", "Edit details", "Preview"],
-  internal: ["Start", "Upload resume", "Edit details", "Preview & Submit"],
+  external: ["Start", "Upload profile", "Edit details", "Preview"],
+  internal: ["Start", "Upload profile", "Edit details", "Preview & Submit"],
 };
 
 
@@ -663,7 +663,7 @@ export default function ProfileWorkflow({
           </div>
         )}
 
-        {/* ---------- STEP 1: upload resume ---------- */}
+        {/* ---------- STEP 1: upload profile ---------- */}
         {step === STEP_UPLOAD && (
           <div className="animate-fade-up space-y-4">
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

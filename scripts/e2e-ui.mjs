@@ -447,7 +447,7 @@ await t.scenario("Preview step: the PDF itself, consent before Download / Submit
   const consents = (action) => Number(sql(`select count(*) from audit_log where action='consent_${action}' and at >= '${since}' and actor_id=(select id from auth.users where email='member@example.test')`));
   const labels = () => ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
 
-  check("the internal steps are Start, Upload resume, Edit details, Preview & Submit (no separate Submit step)", (await labels()) === "Start|Upload resume|Edit details|Preview & Submit", await labels());
+  check("the internal steps are Start, Upload profile, Edit details, Preview & Submit (no separate Submit step)", (await labels()) === "Start|Upload profile|Edit details|Preview & Submit", await labels());
   check("there is no 'Submit Profile' link in the top menu", !(await ev("[...document.querySelectorAll('header a')].some(a=>/submit profile/i.test(a.textContent))")));
   const bodyBefore = await bodyText();
   check("Edit details no longer offers DOCX or Google Docs buttons", !bodyBefore.includes("DOCX ↓") && !bodyBefore.includes("Open in Google Docs"));
@@ -557,7 +557,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   const body = await bodyText();
   check("Edit details has no save controls (no version label, no Save to My Profiles)", !body.includes("Save to My Profiles") && !body.includes("Version label") && !(await ev("!!document.getElementById('save-label')")));
   const labels = await ev("[...document.querySelectorAll('ol li button')].map(b=>b.textContent.replace(/^[^A-Za-z]+/,'').trim()).join('|')");
-  check("the external steps are Start, Upload resume, Edit details, Preview (no Submit)", labels === "Start|Upload resume|Edit details|Preview", labels);
+  check("the external steps are Start, Upload profile, Edit details, Preview (no Submit)", labels === "Start|Upload profile|Edit details|Preview", labels);
 
   await t.fill("Name", "E2E External Person");
   await t.fill("Job title", "Engineer");

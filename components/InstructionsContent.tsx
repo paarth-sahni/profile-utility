@@ -77,7 +77,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
                 candidate&apos;s resume.
               </p>
             </Step>
-            <Step n={2} title="Upload the resume">
+            <Step n={2} title="Upload profile">
               Drag and drop the candidate&apos;s resume (PDF or DOCX, up to 10 MB) or choose a file. The generator
               reads it and pre-fills the External Profile — the professional summary, education, project details,
               skills, tools &amp; certifications, and work experience. This usually takes under a minute. Scanned

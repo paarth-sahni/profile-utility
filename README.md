@@ -10,7 +10,7 @@ never stored.
 The generator (`/internal`, `/external`) is one workflow with these steps:
 
 1. **Start** — upload a resume / existing profile, or start from a blank form.
-2. **Upload resume** — the file is read and pre-fills the form; a single note above the form asks you to review every
+2. **Upload profile** — the file is read and pre-fills the form; a single note above the form asks you to review every
    section (`ExtractionSummary`).
 3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
    (name, job title, experience summary / years of experience, overview, one education entry, one skill) are marked in red when missing. There is **no save
@@ -301,7 +301,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
    `profiles` until you Submit. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
    *View in My Profiles* link (no new step, no form link); Download PDF still works. *My Profiles* lists it. Submit
    again without edits → still v1. Edit, Preview, Submit → v2, then v3 (labels are automatic: Base, v2, v3). Open a version from My Profiles ("Open in editor"), edit, Preview, Submit → a new version of the same profile. The top and mobile menus have no "Submit Profile" link.
-7. **External**: `/external` → blank form → no save controls; steps are Start, Upload resume, Edit details,
+7. **External**: `/external` → blank form → no save controls; steps are Start, Upload profile, Edit details,
    Preview; Preview has *Back to edit* and *Download PDF* only; the PDF is named after the candidate. Nothing appears in `profiles`. From a signed-in tab:
    `fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'external'})}).then(r=>r.json())`
    → `EXTERNAL_NOT_SAVED` (400).
