@@ -53,3 +53,4 @@ AGENTS.md
 /lib/fieldErrors.test.ts
 /lib/ratings.test.ts
 /lib/validNames.test.ts
+supabase/snippets/
