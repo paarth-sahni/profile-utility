@@ -9,7 +9,7 @@
  * Flags (see scripts/patch-templates.py for where each wraps):
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
- *             hasRole, hasProjectLink, hasDescription, hasResponsibilities
+ *             hasRole, hasProjectLink, hasDescription, hasResponsibilities, hasNext
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities; per employer: hasPosition, hasDuration, hasHighlights
  * Required content (name, job title, overview, education, skills) has no flag.
@@ -88,7 +88,7 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
 function prepareInternal(d: InternalResume): Record<string, unknown> {
   const projects = d.projects
     .filter((p) => anyReal(p.duration, p.title, p.toolsAndTechnologies, p.teamSize, p.role, p.projectLink, p.description, p.responsibilities))
-    .map((p, i) => ({
+    .map((p, i, all) => ({
       number: i + 1,
       title: p.title,
       duration: text(p.duration),
@@ -105,6 +105,8 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
       hasDescription: real(p.description),
       responsibilities: clean(p.responsibilities),
       hasResponsibilities: clean(p.responsibilities).length > 0,
+      // the blank line after a project only separates it from the next one (none after the last: no extra empty page)
+      hasNext: i < all.length - 1,
     }));
   const certifications = clean(d.certifications);
   const tools = clean(d.tools);

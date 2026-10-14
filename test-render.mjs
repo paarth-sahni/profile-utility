@@ -272,6 +272,18 @@ for (const id of ["internal", "external"]) {
 }
 console.log("templates: logo ratio and position, one bullet style, no stretched manual-break lines");
 
+// internal: the projects column ends with the last project's content. A trailing blank line there spilled onto an
+// extra, near-empty last page (footer only) whenever the last bullet sat at the foot of a page; see the PDF sweep below.
+{
+  const xml = render("internal", internal).zip.file("word/document.xml").asText();
+  const cell = (xml.match(/<w:tc>.*?<\/w:tc>/gs) ?? []).find((c) => c.includes("RESP-MARK three"));
+  const paras = (cell.match(/<w:p[ >].*?<\/w:p>/gs) ?? []).map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(""));
+  assert(paras.at(-1).includes("RESP-MARK three"), `internal: the projects column must end with the last bullet, not a blank line (ends with ${JSON.stringify(paras.slice(-2))})`);
+  const second = paras.findIndex((t) => t.startsWith("Project 2"));
+  assert(second > 0 && paras[second - 1] === "", "internal: a blank line still separates one project from the next");
+}
+console.log("internal: no trailing blank line after the last project");
+
 
 /** Every word on every page with its box (pt, from the top left), read with pdftotext -bbox. */
 function wordsOf(pdf) {
@@ -430,6 +442,11 @@ if (process.argv.includes("--pdf")) {
     };
     cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed], [`${id}-long`, id, long]);
   }
+  // internal: one project with 1..8 bullets, so the last bullet lands at the foot of page 1 in one of them
+  const footProject = (n) => ({ ...internal.projects[0], description: "DESC-MARK a payments platform for a retail bank with a focus on reliability.", responsibilities: Array.from({ length: n }, (_, k) => `RESP-MARK ${k + 1} for the project.`) });
+  const foot = Array.from({ length: 8 }, (_, k) => [`internal-foot-${k + 1}`, "internal", { ...internal, certifications: [], tools: [], managerialExperience: [], domains: [], languages: [], projects: [footProject(k + 1)] }]);
+  cases.push(...foot);
+  const pageCounts = [];
   for (const [file, id, data] of cases) {
     const { out, zip } = render(id, data);
     fs.writeFileSync(`${dir}/${file}.docx`, out);
@@ -440,6 +457,10 @@ if (process.argv.includes("--pdf")) {
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
     assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
     checkGeometry(file, id, `${dir}/${file}.pdf`, data);
+    // no extra near-empty last page: the last page carries more than its page number (and the footer's logo)
+    const pages = execFileSync("pdftotext", [`${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\f").filter((p, n, all) => n < all.length - 1 || p.trim());
+    assert(!/^\s*\d*\s*$/.test(pages.at(-1)), `${file}: the last page (${pages.length}) is empty apart from the footer`);
+    if (file.startsWith("internal-foot-")) pageCounts.push(pages.length);
     if (id === "external") {
       // single column: a heading must be followed by content, never by another heading or by nothing
       const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"]);
@@ -449,5 +470,7 @@ if (process.argv.includes("--pdf")) {
       });
     }
   }
+  assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
+  console.log("pdf: no near-empty last page (internal, last bullet at the foot of a page)");
 }
 console.log("done");

@@ -63,6 +63,15 @@ test("internal: per-project flags follow each field", () => {
   assert.equal(mk({ role: "N/A" }).role, "", "an N/A value is emptied, never printed");
 });
 
+test("internal: only a project with another one after it gets the blank line after it (hasNext)", () => {
+  const empty = { ...FULL_INTERNAL.projects[0], duration: "", title: "", toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [] };
+  const projects = (list: InternalResume["projects"]) => (prepareData("internal", { ...FULL_INTERNAL, projects: list }) as { projects: { hasNext: boolean }[] }).projects;
+  const p = FULL_INTERNAL.projects[0];
+  assert.deepEqual(projects([p]).map((x) => x.hasNext), [false]);
+  assert.deepEqual(projects([p, p, p]).map((x) => x.hasNext), [true, true, false]);
+  assert.deepEqual(projects([p, p, empty]).map((x) => x.hasNext), [true, false], "a dropped empty entry does not count as a next project");
+});
+
 test("projects: completely empty entries are dropped and the rest are numbered from 1", () => {
   const blank = { duration: "", title: "", toolsAndTechnologies: [""], teamSize: "N/A", role: "", projectLink: "", description: "", responsibilities: [""] };
   const d = prepareData("internal", { ...FULL_INTERNAL, projects: [blank, FULL_INTERNAL.projects[0], blank] }) as { projects: { number: number }[]; hasProjects: boolean };

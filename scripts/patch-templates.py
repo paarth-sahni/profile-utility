@@ -8,7 +8,8 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    real in it. docxtemplater loop tags ({#flag} ... {/flag}) are inserted as their own paragraphs around a block of
    paragraphs (the same way hasProjects / hasTeamSize already work); with paragraphLoop on, the tag paragraphs vanish and
    so does the whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). Two heading lines
-   get an inline condition so no dangling " - " is left.
+   get an inline condition so no dangling " - " is left. The blank line after an internal project is kept only when
+   another project follows (hasNext), so the projects column never ends in an empty line (no extra empty last page).
 2. Formatting (FORMAT, LOGO, BULLET, SETTINGS below):
    - the InfoBeans logo keeps its aspect ratio (cropped exactly to the artwork, box = the artwork's ratio) and sits
      directly below "A PROUD MEMBER OF", left edges aligned;
@@ -38,6 +39,10 @@ WRAPS = {
         (26, 28, "hasRole"),  # project: spacer + "Role" heading + value
         (34, 34, "hasDescription"),  # project: (blank line, see PRE_SPACERS) + description paragraph
         (35, 37, "hasResponsibilities"),  # project: (blank line) + the bullet loop
+        # the blank line that ends each project separates it from the NEXT one: after the last project it was a
+        # trailing empty line in the projects cell, and when the last bullet sat at the foot of a page that line alone
+        # spilled onto an extra, near-empty page (only the footer: its logo and the page number)
+        (38, 38, "hasNext"),
         (46, 50, "hasCertifications"),  # sidebar: heading + items + spacer
         (51, 53, "hasTools"),  # sidebar: heading + value + spacer
         (60, 64, "hasDomains"),  # sidebar: heading + items + spacer
