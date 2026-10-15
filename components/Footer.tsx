@@ -63,7 +63,7 @@ export default function Footer() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={s.label}
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-md border border-hairline bg-white text-ink transition-colors hover:border-ink hover:bg-ink hover:text-white"
+                className="flex h-[34px] w-[34px] items-center justify-center border border-hairline bg-white text-ink transition-colors hover:border-ink hover:bg-ink hover:text-white"
               >
                 <svg
                   width="16"
@@ -83,9 +83,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="border-t border-hairline py-4 font-light text-ink-light">
-        Copyright &copy; 2026 InfoBeans Technologies Limited.
-        <br />
-        All rights reserved.
+        &copy; 2026 InfoBeans Technologies Limited. All rights reserved.
       </div>
     </footer>
   );

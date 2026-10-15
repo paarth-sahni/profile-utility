@@ -22,7 +22,7 @@ export default function StyleGuidePage() {
         <a
           href={PDF_URL}
           download="Style Guide.pdf"
-          className="shrink-0 rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+          className="shrink-0 bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
         >
           Download PDF ↓
         </a>
@@ -30,7 +30,7 @@ export default function StyleGuidePage() {
       <object
         data={PDF_URL}
         type="application/pdf"
-        className="min-h-[80vh] w-full flex-1 rounded-xl border border-gray-200 bg-white shadow-sm"
+        className="min-h-[80vh] w-full flex-1 border border-gray-200 bg-white shadow-sm"
       >
         <div className="p-8 text-center text-sm text-gray-600">
           Your browser cannot display PDFs inline.{" "}

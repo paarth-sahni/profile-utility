@@ -1,40 +1,50 @@
+/**
+ * Purpose: browser side of the PDF. Asks POST /api/pdf for the profile's PDF (the server fills the Word template and
+ * converts it with LibreOffice) and saves a PDF Blob under its file name. The Preview step shows the very Blob that
+ * Download PDF saves. Throws PdfRequestError with the HTTP status, so a caller can treat 401 as "session ended".
+ */
 import { saveAs } from "file-saver";
 import type { ResumeData, TemplateId } from "./schemas";
-import { buildResumePdf, type PdfAssets } from "./pdf";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-let assetsPromise: Promise<PdfAssets> | null = null;
-
-async function fetchBytes(url: string): Promise<Uint8Array> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Could not load asset ${url} (HTTP ${res.status}).`);
-  return new Uint8Array(await res.arrayBuffer());
+export class PdfRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "PdfRequestError";
+  }
 }
 
-function loadAssets(): Promise<PdfAssets> {
-  assetsPromise ??= (async () => {
-    const [lexendLight, lexend, lexendMedium, logoPng] = await Promise.all([
-      fetchBytes(`${BASE}/fonts/LexendLight-regular.ttf`),
-      fetchBytes(`${BASE}/fonts/Lexend-regular.ttf`),
-      fetchBytes(`${BASE}/fonts/LexendMedium-regular.ttf`),
-      fetchBytes(`${BASE}/img/logo.png`),
-    ]);
-    return { lexendLight, lexend, lexendMedium, logoPng };
-  })().catch((e) => {
-    assetsPromise = null; // allow retry after a transient failure
-    throw e;
-  });
-  return assetsPromise;
+/** The profile as a PDF Blob, made by the server. */
+export async function fetchProfilePdf(template: TemplateId, data: ResumeData): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api/pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template, data }),
+    });
+  } catch {
+    throw new PdfRequestError("We could not reach the server to create the PDF. Please check your connection and try again.", 0);
+  }
+  if (res.ok) {
+    const bytes = await res.arrayBuffer();
+    return new Blob([bytes], { type: "application/pdf" });
+  }
+  let message = "We could not create the PDF. Please try again.";
+  try {
+    const json = (await res.json()) as { error?: { message?: string } };
+    if (json.error?.message) message = json.error.message;
+  } catch {
+    /* keep the generic message */
+  }
+  throw new PdfRequestError(message, res.status);
 }
 
-/** Build the PDF in the browser and return it as a Blob. */
-export async function renderPdfBlob(id: TemplateId, data: ResumeData): Promise<Blob> {
-  const bytes = await buildResumePdf(id, data, await loadAssets());
-  return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
-}
-
-/** Build the PDF and download it directly. */
-export async function generatePdf(id: TemplateId, data: ResumeData, fileName: string): Promise<void> {
-  saveAs(await renderPdfBlob(id, data), fileName);
+/** Hands a PDF Blob to the browser as a download. */
+export function savePdf(blob: Blob, fileName: string): void {
+  saveAs(blob, fileName);
 }
