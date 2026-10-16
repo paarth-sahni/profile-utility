@@ -7,6 +7,7 @@
 import { z } from "zod";
 import {
   ExtractError,
+  extractionSchemaFor,
   resumeAnalysisSchema,
   reviewFlagSchema,
   type ExtractIssue,
@@ -69,6 +70,8 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
   // 1. Read the file into plain text.
   const { text, notes } = await extractResumeText(buffer);
   const user = wrapResume(text);
+  // a schema the provider refuses in strict mode is not sent strict again during this upload
+  const strictRejected = new Set<string>();
 
   // 2. Pass 1: analyse the document.
   const analysisRaw = await completeJson({
@@ -81,6 +84,7 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
     maxTokens: 3000,
     temperature: 0,
     signal,
+    strictRejected,
   });
   const analysisParsed = resumeAnalysisSchema.safeParse(parseJson(analysisRaw));
   if (!analysisParsed.success) {
@@ -95,9 +99,9 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
 
   // 4. Pass 2: extract (retry once with the fallback model if the output isn't JSON).
   const profileSchema = schemaFor(templateId);
-  const extractSchema = profileSchema.extend({ reviewFlags: z.array(reviewFlagSchema) });
+  const extractSchema = extractionSchemaFor(templateId);
   const call = (model: string, userMessage: string, systemPrompt: string) =>
-    completeJson({ model, system: systemPrompt, user: userMessage, schema: extractSchema, schemaName: "profile", temperature: 0, signal });
+    completeJson({ model, system: systemPrompt, user: userMessage, schema: extractSchema, schemaName: "profile", temperature: 0, signal, strictRejected });
 
   let parsed = parseJson(await call(cfg.modelExtract, user, system));
   if (parsed === null) {

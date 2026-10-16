@@ -3,7 +3,7 @@
  * (server route, pipeline, prompts) and its browser client.
  */
 import { z } from "zod";
-import type { ResumeData } from "./schemas";
+import { schemaFor, type ResumeData, type TemplateId } from "./schemas";
 
 /** Friendly, stable error codes returned by /api/extract. */
 export type ExtractErrorCode =
@@ -29,6 +29,14 @@ export class ExtractError extends Error {
 /** A value the model had to infer or estimate; `path` is a dot path such as "projects.0.duration". */
 export const reviewFlagSchema = z.object({ path: z.string(), reason: z.string() });
 export type ReviewFlag = z.infer<typeof reviewFlagSchema>;
+
+/**
+ * What pass 2 asks the model for: the template's profile plus its review flags. Sent as a strict JSON Schema,
+ * so it must stay strict-compatible (lib/strictSchema.test.ts); value rules such as the rating limits live in
+ * zod refinements and normalizeToShape, which run after parsing, never in the JSON Schema.
+ */
+export const extractionSchemaFor = (templateId: TemplateId) =>
+  schemaFor(templateId).extend({ reviewFlags: z.array(reviewFlagSchema) });
 
 /** Pass-1 output: a description of the document used to adapt the extraction prompt. */
 export const resumeAnalysisSchema = z.object({

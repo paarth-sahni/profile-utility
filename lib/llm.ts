@@ -21,6 +21,8 @@ export interface CompleteJsonArgs {
   maxTokens?: number;
   /** Sampling temperature (default 0.2). */
   temperature?: number;
+  /** Schema names the provider refused in strict mode earlier in this upload; shared across its calls. */
+  strictRejected?: Set<string>;
 }
 
 const MAX_RETRY_WAIT_MS = 15_000;
@@ -65,6 +67,17 @@ async function request(args: CompleteJsonArgs, responseFormat: ResponseFormat, s
   return res.choices[0]?.message?.content ?? "";
 }
 
+/**
+ * Error type, code and message of a provider error, for logs. Deliberately leaves out every other field
+ * (Groq's `failed_generation` carries model output, i.e. resume data). The message is capped.
+ */
+export function describeApiError(e: unknown): string {
+  if (!(e instanceof OpenAI.APIError)) return `(${e instanceof Error ? e.name : "unknown"})`;
+  const body = (e.error ?? {}) as { type?: unknown; code?: unknown; message?: unknown };
+  const message = typeof body.message === "string" ? body.message : e.message;
+  return `type=${String(body.type ?? e.type ?? "n/a")} code=${String(body.code ?? e.code ?? "n/a")} message=${JSON.stringify(message.slice(0, 300))}`;
+}
+
 /** One attempt with 429 handling: wait for retry-after once, then give up with RATE_LIMITED. */
 async function withRateLimitRetry(fn: () => Promise<string>, signal?: AbortSignal): Promise<string> {
   try {
@@ -88,13 +101,32 @@ async function withRateLimitRetry(fn: () => Promise<string>, signal?: AbortSigna
 }
 
 /**
+ * True when a 400 means the provider refused the JSON Schema itself (Groq: "invalid JSON schema for
+ * response_format: ..."). NOT for `json_validate_failed`: that is a 400 about the *generated* output
+ * (e.g. cut off at the token limit), and the schema is fine, so falling back to json_object won't help.
+ */
+export function isStrictSchemaRejection(e: unknown): boolean {
+  if (!(e instanceof OpenAI.APIError) || e.status !== 400) return false;
+  const body = (e.error ?? {}) as { code?: unknown; message?: unknown };
+  if ((body.code ?? e.code) === "json_validate_failed") return false;
+  const message = typeof body.message === "string" ? body.message : e.message;
+  return /json schema|response_format/i.test(message);
+}
+
+/**
  * Asks the model for JSON matching `schema` and returns the raw JSON text (caller parses/validates).
- * Uses json_schema strict mode; if the provider answers 400 about the schema, falls back to
- * json_object for this call. Errors are mapped to ExtractError codes.
+ * Uses json_schema strict mode; only if the provider refuses the schema itself does it fall back to
+ * json_object. That refusal is remembered in `args.strictRejected` (one set per upload), so later calls
+ * with the same schema in that upload go straight to json_object. Errors are mapped to ExtractError codes.
  */
 export async function completeJson(args: CompleteJsonArgs): Promise<string> {
   const jsonSchema = toStrictJsonSchema(args.schema);
+  const jsonObject = () => {
+    const system = `${args.system}\n\nRespond with a single JSON object matching this JSON Schema:\n${JSON.stringify(jsonSchema)}`;
+    return withRateLimitRetry(() => request(args, { type: "json_object" }, system), args.signal);
+  };
   try {
+    if (args.strictRejected?.has(args.schemaName)) return await jsonObject();
     try {
       return await withRateLimitRetry(
         () =>
@@ -106,11 +138,10 @@ export async function completeJson(args: CompleteJsonArgs): Promise<string> {
         args.signal,
       );
     } catch (e) {
-      const schemaRejected = e instanceof OpenAI.APIError && e.status === 400 && /schema|response_format|json/i.test(e.message);
-      if (!schemaRejected) throw e;
-      console.warn(`[extract] ${args.schemaName}: provider rejected strict schema (400); falling back to json_object`);
-      const system = `${args.system}\n\nRespond with a single JSON object matching this JSON Schema:\n${JSON.stringify(jsonSchema)}`;
-      return await withRateLimitRetry(() => request(args, { type: "json_object" }, system), args.signal);
+      if (!isStrictSchemaRejection(e)) throw e;
+      console.warn(`[extract] ${args.schemaName}: provider rejected strict schema (400 ${describeApiError(e)}); falling back to json_object`);
+      args.strictRejected?.add(args.schemaName);
+      return await jsonObject();
     }
   } catch (e) {
     if (e instanceof ExtractError) throw e;
@@ -118,7 +149,7 @@ export async function completeJson(args: CompleteJsonArgs): Promise<string> {
       throw new ExtractError("TIMEOUT", "Timed out");
     }
     const status = e instanceof OpenAI.APIError ? e.status : undefined;
-    console.error(`[extract] ${args.schemaName}: LLM call failed (status ${status ?? "n/a"}, ${e instanceof Error ? e.name : "unknown"})`);
+    console.error(`[extract] ${args.schemaName}: LLM call failed (status ${status ?? "n/a"} ${describeApiError(e)})`);
     throw new ExtractError("LLM_FAILED", "The language model request failed.");
   }
 }
