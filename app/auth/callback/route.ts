@@ -4,12 +4,14 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { isAllowedEmail, safeNextPath } from "@/lib/authRules";
+import { publicOrigin } from "@/lib/publicOrigin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  const origin = publicOrigin(request.headers, request.nextUrl.origin);
   const fail = (code: string) => NextResponse.redirect(`${origin}/login?error=${code}`);
 
   if (searchParams.get("error")) return fail(searchParams.get("error") === "access_denied" ? "cancelled" : "failed");
