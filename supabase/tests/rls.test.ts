@@ -40,6 +40,10 @@ const ALL_TABLES = [
   "review_items",
   "audit_log",
   "app_settings",
+  "compliance_names",
+  "compliance_name_sources",
+  "compliance_sync_runs",
+  "compliance_settings",
 ] as const;
 
 function requireEnv(name: string): string {

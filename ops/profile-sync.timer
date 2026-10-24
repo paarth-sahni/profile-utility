@@ -1,0 +1,14 @@
+# Purpose: wakes the registry sync every 30 minutes (see profile-sync.service). Not an in-app timer: it survives restarts and
+# deployments. Persistent=true runs a missed tick after the machine was off. The schedule days themselves are NOT here: they live in
+# the database (compliance_settings.schedule_days) so they can change without touching the server.
+[Unit]
+Description=Profile Generator - client-name registry sync (every 30 minutes)
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+RandomizedDelaySec=60
+Unit=profile-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -18,6 +18,10 @@ export default function ExtractionSummary({ fileName }: { fileName: string | nul
           <>We filled this in from your resume. </>
         )}
         Please review every section and complete anything that is missing.
+        <span className="mt-1 block text-ink-light">
+          Names of clients, companies and projects must not appear in a profile. Any that match our client list are marked in red and need to be
+          removed or rephrased before you continue. Only names on that list can be detected, so please check the rest yourself.
+        </span>
       </p>
     </div>
   );

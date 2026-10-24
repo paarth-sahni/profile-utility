@@ -3,8 +3,9 @@
 /**
  * Purpose: the Preview (& Submit) step. Shows the exact PDF that is generated (see PdfPreview) and offers the ways to
  * finish: "← Back to edit", "Download PDF" (saves the previewed PDF) and "Submit" (only when `onSubmit` is given, i.e.
- * internal profiles). "Open in Google Docs" is not offered here: it is only on the /manage profile pages. A required consent checkbox must be ticked first; the consent is
- * recorded in the audit log (POST /api/consent) before the action runs, and the action is cancelled if that fails.
+ * internal profiles). "Open in Google Docs" is not offered here: it is only on the /manage profile pages. A required consent checkbox must be ticked first. Download records
+ * the consent (POST /api/consent) before it runs and is cancelled if that fails; Submit sends the tick with the save request and the server
+ * records it only after the client-name check passes, so a refused Submit leaves no consent record.
  * The validated profile comes from the workflow; nothing here edits it.
  */
 import { useEffect, useId, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox"
 import { PRIMARY_EXPLANATION } from "@/components/MarkPrimaryButton";
 import PdfPreview from "@/components/PdfPreview";
 import { usePreviewPdf } from "@/components/usePreviewPdf";
+import type { PdfComplianceMatch } from "@/lib/pdfClient";
 import type { ConsentAction } from "@/lib/consent";
 import { ConsentError, recordConsent } from "@/lib/consentClient";
 import { savePdf } from "@/lib/pdfClient";
@@ -49,6 +51,10 @@ export interface PreviewStepProps {
   note?: string | null;
   /** Called when the server answers 401 (consent or PDF), i.e. the sign-in ended. */
   onSessionEnded: () => void;
+  /** Called when the server refuses the profile because it names a registered client (the workflow goes back to editing). */
+  onComplianceBlocked?: (matches: PdfComplianceMatch[]) => void;
+  /** The checker currently flags this profile: Download and Submit stay disabled whatever else is true. */
+  blocked?: boolean;
 }
 
 export default function PreviewStep({
@@ -62,6 +68,8 @@ export default function PreviewStep({
   submitError,
   note,
   onSessionEnded,
+  onComplianceBlocked,
+  blocked = false,
 }: PreviewStepProps) {
   const { pdf, retry } = usePreviewPdf(template, data);
   const [consent, setConsent] = useState(false);
@@ -87,6 +95,16 @@ export default function PreviewStep({
     }
   }, [sessionEnded, onSessionEnded]);
 
+  // the server refused the profile (it names a registered client): hand the places to the workflow, which returns to editing
+  const blockedMatches = pdf.status === "error" && pdf.code === "COMPLIANCE" ? pdf.matches : undefined;
+  const blockedReported = useRef(false);
+  useEffect(() => {
+    if (blockedMatches && !blockedReported.current) {
+      blockedReported.current = true;
+      onComplianceBlocked?.(blockedMatches);
+    }
+  }, [blockedMatches, onComplianceBlocked]);
+
   /** True when the box is ticked; otherwise explains and moves focus to it. */
   const requireConsent = (): boolean => {
     if (consent) return true;
@@ -106,7 +124,7 @@ export default function PreviewStep({
   };
 
   const download = async () => {
-    if (pdf.status !== "ready" || busy || !requireConsent()) return;
+    if (pdf.status !== "ready" || busy || blocked || !requireConsent()) return;
     setMessage(null);
     setBusy("download");
     try {
@@ -122,12 +140,12 @@ export default function PreviewStep({
   };
 
   const submit = async () => {
-    if (!onSubmit || !ready || busy || !requireConsent()) return;
+    if (!onSubmit || !ready || busy || blocked || !requireConsent()) return;
     setMessage(null);
     setSubmitted(null);
     setBusy("submit");
     try {
-      await record("submit");
+      // no consent call here: the save request carries the tick and the server records it only after its checks pass
       setSubmitted(await onSubmit(makePrimary && primaryChoice === "choose"));
       setMakePrimary(false);
     } catch (e) {
@@ -221,11 +239,11 @@ export default function PreviewStep({
           ← Back to edit
         </button>
         <div className="flex flex-wrap items-start gap-3">
-          <button type="button" onClick={download} disabled={!ready || busy !== null} className={onSubmit ? outline : primary}>
+          <button type="button" onClick={download} disabled={!ready || busy !== null || blocked} className={onSubmit ? outline : primary}>
             {busy === "download" ? "Preparing…" : "Download PDF"}
           </button>
           {onSubmit && (
-            <button type="button" onClick={submit} disabled={!ready || busy !== null} className={primary}>
+            <button type="button" onClick={submit} disabled={!ready || busy !== null || blocked} className={primary}>
               {busy === "submit" ? "Submitting…" : "Submit"}
             </button>
           )}

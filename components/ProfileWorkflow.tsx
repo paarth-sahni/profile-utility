@@ -5,10 +5,14 @@ import Stepper from "@/components/Stepper";
 import UploadProgress from "@/components/UploadProgress";
 import ExtractionSummary from "@/components/ExtractionSummary";
 import { toFieldErrors as pathIssuesToErrors } from "@/lib/fieldErrors";
+import { useComplianceCheck } from "@/components/useComplianceCheck";
+import { describeMatch, messagesByPath, rangesByPath, type ComplianceMatch } from "@/lib/complianceClient";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
 import PreviewStep, { type PrimaryChoice, type SubmittedVersion } from "@/components/PreviewStep";
 import { pdfFileName } from "@/lib/docxReady";
+import { ConsentError, recordConsent } from "@/lib/consentClient";
+import { resubmitSaved } from "@/lib/resubmit";
 import { UploadError, uploadResume } from "@/lib/extractClient";
 import { hasUnsavedWork } from "@/lib/unsavedGuard";
 import { labelForVersion } from "@/lib/versionLabel";
@@ -140,6 +144,9 @@ export default function ProfileWorkflow({
   const [source, setSource] = useState<Source | null>(initial ? "saved" : null);
   const [data, setData] = useState<ResumeData | null>(initial?.data ?? null);
   const [errors, setErrors] = useState<FieldError[] | null>(null);
+  const [checkingNames, setCheckingNames] = useState(false);
+  // the client-name rule: the server tells which typed text names a registered client (marks on the Edit step)
+  const { live, setFromServer, checkNow } = useComplianceCheck(templateId, data, step === STEP_REVIEW);
   const [scrollTick, setScrollTick] = useState(0);
   // the validated profile shown on the Preview step (set when entering it)
   const [previewData, setPreviewData] = useState<ResumeData | null>(null);
@@ -255,7 +262,7 @@ export default function ProfileWorkflow({
     if (target >= STEP_REVIEW && !data) target = 0;
     if (target === STEP_UPLOAD && source === "scratch") target = 0;
     if (target === STEP_PREVIEW) {
-      enterPreview();
+      void enterPreview();
       return;
     }
     setStep(target);
@@ -368,7 +375,9 @@ export default function ProfileWorkflow({
 
   // field key ("name", "education.0.year") -> message: the fields that need attention are marked from the first render on
   // Edit details (red border on the field, yellow section) and unmarked as soon as they are valid.
-  const fieldErrors: Record<string, string> = step === STEP_REVIEW && data ? checkProfile(data).byPath : {};
+  const fieldErrors: Record<string, string> = step === STEP_REVIEW && data ? { ...messagesByPath(live.matches), ...checkProfile(data).byPath } : {};
+  // text of a field changed since the server last checked it: its message stays, but the old positions are not highlighted
+  const complianceHighlights = live.forData === data ? rangesByPath(live.matches) : {};
 
   /**
    * Re-validates the form right before Preview and Save: covers the uploaded-profile path and the blank-form path,
@@ -391,15 +400,42 @@ export default function ProfileWorkflow({
    * Moves to the Preview step. The profile is validated first (required fields, "N/A" placeholders); if anything is wrong
    * the user stays on (or returns to) Edit details with the problems marked, and nothing is generated.
    */
-  const enterPreview = () => {
+  const enterPreview = async () => {
+    if (checkingNames) return;
     const valid = validateForExport();
     if (!valid) {
       setStep(STEP_REVIEW);
       return;
     }
+    // the client-name rule: the server checks this exact content against the registry before anything is generated
+    setCheckingNames(true);
+    const result = await checkNow(valid);
+    setCheckingNames(false);
+    if (result.status === "unavailable") {
+      setErrors([{ path: "Client-name check", message: "The check is not available right now, so Preview is blocked. Please try again shortly or contact support." }]);
+      setStep(STEP_REVIEW);
+      return;
+    }
+    if (result.status === "ok" && result.enforced && result.matches.length > 0) {
+      showComplianceMatches(result.matches, valid);
+      return;
+    }
+    setFromServer([], valid); // the fresh check is clean: drop marks left over from an earlier refusal
     setPreviewData(valid);
     setStep(STEP_PREVIEW);
     setErrors(null);
+  };
+
+  /** The server found registered names: go back to editing with the places marked and listed. */
+  const showComplianceMatches = (matches: ComplianceMatch[], forData: ResumeData | null) => {
+    setFromServer(matches, forData);
+    setErrors(
+      matches.map((m) =>
+        describeMatch(m, describeFieldPath(m.path.split(".").map((p) => (/^\d+$/.test(p) ? Number(p) : p)))),
+      ),
+    );
+    setStep(STEP_REVIEW);
+    setScrollTick((t) => t + 1);
   };
 
   // Every step opens at the top of the page, not where the previous step was scrolled to.
@@ -462,6 +498,9 @@ export default function ProfileWorkflow({
           analysis: extraction?.analysis ?? restored?.analysis ?? null,
           promptPlan: extraction?.promptPlan ?? restored?.promptPlan ?? [],
           makePrimary,
+          // Submit: the server records this consent only after its client-name check passes
+          submit: true,
+          consent: { accepted: true },
         }),
       });
       if (res.status === 401) {
@@ -469,6 +508,7 @@ export default function ProfileWorkflow({
         return fail("Your session has ended. Please sign in again; your work is kept in this tab.");
       }
       const json = await res.json();
+      if (!res.ok && json?.error?.code === "COMPLIANCE" && Array.isArray(json.error.matches)) showComplianceMatches(json.error.matches, data);
       if (!res.ok) throw new Error(json?.error?.message ?? "We could not save your profile. Please try again.");
       setSavedProfileId(json.profileId);
       setLastVersionId(json.versionId);
@@ -493,16 +533,38 @@ export default function ProfileWorkflow({
    */
   const submitProfile = async (makePrimary: boolean): Promise<SubmittedVersion> => {
     if (savedInfo && savedProfileId && lastVersionId && !dirty) {
-      // nothing to save again; "Mark as primary profile" alone is one call
-      if (makePrimary && primaryId !== savedProfileId) {
-        const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-        const res = await fetch(`${BASE}/api/profiles/${savedProfileId}/primary`, { method: "POST" });
-        if (res.status === 401) {
-          endSession();
-          throw new Error("Your session has ended. Please sign in again; your work is kept in this tab.");
-        }
-        if (!res.ok) throw new Error("Your profile is saved, but we could not mark it as primary. Please try again.");
-        setPrimaryId(savedProfileId);
+      // Nothing to save again, so no save request reaches the server gate: check the names first (the registry may have changed
+      // since this version was saved), then record the consent, then (if asked) mark it primary. See lib/resubmit.ts.
+      const outcome = await resubmitSaved({
+        check: () => checkNow(data!),
+        recordConsent: async () => {
+          try {
+            await recordConsent(templateId, "submit");
+          } catch (e) {
+            if (e instanceof ConsentError && e.status === 401) endSession();
+            throw e;
+          }
+        },
+        markPrimary: async () => {
+          if (!(makePrimary && primaryId !== savedProfileId)) return;
+          const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+          const res = await fetch(`${BASE}/api/profiles/${savedProfileId}/primary`, { method: "POST" });
+          if (res.status === 401) {
+            endSession();
+            throw new Error("Your session has ended. Please sign in again; your work is kept in this tab.");
+          }
+          if (!res.ok) throw new Error("Your profile is saved, but we could not mark it as primary. Please try again.");
+          setPrimaryId(savedProfileId);
+        },
+      });
+      if (outcome.kind === "ended") {
+        endSession();
+        throw new Error("Your session has ended. Please sign in again; your work is kept in this tab.");
+      }
+      if (outcome.kind === "unavailable") throw new Error("The client-name check is not available right now, so this cannot be submitted. Please try again shortly or contact support.");
+      if (outcome.kind === "blocked") {
+        showComplianceMatches(outcome.matches, data);
+        throw new Error("This profile names a registered client. Remove or rephrase the marked text, then submit again.");
       }
       return { profileId: savedProfileId, versionNo: savedInfo.no, isPrimary: (makePrimary || primaryId === savedProfileId) };
     }
@@ -771,9 +833,9 @@ export default function ProfileWorkflow({
             {source === "upload" && extraction && <ExtractionSummary fileName={fileName} />}
 
             {templateId === "external" ? (
-              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} fieldErrors={fieldErrors} />
+              <ExternalForm data={data as ExternalResume} onChange={handleFormChange} fieldErrors={fieldErrors} highlights={complianceHighlights} />
             ) : (
-              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} fieldErrors={fieldErrors} />
+              <InternalForm data={data as InternalResume} fromScratch={fromScratch} onChange={handleFormChange} fieldErrors={fieldErrors} highlights={complianceHighlights} />
             )}
 
             {errors && (
@@ -801,10 +863,11 @@ export default function ProfileWorkflow({
               </button>
               <button
                 type="button"
-                onClick={enterPreview}
-                className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"
+                onClick={() => void enterPreview()}
+                disabled={checkingNames}
+                className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
               >
-                {templateId === "internal" ? "Preview & Submit →" : "Preview →"}
+                {checkingNames ? "Checking…" : templateId === "internal" ? "Preview & Submit →" : "Preview →"}
               </button>
             </div>
           </div>
@@ -823,6 +886,8 @@ export default function ProfileWorkflow({
               primaryChoice={primaryChoice()}
               note={submitNote()}
               onSessionEnded={endSession}
+              onComplianceBlocked={(matches) => showComplianceMatches(matches, data)}
+              blocked={live.matches.length > 0}
             />
           </div>
         )}

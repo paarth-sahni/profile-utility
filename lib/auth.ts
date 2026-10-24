@@ -2,6 +2,7 @@
  * Purpose: the app's login API for server code (pages, route handlers, server actions).
  *   getCurrentUser() -> { id, email, role } or null when signed out / expired / not an InfoBeans account
  *   requireUser()    -> same, but redirects to /login when signed out
+ *   requireAdmin()   -> the user when they are an administrator, null when signed in with another role (redirects when signed out)
  * The role is read from public.app_users through the caller's own session (RLS applies). It is never
  * taken from the JWT or user_metadata, which a user could influence. Pure rules live in lib/authRules.ts
  * (use that file from proxy.ts, client components and tests). Server-only.
@@ -11,7 +12,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { Database } from "@/lib/database.types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isAllowedEmail, sessionExpired } from "@/lib/authRules";
+import { canAdministerRegistry, isAllowedEmail, sessionExpired } from "@/lib/authRules";
 
 export * from "@/lib/authRules";
 
@@ -44,4 +45,10 @@ export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   return user;
+}
+
+/** The administrator, or null when the signed-in user has another role. Signed-out visitors are sent to /login. */
+export async function requireAdmin(): Promise<CurrentUser | null> {
+  const user = await requireUser();
+  return canAdministerRegistry(user.role) ? user : null;
 }

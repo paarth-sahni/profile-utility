@@ -89,9 +89,12 @@ const envelope = z.object({
   promptPlan: z.array(z.string().max(100)).max(50).default([]),
   /** "Mark as primary profile" on Preview & Submit: saves and makes this profile primary in one step. */
   makePrimary: z.boolean().default(false),
+  /** True for the Preview & Submit action: the request must then carry `consent`, which the server records AFTER its checks pass. */
+  submit: z.boolean().default(false),
+  consent: z.object({ accepted: z.literal(true) }).optional(),
 });
 
-export type SavePayload = Omit<z.infer<typeof envelope>, "data" | "makePrimary"> & { data: ResumeData; makePrimary?: boolean };
+export type SavePayload = Omit<z.infer<typeof envelope>, "data" | "makePrimary" | "submit"> & { data: ResumeData; makePrimary?: boolean; submit?: boolean };
 
 /** Parses an untrusted save request body; returns null if anything is off (no details leaked), including any template but "internal". */
 export function parseSavePayload(body: unknown): SavePayload | null {

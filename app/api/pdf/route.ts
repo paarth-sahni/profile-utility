@@ -2,10 +2,12 @@
  * Purpose: POST /api/pdf — turns a profile into the PDF that Preview shows and Download PDF saves. Signed-in users
  * only, rate-limited per user. Body: { template, data }; the data must pass the strict schema and the "N/A" check (the
  * same gate as every export). The Word template is filled exactly as in the browser and converted by LibreOffice
- * (lib/pdfRender.ts). Nothing is stored and no profile content is logged; the response is not cached.
+ * (lib/pdfRender.ts). When COMPLIANCE_ENFORCE=on the profile is first checked against the client-name registry (422 COMPLIANCE,
+ * or 503 if the registry cannot be loaded). Nothing is stored and no profile content is logged; the response is not cached.
  */
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { complianceGate } from "@/lib/compliance/registry";
 import { checkReadyForDocx, pdfFileName } from "@/lib/docxReady";
 import { PdfError, renderProfilePdf } from "@/lib/pdfRender";
 import { allowRequest } from "@/lib/rateLimit";
@@ -41,6 +43,9 @@ export async function POST(request: Request) {
   const template = body.template as TemplateId;
   const ready = checkReadyForDocx(template, body.data as ResumeData);
   if (!ready.ok) return err(422, "INCOMPLETE", ready.message);
+  // the client-name rule: a profile naming a registered client, company or project is refused here, whatever the browser did
+  const blocked = await complianceGate(ready.data);
+  if (blocked) return blocked;
 
   try {
     const pdf = await renderProfilePdf(template, ready.data);

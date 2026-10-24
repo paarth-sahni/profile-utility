@@ -24,6 +24,14 @@ export function canUseGoogleDocs(role: string | null | undefined): boolean {
   return role === "manager" || role === "admin";
 }
 
+/**
+ * Who may run the client-name registry sync by hand and review its names: administrators ONLY (not managers or checkers, who
+ * can read more elsewhere). The pages and routes check it on the server; the database functions check it again.
+ */
+export function canAdministerRegistry(role: string | null | undefined): boolean {
+  return role === "admin";
+}
+
 /** Page shown after sign-in when no (valid) `next` is given. */
 export const DEFAULT_AFTER_LOGIN = "/internal";
 
