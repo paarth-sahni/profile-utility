@@ -50,3 +50,11 @@ test("the few-shot examples follow the rules: the overview does not open with th
     assert.ok(!/\b\d+\s*\+?\s*years?\b/.test(first), `${template} example opens with the years of experience`);
   }
 });
+
+test("dates: every template asks for MMM YYYY, en-dash ranges and Present / Current, and its examples follow it", () => {
+  for (const template of ["internal", "external"] as const) {
+    const p = buildExtractionPrompt(template, analysis("mid"), "2026-10-12");
+    assert.ok(p.includes('write every date as "MMM YYYY"') && p.includes('"Feb 2020 – Jun 2020"') && p.includes("Never invent a month"), template);
+    for (const [, d] of p.matchAll(/"duration":\s*"([^"]+)"/g)) assert.match(d, /^[A-Z][a-z]{2} \d{4} – ([A-Z][a-z]{2} \d{4}|Present|Current)$/, `${template} example duration ${d}`);
+  }
+});

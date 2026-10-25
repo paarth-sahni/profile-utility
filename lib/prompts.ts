@@ -65,6 +65,7 @@ DERIVED FIELDS
 
 FIELD HANDLING
 - Project dates: if a project has no stated duration, keep "duration" as "" and add a reviewFlag (path "projects.<index>.duration"). Never invent dates, and never borrow employer dates unless an adaptation below explicitly allows it.
+- Dates: write every date as "MMM YYYY" (three-letter month, four-digit year), e.g. "Feb 2020", whatever form the resume uses ("June-2020", "06/2020", "2020-06"). A period is "Feb 2020 – Jun 2020" (spaces around an en dash); an ongoing one ends in "Present", or "Current" when the resume says so. Never invent a month: when the resume gives only a year, keep it as written and add a reviewFlag for that duration.
 - Content in the wrong field: if a field clearly contains content that belongs in another field (e.g. "Tools & Technologies" holding a sentence of description), move it where it belongs when that is obvious. Otherwise keep it and add a reviewFlag with the reason "looks like a description, not tools" (or the equivalent for that field).
 - Team size: keep ranges exactly as written (e.g. "2-3", "10-12"). Do not collapse them to one number.
 - Project text — never invent actions and never move content:
@@ -191,7 +192,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "tools": [string],               // Tools/software the candidate uses, e.g. ["Jenkins", "Postman", "Git"]
   "certifications": [string],      // Professional certifications stated in the resume, e.g. ["AWS Solutions Architect – Associate"]; [] if none
   "projects": [                    // One entry per project (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2021 - Aug 2021"; "" if not stated (flag it)
+    { "duration": string,          // Project period, e.g. "Feb 2021 – Aug 2021"; "" if not stated (flag it)
       "client": string,            // Client/project name, e.g. "Northwind Retail, UK"
       "teamSize": string,          // e.g. "5" or a range "2-3" exactly as written; "" if not stated
       "role": string,              // Candidate's role on the project, e.g. "Backend Developer"
@@ -202,7 +203,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "experience": [                  // One entry per employer, most recent first
     { "company": string,           // e.g. "Contoso Software"
       "position": string,          // e.g. "Quality Engineer"
-      "duration": string,          // e.g. "2023 - Present"
+      "duration": string,          // e.g. "Mar 2023 – Present"
       "highlights": [string]       // Achievement bullet points, each a single sentence; [] if none are given
     }
   ],
@@ -213,7 +214,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const EXTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 - Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"2019 - Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
+{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 – Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"Jun 2019 – Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
 
 const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
@@ -227,7 +228,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
       "qualification": string }    // Degree + institution, e.g. "Bachelor of Engineering (Computer Science), Riverside University"
   ],
   "projects": [                    // One entry per project, most recent first (numbering is added automatically); [] if none
-    { "duration": string,          // Project period, e.g. "Feb 2021 - Aug 2021"; "" if not stated (flag it)
+    { "duration": string,          // Project period, e.g. "Feb 2021 – Aug 2021"; "" if not stated (flag it)
       "title": string,             // Project title, e.g. "Customer loyalty portal"
       "toolsAndTechnologies": [string], // Technologies stated for the project, e.g. ["Node", "HTML", "PostgreSQL", "React"]; [] if none stated
       "teamSize": string,          // e.g. "3" or a range "2-3" exactly as written; "" if not stated
@@ -253,7 +254,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const INTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Daniel Ortiz","jobTitle":"Mobile Application Developer","experienceSummary":"4+ Years of Industry Experience","specialization":"Mobile App Development","overview":"Builds Android and cross-platform apps for retail and logistics clients. Experienced in offline-first design and payment integrations.","education":[{"year":"2020","qualification":"Bachelor of Technology (Electronics), Lakeshore University"}],"projects":[{"duration":"Aug 2022 - Mar 2023","title":"Store Associate Companion App","toolsAndTechnologies":["Kotlin","Room","Firebase","Jetpack Compose"],"teamSize":"6","role":"Android Developer","projectLink":"NDA","description":"Mobile app that gives retail store associates stock lookup, order tracking and task lists on the shop floor.","responsibilities":["Built the stock lookup and order tracking screens with Jetpack Compose.","Implemented offline caching with Room so the app works without connectivity.","Integrated Firebase push notifications for task assignments."]}],"skills":[{"name":"Kotlin","rating":"4"},{"name":"Android SDK","rating":"4.2"}],"certifications":["Google Associate Android Developer"],"tools":["Android Studio","Git","JIRA"],"managerialExperience":[],"domains":["Retail","Logistics"],"languages":["English","Spanish"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
+{"name":"Daniel Ortiz","jobTitle":"Mobile Application Developer","experienceSummary":"4+ Years of Industry Experience","specialization":"Mobile App Development","overview":"Builds Android and cross-platform apps for retail and logistics clients. Experienced in offline-first design and payment integrations.","education":[{"year":"2020","qualification":"Bachelor of Technology (Electronics), Lakeshore University"}],"projects":[{"duration":"Aug 2022 – Mar 2023","title":"Store Associate Companion App","toolsAndTechnologies":["Kotlin","Room","Firebase","Jetpack Compose"],"teamSize":"6","role":"Android Developer","projectLink":"NDA","description":"Mobile app that gives retail store associates stock lookup, order tracking and task lists on the shop floor.","responsibilities":["Built the stock lookup and order tracking screens with Jetpack Compose.","Implemented offline caching with Room so the app works without connectivity.","Integrated Firebase push notifications for task assignments."]}],"skills":[{"name":"Kotlin","rating":"4"},{"name":"Android SDK","rating":"4.2"}],"certifications":["Google Associate Android Developer"],"tools":["Android Studio","Git","JIRA"],"managerialExperience":[],"domains":["Retail","Logistics"],"languages":["English","Spanish"],"reviewFlags":[{"path":"skills.0.rating","reason":"Rating estimated from years of use"},{"path":"skills.1.rating","reason":"Rating estimated from years of use"}]}`;
 
 /** Description of the JSON shape for the template (also useful on its own in tests). */
 export const schemaDescription = (id: TemplateId): string => (id === "external" ? EXTERNAL_SCHEMA : INTERNAL_SCHEMA);

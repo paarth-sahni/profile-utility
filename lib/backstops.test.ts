@@ -34,6 +34,8 @@ import {
   flagOverviewRepeatsHeader,
   flagRepeatedBullets,
   tokenOverlap,
+  DATE_NOT_RECOGNISED_REASON,
+  normalizeDurations,
 } from "./backstops";
 import { normalizeToShape } from "./normalize";
 import type { ReviewFlag } from "./extract.types";
@@ -539,4 +541,27 @@ test("applyBackstops adds no repetition flags to a clean profile", () => {
   };
   const r = applyBackstops("internal", clean, [], "source text");
   assert.ok(!r.flags.some((f) => [OVERVIEW_REPEATS_HEADER_REASON, DESCRIPTION_STARTS_WITH_TITLE_REASON, BULLET_REPEATS_BULLET_REASON, BULLET_REPEATS_DESCRIPTION_REASON].includes(f.reason)));
+});
+
+test("backstop 3i: project and employer durations become MMM YYYY ranges; unreadable ones stay and are flagged", () => {
+  const data = {
+    projects: [{ duration: "June-2020 - 2021-01" }, { duration: "06/2019 to Present" }, { duration: "2018 - 2019" }, { duration: "" }],
+    experience: [{ duration: "Jan'19 - till date" }, { duration: "Q3 2016" }],
+  };
+  const flags = normalizeDurations(data, []);
+  assert.deepEqual(data.projects.map((p) => p.duration), ["Jun 2020 – Jan 2021", "Jun 2019 – Present", "2018 - 2019", ""]);
+  assert.deepEqual(data.experience.map((e) => e.duration), ["Jan 2019 – Present", "Q3 2016"]);
+  assert.deepEqual(flags, [
+    { path: "projects.2.duration", reason: DATE_NOT_RECOGNISED_REASON },
+    { path: "experience.1.duration", reason: DATE_NOT_RECOGNISED_REASON },
+  ]);
+  assert.deepEqual(normalizeDurations(data, flags), flags, "no duplicate flags");
+});
+
+test("applyBackstops normalises durations after the source check (a reformatted date is not 'not found')", () => {
+  const source = "Project 1 - June-2020 - 06/2021\nStore Locator\nProject 2 - Jan'19 - Mar'20\nOrder Tracker";
+  const data = { projects: [{ title: "Store Locator", duration: "June-2020 - 06/2021" }, { title: "Order Tracker", duration: "Jan 2019 - Mar 2020" }] };
+  const r = applyBackstops("internal", data, [], source);
+  assert.deepEqual((r.data as typeof data).projects.map((p) => p.duration), ["Jun 2020 – Jun 2021", "Jan 2019 – Mar 2020"]);
+  assert.ok(!r.flags.some((f) => f.reason === VALUE_NOT_FOUND_REASON || f.reason === DATE_NOT_RECOGNISED_REASON), JSON.stringify(r.flags));
 });

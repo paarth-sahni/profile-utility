@@ -11,10 +11,12 @@
  *   3f. overview's first sentence restates the job title, the experience line / its years or the specialization -> flag
  *   3g. near-duplicate bullets in one entry, or a bullet copying the description -> flag the later bullet
  *   3h. project description that starts with the project title (internal title / external client) -> flag
+ *   3i. project / employer durations rewritten as "MMM YYYY" ranges (lib/dates.ts); one it cannot read -> flag
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
  */
+import { normalizeDuration } from "./dates";
 import type { ReviewFlag } from "./extract.types";
 import type { TemplateId } from "./schemas";
 
@@ -104,7 +106,9 @@ export function valueInSource(value: string, sourceText: string, lenientNumbers 
   if (digitSafe(v)) return true;
   if (!lenientNumbers) return false;
   const numbers = v.match(/\d+/g);
-  return !!numbers && numbers.every((n) => digitSafe(n));
+  // a year the date normaliser expanded from "Jan'19" is in the source as '19
+  const twoDigitYear = (n: string) => /^(19|20)\d\d$/.test(n) && new RegExp(`['’‘]\\s*${n.slice(2)}($|[^\\d])`).test(src);
+  return !!numbers && numbers.every((n) => digitSafe(n) || twoDigitYear(n));
 }
 
 /**
@@ -517,6 +521,30 @@ export function flagDescriptionStartsWithTitle(templateId: TemplateId, data: unk
   return out;
 }
 
+export const DATE_NOT_RECOGNISED_REASON = "date not recognised: please write it as MMM YYYY, e.g. Feb 2020 – Jun 2020";
+
+/**
+ * 3i. Every project duration (and external employer duration) as "MMM YYYY" / "MMM YYYY – MMM YYYY" / "… – Present",
+ * whatever the resume wrote ("June-2020", "06/2020", "2020-06"). A duration it cannot read without guessing (a year with
+ * no month, "Q3 2020", "03/04/2020") is left as written and flagged. Mutates `data`.
+ */
+export function normalizeDurations(data: unknown, flags: ReviewFlag[]): ReviewFlag[] {
+  if (!isRecord(data)) return flags;
+  const out = [...flags];
+  for (const list of ["projects", "experience"]) {
+    const entries = data[list];
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, i) => {
+      if (!isRecord(entry) || typeof entry.duration !== "string") return;
+      const { value, ok } = normalizeDuration(entry.duration);
+      entry.duration = value;
+      const path = `${list}.${i}.duration`;
+      if (!ok && !hasFlag(out, path, DATE_NOT_RECOGNISED_REASON)) out.push({ path, reason: DATE_NOT_RECOGNISED_REASON });
+    });
+  }
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -531,6 +559,8 @@ export function applyBackstops(
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);
+  // after the source check, which compares the model's own wording of each date with the resume
+  next = normalizeDurations(copy, next);
   next = flagMissingDescriptions(templateId, copy, next, sourceText);
   next = flagSidebarExtras(templateId, copy, next, sourceText, documentType);
   next = applyProfileHeader(copy, next, sourceText, documentType);
