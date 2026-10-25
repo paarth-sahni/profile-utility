@@ -372,7 +372,11 @@ for (const id of ["internal", "external"]) {
   const zip = new PizZip(fs.readFileSync(`public/templates/${id}.docx`));
   const xml = templateXml[id];
   // logo: cropped exactly to the artwork and drawn at the reference's size (130.5 x 42.0pt)
-  const drawing = xml.match(/<w:drawing>.*?<\/w:drawing>/s)[0];
+  const drawings = xml.match(/<w:drawing>.*?<\/w:drawing>/gs) ?? [];
+  const drawing = drawings.find((d) => d.includes("<pic:pic>"));
+  assert(drawing, `${id}: no logo drawing`);
+  // internal: the grey header line is one page-anchored line shape (nothing else is a shape); external has none
+  assert(drawings.filter((d) => d.includes("wordprocessingShape")).length === (id === "internal" ? 1 : 0), `${id}: wrong number of line shapes`);
   const [, cx, cy] = drawing.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/).map(Number);
   const crop = Object.fromEntries([...drawing.match(/<a:srcRect ([^>]*)\/>/)[1].matchAll(/(\w)="(\d+)"/g)].map((m) => [m[1], Number(m[2]) / 100000]));
   const shown = (1000 * (1 - crop.l - crop.r)) / (500 * (1 - crop.t - crop.b));
@@ -556,7 +560,10 @@ function checkReference(file, id, pages, data) {
   // header line empty too (internal only; the external layout has no such line)
   const rules = pages[0].lines.filter((x) => x.color.toLowerCase() === REF.rule.color && x.y < 200);
   if (id === "internal") {
-    assert(rules.length > 0, `${file}: no grey line under the header block`);
+    // exactly one: LibreOffice paints a paragraph border or shading twice (two identical fills in the PDF), so the line
+    // is a page-anchored shape; a second copy would also be heavier on screen
+    assert(rules.length === 1, `${file}: ${rules.length} grey lines under the header block on page 1, want exactly 1`);
+    assert(pages.slice(1).every((p) => p.lines.every((x) => x.color.toLowerCase() !== REF.rule.color)), `${file}: a grey header line on a page after the first`);
     for (const r of rules) {
       at(r.x0, REF.rule.x0, "header line left end");
       at(r.x1, REF.rule.x1, "header line right end");

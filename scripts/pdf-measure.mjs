@@ -51,7 +51,7 @@ export async function measurePdf(file) {
         const [x0, x1] = [Math.min(corners[0][0], corners[1][0]), Math.max(corners[0][0], corners[1][0])];
         const yMid = height - (corners[0][1] + corners[1][1]) / 2;
         if (paint === OPS.stroke && h < 0.01 && w > 1) lines.push({ x0, x1, y: yMid, width: lineWidth * scale, color: stroke });
-        else if (paint === OPS.fill && h < 2 && w > 1 && h > 0) lines.push({ x0, x1, y: yMid, width: h, color: fill });
+        else if ([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke].includes(paint) && h < 2 && w > 1 && h > 0) lines.push({ x0, x1, y: yMid, width: h, color: fill });
       }
       else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject) {
         const xs = [ctm[4], ctm[4] + ctm[0], ctm[4] + ctm[2], ctm[4] + ctm[0] + ctm[2]];

@@ -296,7 +296,7 @@ def header_layout(template: str) -> dict:
         3: {"spacing": exact(lines[2]), "run": run("Lexend Light", 11, DARK)},
         4: {"spacing": exact(lines[3]), "run": run("Lexend Light", 11, DARK)},
     }
-    return {"paragraphs": layout, "header_bottom": top, "label_bottom": label_bottom, "name_top": name_top, "lines": lines}
+    return {"paragraphs": layout, "header_bottom": top, "label_bottom": label_bottom, "name_top": name_top}
 
 
 def heading(before: float, content: str) -> dict:
@@ -312,22 +312,27 @@ def section_before(previous_below: float, spacers: int = 0) -> float:
     return SECTION_GAP - previous_below - spacers * SPACER_LINE - EXACT_BASELINE * HEADING["line"]
 
 
-# The thin grey line under the header block (internal): format.pdf draws a #888888 stroke 1.0pt wide from x 54.0 to
-# 541.0 with its centre at y 146.5. It is the bottom border of an empty paragraph at the end of the header cell.
+# The thin grey line under the header block (internal): format.pdf draws a #888888 stroke 1.0pt wide from x 54.0 to 541.0
+# with its centre at y 146.5. It is a line shape anchored to the PAGE (so it stays put whatever the header holds), added
+# to the "A PROUD MEMBER OF" paragraph, which sits outside the table (an anchor inside a table cell follows the cell).
+# A paragraph border or shading would be simpler but LibreOffice paints those twice (two identical fills in the PDF).
 RULE = {"color": "888888", "width": 1.0, "x0": 54.0, "x1": 541.0, "y": 146.5}
-CELL_TEXT_RIGHT = MARGIN_LEFT + (GRID["internal"][0] + GRID["internal"][1] + GRID["internal"][2]) / 20 - CELL_TOP  # the header cell's text edge
 
 
-def rule_paragraph(header_bottom: float) -> str:
-    """The empty paragraph whose bottom border is the rule: it fills the space from the last header line down to the
-    border's top edge, and is indented so the border runs from RULE x0 to x1."""
-    top_edge = RULE["y"] - RULE["width"] / 2
-    left = RULE["x0"] - (MARGIN_LEFT + GRID["internal"][0] / 20 + CELL_TOP)
-    right = CELL_TEXT_RIGHT - RULE["x1"]
-    border = f'<w:pBdr><w:bottom w:val="single" w:sz="{round(RULE["width"] * 8)}" w:space="0" w:color="{RULE["color"]}"/></w:pBdr>'
+def rule_run() -> str:
+    """A run holding the page-anchored line shape."""
+    w = emu(RULE["x1"] - RULE["x0"])
     return (
-        f'<w:p><w:pPr>{border}<w:spacing {attrs(exact(top_edge - header_bottom))}/>'
-        f'<w:ind w:left="{tw(left)}" w:right="{tw(right)}" w:firstLine="0"/><w:jc w:val="left"/></w:pPr></w:p>'
+        '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="2" behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        f'<wp:positionH relativeFrom="page"><wp:posOffset>{emu(RULE["x0"])}</wp:posOffset></wp:positionH>'
+        f'<wp:positionV relativeFrom="page"><wp:posOffset>{emu(RULE["y"])}</wp:posOffset></wp:positionV>'
+        f'<wp:extent cx="{w}" cy="0"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        '<wp:docPr id="102" name="header rule"/><wp:cNvGraphicFramePr/>'
+        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvCnPr/>'
+        f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom>'
+        f'<a:ln w="{emu(RULE["width"])}"><a:solidFill><a:srgbClr val="{RULE["color"]}"/></a:solidFill></a:ln></wps:spPr><wps:bodyPr/></wps:wsp>'
+        "</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"
     )
 
 
@@ -425,7 +430,6 @@ def external_layout() -> dict:
 
 
 LAYOUT = {"internal": internal_layout(), "external": external_layout()}
-_HEADER = header_layout("internal")
 # The internal description's blank line before it (PRE_SPACERS) sized like the other project gaps, and the two sidebar
 # spacers (SPACERS) like the other sidebar spacers.
 PRE_SPACERS["internal"][0] = (34, blank_xml(DESCRIPTION_GAP))
@@ -434,13 +438,8 @@ SPACERS["internal"] = [(at, blank_xml(SPACER_LINE)) for at, _ in SPACERS["intern
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
 END_OF_PROJECTS = blank_xml(below(BODY_LINE) + SPACER_LINE - BULLET_BELOW)
-# Internal: the rule after the specialisation line. An empty experience / specialisation line leaves a blank line of its
-# own height ({^hasX}), so the rule stays where the reference has it whatever the header holds.
 AFTER_CLOSE = {
-    "internal": [
-        (3, marker("{^hasExperienceSummary}") + blank_xml(_HEADER["lines"][2]) + marker("{/hasExperienceSummary}")),
-        (4, marker("{^hasSpecialization}") + blank_xml(_HEADER["lines"][3]) + marker("{/hasSpecialization}") + rule_paragraph(_HEADER["header_bottom"])),
-    ],
+    "internal": [],
     "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))],
 }
 
@@ -625,6 +624,8 @@ def patch(name: str) -> bytes:
                 text = ""
             elif change:
                 text = set_ppr(text, change)
+            if i == 0 and name == "internal":
+                text = text.replace("</w:p>", rule_run() + "</w:p>")  # the grey line under the header (outside the table)
             opens = "".join(m for _, m in sorted(before.get(i, []), key=lambda t: -t[0]))  # outermost first
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
             pre = "".join(xml_ for at, xml_ in PRE_SPACERS[name] if at == i)  # inside any condition that opens here
