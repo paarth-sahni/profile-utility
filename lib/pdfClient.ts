@@ -8,10 +8,16 @@ import type { ResumeData, TemplateId } from "./schemas";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
+/** Where the server found a registered client name (COMPLIANCE): the field path, the text and its position. */
+export type PdfComplianceMatch = { path: string; start: number; end: number; matchedText: string };
+
 export class PdfRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The server's error code (for example COMPLIANCE or REGISTRY_UNAVAILABLE). */
+    readonly code?: string,
+    readonly matches?: PdfComplianceMatch[],
   ) {
     super(message);
     this.name = "PdfRequestError";
@@ -35,13 +41,17 @@ export async function fetchProfilePdf(template: TemplateId, data: ResumeData): P
     return new Blob([bytes], { type: "application/pdf" });
   }
   let message = "We could not create the PDF. Please try again.";
+  let code: string | undefined;
+  let matches: PdfComplianceMatch[] | undefined;
   try {
-    const json = (await res.json()) as { error?: { message?: string } };
+    const json = (await res.json()) as { error?: { message?: string; code?: string; matches?: PdfComplianceMatch[] } };
     if (json.error?.message) message = json.error.message;
+    code = json.error?.code;
+    if (Array.isArray(json.error?.matches)) matches = json.error.matches;
   } catch {
     /* keep the generic message */
   }
-  throw new PdfRequestError(message, res.status);
+  throw new PdfRequestError(message, res.status, code, matches);
 }
 
 /** Hands a PDF Blob to the browser as a download. */

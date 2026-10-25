@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { POST as extractPOST } from "../app/api/extract/route";
 import { POST as profilesPOST } from "../app/api/profiles/route";
 import { POST as pdfPOST } from "../app/api/pdf/route";
+import { POST as checkPOST } from "../app/api/compliance/check/route";
 
 const jsonRequest = (body: unknown) =>
   new Request("http://localhost:3000/api/profiles", {
@@ -52,6 +53,15 @@ test("POST /api/pdf without a session returns 401 and makes no PDF", async () =>
   );
   assert.equal(res.status, 401);
   assert.equal(res.headers.get("content-type")?.includes("application/pdf"), false);
+  const body = (await res.json()) as { error: { code: string } };
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("POST /api/compliance/check without a session returns 401 and checks nothing", async () => {
+  const res = await checkPOST(
+    new Request("http://localhost:3000/api/compliance/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: "internal", data: { overview: "x" } }) }),
+  );
+  assert.equal(res.status, 401);
   const body = (await res.json()) as { error: { code: string } };
   assert.equal(body.error.code, "UNAUTHENTICATED");
 });

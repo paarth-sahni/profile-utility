@@ -18,12 +18,15 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
   // ProfileHub (the managers' page, /manage) is shown to managers and admins only, first in their header; the server
   // refuses everyone else as well. Managers: ProfileHub | Generator | My Profiles | Instructions.
   const canManage = user?.role === "manager" || user?.role === "admin";
+  // the client-name registry page is for administrators only (the page, the routes and the database refuse everyone else)
+  const canAdminister = user?.role === "admin";
   const LINKS: NavLink[] = canManage
     ? [
         { href: "/manage", label: "ProfileHub" },
         { href: home, label: "Generator" },
         { href: "/profiles", label: "My Profiles" },
         { href: `${home}/instructions`, label: "Instructions" },
+        ...(canAdminister ? [{ href: "/admin/compliance", label: "Registry" }] : []),
       ]
     : [
         { href: home, label: "Generator" },

@@ -6,10 +6,13 @@
  * HTTP status, 401 = session ended) and a retry.
  */
 import { useCallback, useEffect, useState } from "react";
-import { PdfRequestError, fetchProfilePdf } from "@/lib/pdfClient";
+import { PdfRequestError, fetchProfilePdf, type PdfComplianceMatch } from "@/lib/pdfClient";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
 
-export type PreviewPdf = { status: "loading" } | { status: "ready"; blob: Blob } | { status: "error"; message: string; httpStatus: number };
+export type PreviewPdf =
+  | { status: "loading" }
+  | { status: "ready"; blob: Blob }
+  | { status: "error"; message: string; httpStatus: number; code?: string; matches?: PdfComplianceMatch[] };
 
 export function usePreviewPdf(template: TemplateId, data: ResumeData): { pdf: PreviewPdf; retry: () => void } {
   const [pdf, setPdf] = useState<PreviewPdf>({ status: "loading" });
@@ -29,6 +32,8 @@ export function usePreviewPdf(template: TemplateId, data: ResumeData): { pdf: Pr
             status: "error",
             message: e instanceof Error ? e.message : String(e),
             httpStatus: e instanceof PdfRequestError ? e.status : 0,
+            code: e instanceof PdfRequestError ? e.code : undefined,
+            matches: e instanceof PdfRequestError ? e.matches : undefined,
           });
         }
       });

@@ -1,0 +1,25 @@
+# Purpose: one tick of the client-name registry synchronisation. Started every 30 minutes by profile-sync.timer; it calls the
+# app on THIS machine (never through nginx). The app decides whether anything is due: it only runs a sync on a schedule day
+# (the 5th and 20th by default, from the database settings) and retries a failed day with growing waits, so most ticks do nothing.
+# The secret is sent through stdin (--header @-) so it never shows up in the process list.
+#
+# Install (as root):  cp ops/profile-sync.service ops/profile-sync.timer /etc/systemd/system/
+#                     systemctl daemon-reload && systemctl enable --now profile-sync.timer
+# Needs in /var/www/profile/.env: SYNC_CRON_SECRET (and PORT, which the app service already uses).
+# Check:              systemctl list-timers profile-sync.timer ; journalctl -u profile-sync.service -n 20
+[Unit]
+Description=Profile Generator - client-name registry sync tick
+After=profile-generator.service
+Wants=profile-generator.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/var/www/profile/.env
+# If the site is served under a sub-path, NEXT_PUBLIC_BASE_PATH (from the same file) is added in front of /api.
+# ($$ is how systemd writes a literal $, so the shell, not systemd, expands the variables.)
+ExecStart=/bin/sh -c 'printf "x-sync-secret: %%s\n" "$$SYNC_CRON_SECRET" | /usr/bin/curl --fail --silent --show-error --max-time 180 --request POST --header @- "http://127.0.0.1:$${PORT:-3000}$${NEXT_PUBLIC_BASE_PATH}/api/internal/sync"; rc=$$?; echo; exit $$rc'
+# a failed call makes the unit fail, so it shows up in `systemctl status` and `journalctl`
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

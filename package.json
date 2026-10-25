@@ -13,6 +13,9 @@
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
     "test:rls": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -At -v ON_ERROR_STOP=1 -f supabase/tests/002_rls_catalog.sql && tsx --env-file=.env.local --experimental-websocket --test supabase/tests/rls.test.ts",
     "db:smoke": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -v ON_ERROR_STOP=1 -f supabase/tests/001_schema_smoke.sql",
+    "test:compliance": "psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -At -v ON_ERROR_STOP=1 -f supabase/tests/003_compliance.sql && psql \"postgresql://postgres:postgres@127.0.0.1:54322/postgres\" -X -q -At -v ON_ERROR_STOP=1 -f supabase/tests/004_compliance_rollback.sql",
+    "sync:inspect": "tsx --env-file=.env scripts/sync-inspect.ts",
+    "test:sync": "tsx --require ./scripts/stubServerOnly.cjs --env-file=.env.local.localdb --experimental-websocket --test supabase/tests/sync.test.ts",
     "test:db": "tsx --conditions=react-server --env-file=.env.local --experimental-websocket --test supabase/tests/db.test.ts",
     "test:e2e": "node --env-file=.env.local --experimental-websocket scripts/e2e-drafts.mjs && node --env-file=.env.local --experimental-websocket scripts/e2e-ui.mjs",
     "test:render": "tsx --require ./scripts/stubServerOnly.cjs test-render.mjs"

@@ -3,7 +3,10 @@
 Next.js app that turns a resume (or a blank form) into a branded InfoBeans profile **PDF**, made from one of two Word
 templates. Sign-in is with an InfoBeans Google account; the resume is read by an LLM on the server (`/api/extract`),
 and **internal** profiles can be saved per user in Supabase (My Profiles). **External** (client-facing) profiles are
-never stored.
+never stored. Managers and admins also get **ProfileHub** (`/manage`): each team member's primary profile, read-only.
+
+Header: *Generator | Instructions | My Profiles* for everyone; managers and admins see
+*ProfileHub | Generator | My Profiles | Instructions*. The avatar menu holds Sign out only.
 
 ## How it works
 
@@ -131,6 +134,9 @@ position and ratio, bullets, blank lines, sidebar spacing). Open those PDFs to l
 - `components/PdfPreview.tsx` — draws a PDF Blob in the page (pdf.js via `unpdf`)
 - `components/DownloadPdfButton.tsx` — Download PDF on My Profiles and Manage
 - `lib/consent.ts`, `lib/consentClient.ts`, `app/api/consent/route.ts` — the consent wording and its audit record
+- `lib/rating.ts` — skill rating rules (above 0, at most 5, one decimal): what can be typed, the final check, cleanup of reader output
+- `lib/publicOrigin.ts` — public address for sign-in / sign-out redirects behind a proxy
+- `components/SavedProfileDocument.tsx` — the PDF shown on My Profiles and ProfileHub pages
 - `scripts/patch-templates.py` — generates `public/templates/*.docx` from `docs/template-backups/`
 
 ## Develop
@@ -140,6 +146,41 @@ npm install
 npm run dev
 ```
 
+## Configuration and deployment
+
+The app builds as a Node server (`output: "standalone"` in `next.config.ts`), not a static site. The resume reader
+(`/api/extract`, 10 uploads per 10 minutes per user), the PDF maker (`/api/pdf`) and all database access run on that
+server. Copy `.env.example` to `.env.local` for development; a production build reads the same names.
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase project address and publishable key (sign-in only in the browser) |
+| `AUTH_ALLOWED_DOMAIN` | Allowed sign-in domain (`infobeans.com`) |
+| `SITE_URL` | Public https address people open. Used for the redirects after sign-in and sign-out |
+| `GROQ_API_KEY` (**secret**), `GROQ_BASE_URL`, `LLM_MODEL_ANALYZE`, `LLM_MODEL_EXTRACT`, `LLM_MODEL_FALLBACK`, `LLM_REASONING_EFFORT`, `MAX_UPLOAD_MB` | Resume reading |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Open in Google Docs (needed at build time; optional) |
+| `SOFFICE_PATH`, `PDF_FONTS_DIR` | PDF (optional, see [PDF](#pdf)) |
+| `NEXT_PUBLIC_BASE_PATH` | Sub-path hosting (default none) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Read by `lib/sync/adminClient.ts` alone (client-name registry sync and read); also seed scripts and tests. Leave unset until the compliance migrations are applied |
+| `COMPLIANCE_ENFORCE`, `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SA_CLIENT_EMAIL`, `GOOGLE_SA_PRIVATE_KEY` (**secret**), `SYNC_CRON_SECRET` (**secret**), `SYNC_TAB_NAMES`, `SYNC_TIMEZONE`, `GOOGLE_SA_KEY_CREATED` | Client-name compliance and its Google Sheets sync (all optional; off by default). See [docs/COMPLIANCE.md](docs/COMPLIANCE.md) |
+
+**Redirects behind a reverse proxy.** The Node process only sees its own address (`localhost:3000`), so
+`/auth/callback` and `/auth/signout` build their redirects with `lib/publicOrigin.ts`: `SITE_URL` first, then
+`X-Forwarded-Host` / `X-Forwarded-Proto`, then `Host`, then the request origin. Odd hosts are rejected. Set `SITE_URL`
+in production.
+
+**Protected routes** (`proxy.ts`): `/login`, `/internal`, `/external`, `/profiles/*`, `/manage/*`, `/admin/*`, `/api/extract`,
+`/api/profiles`, `/api/pdf`, `/api/compliance/check`, `/api/admin/*`: signed-out pages go to `/login`, signed-out API calls get 401. `/instructions` and
+`/style-guide` are public. Deploy bundles are kept in `../deploy/`; the production env file there holds the Groq key
+and must never be zipped into a bundle or committed.
+
+## Client-name compliance
+
+A profile must not name a client, company or project from the business's client list (a Google Sheet, synced into the database on
+the 5th and 20th and on demand). The server refuses such a profile at Preview, PDF and Submit when `COMPLIANCE_ENFORCE=on`; the Edit
+step marks the text. Administrators get `/admin/compliance` (status, run history, names to review, "Synchronise now"). It is **off by
+default**. Everything about it, including how to deploy it safely, is in [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
+
 ## Tests
 
 | Command | What it runs | Needs |
@@ -147,6 +188,9 @@ npm run dev
 | `npm test` | unit tests (`lib/*.test.ts`), incl. real PDF conversions (`pdfRender`, `extractText`) | LibreOffice (`soffice`) |
 | `npm run test:db` | the data layer as seeded users (round trips, ownership, search) | local Supabase + seed |
 | `npm run test:rls` | Row Level Security per role and table | local Supabase + seed |
+| `npm run test:compliance` | the client-name registry in the database: privileges, row security, constraints, sync behaviour per role, the rollback script | local Supabase + seed, `psql` |
+| `npm run test:sync` | the real registry sync path against the local database with a fake sheet (leaves rows; see docs/COMPLIANCE.md) | local Supabase + seed |
+| `npm run sync:inspect` | reads the real Google Sheet and prints its structure only (no names, no database write) | the Google settings in `.env` |
 | `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags, the formatting in the XML (logo ratio, bullet definition, spacing). Add `-- --pdf` to also convert full / empty / sparse / mixed / long renders as Download PDF does into `/tmp/render-check/` and measure them (logo position and ratio, bullets, blank lines, sidebar spacing) | nothing (`--pdf`: LibreOffice + poppler) |
 | `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
 
@@ -280,11 +324,23 @@ Each team member has at most one **primary** internal profile: the one managers 
 - **Rules in the database:** `profiles.is_primary` with a unique index (one per owner). Nobody writes the column
   directly (no INSERT/UPDATE privilege); `set_primary_profile(id)` switches it atomically and only for the owner (a
   trigger refuses anyone else, admins included).
-- **/manage:** managers and admins see each team member's **primary profile only**: one row per member, opening it
+- **/manage (ProfileHub):** managers and admins see each team member's **primary profile only**: one row per member, opening it
   shows that profile's current version (no version history, no other profiles; those are a later feature). Someone
   without a primary profile is not listed until they mark one or submit (there is no backfill), and another profile's
   id answers "not found". This is enforced in the data layer (`lib/db/profilesCore.ts`); the database policies
   themselves still let a manager read other rows, which a later migration can tighten.
+
+## Skill ratings
+
+A skill rating on the internal profile must be above 0 and at most 5 with one decimal (4, 4.5, 5). The box ignores
+keystrokes that would break the rule, the schema checks it again before Preview, Submit or export, and ratings from the
+resume reader are rounded to one decimal or left blank so the person fills them in (`lib/rating.ts`).
+
+## Look and feel
+
+Sharp corners throughout (only the stepper pills, profile menu and avatar are round), a blue `#2563EB` focus ring and
+Lexend Medium headings (no bold, no italic). Fields and sections that need attention are marked from the first render
+(red field border, yellow section), and every step opens at the top of the page.
 
 ## Manual test list
 

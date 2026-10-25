@@ -131,6 +131,39 @@ export function Section({
   );
 }
 
+/** A span of text to highlight (end exclusive), e.g. a registered client name found in a field. */
+export type Range = { start: number; end: number };
+
+/**
+ * Shows the text of a field with the flagged parts marked, under the field. Long text is cut to a little context around each
+ * flagged part. It only displays: nothing is changed or removed for the user, who edits the field themselves.
+ */
+export function MarkedText({ text, ranges }: { text: string; ranges: Range[] }) {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const CONTEXT = 50;
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  sorted.forEach((r, i) => {
+    if (r.start < cursor || r.end > text.length) return;
+    const before = text.slice(cursor, r.start);
+    parts.push(
+      <span key={`b${i}`}>{text.length > 240 && before.length > CONTEXT * 2 ? `${cursor === 0 ? "…" : ""}${before.slice(0, CONTEXT)} … ${before.slice(-CONTEXT)}` : before}</span>,
+      <mark key={`m${i}`} className="bg-brand-100 px-0.5 font-semibold text-brand-700">
+        {text.slice(r.start, r.end)}
+      </mark>,
+    );
+    cursor = r.end;
+  });
+  const rest = text.slice(cursor);
+  parts.push(<span key="rest">{text.length > 240 && rest.length > CONTEXT ? `${rest.slice(0, CONTEXT)}…` : rest}</span>);
+  return (
+    <p className="mt-1 break-words border-l-2 border-brand-500 bg-brand-50/60 px-2 py-1 text-xs text-ink" data-compliance-marks="true">
+      <span className="font-medium text-brand-700">Found in this text: </span>
+      {parts}
+    </p>
+  );
+}
+
 export function Field({
   label,
   value,
@@ -140,11 +173,14 @@ export function Field({
   maxWords,
   hint,
   error,
+  highlights,
   rating = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  /** Parts of the text that name a registered client; shown marked under the field. */
+  highlights?: Range[];
   /** When true, shows a ✕ to clear the value so this field is left out of the final document. */
   optional?: boolean;
   /** Restrict input to digits — non-digit characters are stripped as the user types. */
@@ -202,6 +238,7 @@ export function Field({
         )}
       </div>
       {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
+      {highlights && highlights.length > 0 && <MarkedText text={value} ranges={highlights} />}
       {hint && !showNAHint && !error && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
       {showNAHint && (
         <p className="mt-1 text-xs text-amber-600">
@@ -220,10 +257,13 @@ export function AreaField({
   rows = 4,
   optional = false,
   error,
+  highlights,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  /** Parts of the text that name a registered client; shown marked under the field. */
+  highlights?: Range[];
   rows?: number;
   /** Marks the field "(optional)": when empty it is left out of the document. */
   optional?: boolean;
@@ -245,6 +285,7 @@ export function AreaField({
         }`}
       />
       {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
+      {highlights && highlights.length > 0 && <MarkedText text={value} ranges={highlights} />}
     </label>
   );
 }
@@ -297,35 +338,37 @@ export function StringListEditor({
   onChange,
   addLabel = "Add item",
   multiline = false,
+  marks,
 }: {
   label?: string;
   items: string[];
   onChange: (items: string[]) => void;
   addLabel?: string;
   multiline?: boolean;
+  /** Per-item problem and highlighted parts (e.g. a registered client name inside a bullet). */
+  marks?: (index: number) => { error?: string; highlights?: Range[] };
 }) {
   const update = (i: number, v: string) => onChange(items.map((s, j) => (j === i ? v : s)));
   return (
     <div>
       {label && <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>}
       <div className="space-y-2">
-        {items.map((item, i) => (
-          <div key={i} className="flex items-start gap-2">
+        {items.map((item, i) => {
+          const mark = marks?.(i);
+          const box = `w-full border px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus ${
+            mark?.error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
+          }`;
+          return (
+          <div key={i} className="flex items-start gap-2" data-invalid={mark?.error ? "true" : undefined}>
+            <div className="w-full">
             {multiline ? (
-              <textarea
-                value={item}
-                rows={2}
-                onChange={(e) => update(i, e.target.value)}
-                className="w-full border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
-              />
+              <textarea value={item} rows={2} onChange={(e) => update(i, e.target.value)} className={box} />
             ) : (
-              <input
-                type="text"
-                value={item}
-                onChange={(e) => update(i, e.target.value)}
-                className="w-full border border-gray-300 px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
-              />
+              <input type="text" value={item} onChange={(e) => update(i, e.target.value)} className={box} />
             )}
+            {mark?.error && <p className="mt-1 text-xs font-medium text-brand-600">{mark.error}</p>}
+            {mark?.highlights && mark.highlights.length > 0 && <MarkedText text={item} ranges={mark.highlights} />}
+            </div>
             <ItemControls
               index={i}
               length={items.length}
@@ -333,7 +376,8 @@ export function StringListEditor({
               onRemove={(idx) => onChange(items.filter((_, j) => j !== idx))}
             />
           </div>
-        ))}
+          );
+        })}
         <AddButton label={addLabel} onClick={() => onChange([...items, ""])} />
       </div>
     </div>
@@ -393,15 +437,20 @@ export function TagInput({
   onChange,
   placeholder = "Type and press Enter or comma",
   error,
+  itemError,
 }: {
   label?: string;
   items: string[];
   onChange: (items: string[]) => void;
   placeholder?: string;
   error?: string;
+  /** Problem with the item at this position of `items` (e.g. a registered client name): the chip turns red. */
+  itemError?: (index: number) => string | undefined;
 }) {
   const [draft, setDraft] = useState("");
   const tags = items.map((t) => t.trim()).filter(Boolean);
+  // chips skip blank items, so keep each chip's position in `items` to look its problem up
+  const chipProblems = items.flatMap((t, idx) => (t.trim() && itemError?.(idx) ? [t.trim()] : []));
 
   const commit = (text: string) => {
     if (!splitTags(text).length) return;
@@ -410,15 +459,20 @@ export function TagInput({
   };
 
   return (
-    <div data-invalid={error ? "true" : undefined}>
+    <div data-invalid={error || chipProblems.length > 0 ? "true" : undefined}>
       {label && <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>}
       <div
         className={`flex flex-wrap items-center gap-1.5 border bg-white px-2 py-1.5 focus-within:border-focus focus-within:ring-1 focus-within:ring-focus ${
-          error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
+          error || chipProblems.length > 0 ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
         }`}
       >
         {tags.map((t, i) => (
-          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 bg-cream px-2.5 py-1 text-xs text-ink ring-1 ring-hairline">
+          <span
+            key={`${t}-${i}`}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs text-ink ring-1 ${
+              chipProblems.includes(t) ? "bg-brand-100 font-semibold text-brand-700 ring-brand-500" : "bg-cream ring-hairline"
+            }`}
+          >
             {t}
             <button
               type="button"
@@ -454,6 +508,11 @@ export function TagInput({
         />
       </div>
       {error && <p className="mt-1 text-xs font-medium text-brand-600">{error}</p>}
+      {!error && chipProblems.length > 0 && (
+        <p className="mt-1 text-xs font-medium text-brand-600" data-compliance-marks="true">
+          Registered client, company or project name found: {chipProblems.map((t) => `“${t}”`).join(", ")}. Remove or rephrase it.
+        </p>
+      )}
     </div>
   );
 }
