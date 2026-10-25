@@ -58,6 +58,11 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
 
 ## 4. Recent changes (newest first)
 
+- **2026-10-25** Reference format: both templates laid out from the internal profile format in `eval/reference/`
+  (git-ignored; header, logo, headings, body text, project lines, footer, margins; `scripts/patch-templates.py`
+  section 4) and measured on every render by `test:render --pdf` (`scripts/pdf-measure.mjs`). Extraction: durations
+  normalised to "MMM YYYY" (`lib/dates.ts`), descriptions of 2+ lines from resume facts (flagged when shorter), project
+  names never the client or a description fragment (prompt rule, backstop 3k, ligatures no longer split words).
 - **2026-10-24** Client-name compliance (off by default): registry synced from the InfoBeans Client List sheet, server gate on
   `/api/pdf` and `/api/profiles`, live marks on the Edit step, `/admin/compliance`, scheduler route and timer (`ops/`). See
   `docs/COMPLIANCE.md`.

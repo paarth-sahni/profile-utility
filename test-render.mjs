@@ -94,6 +94,94 @@ const external = {
   ],
 };
 
+// Realistic fictional profiles shaped like the reference (the same sections and kinds of field, invented text): rendered
+// as internal-sample / external-sample with --pdf, for the side-by-side comparison with eval/reference/format.pdf.
+const internalSample = {
+  name: "Meera Joshi",
+  jobTitle: "Senior Software Engineer",
+  experienceSummary: "6+ Years of Industry Experience",
+  specialization: "Cloud Data Platforms",
+  overview:
+    "Builds data pipelines and reporting platforms for retail and logistics businesses, from ingestion through to dashboards used by store and warehouse teams. Works across batch and streaming workloads on AWS, with a focus on data quality checks and cost control. Has mentored new joiners and run sprint planning for a team of five engineers.",
+  education: [{ year: "2016", qualification: "Bachelor of Engineering (Computer Science), Lakeshore University" }],
+  projects: [
+    {
+      duration: "Feb 2023 – Jun 2024",
+      title: "Store Replenishment Forecasting",
+      toolsAndTechnologies: ["Python", "Airflow", "PostgreSQL", "AWS Glue", "React"],
+      teamSize: "6",
+      role: "Data Engineer",
+      projectLink: "NDA",
+      description:
+        "Forecasting platform that tells store managers which products to reorder each week, built on daily sales and stock feeds from 120 stores, with a review screen for managers and alerts when stock falls below agreed levels.",
+      responsibilities: [
+        "Built the daily ingestion pipelines for sales and stock feeds in Airflow and AWS Glue.",
+        "Designed the PostgreSQL schema for forecasts and the manager review screen.",
+      ],
+    },
+    {
+      duration: "Mar 2021 – Jan 2023",
+      title: "Warehouse Slotting Dashboard",
+      toolsAndTechnologies: ["Node.js", "MySQL", "Chart.js"],
+      teamSize: "4",
+      role: "Full Stack Developer",
+      projectLink: "https://example.com/slotting",
+      description:
+        "Dashboard that shows warehouse supervisors where each product is stored, how often it is picked and which slots should change, using pick data from the warehouse management system refreshed every hour.",
+      responsibilities: ["Developed the slot heat map and the pick frequency reports.", "Added role-based access for supervisors and planners."],
+    },
+  ],
+  skills: [
+    { name: "Python", rating: "4.5" },
+    { name: "SQL", rating: "4" },
+    { name: "Apache Airflow", rating: "3.8" },
+    { name: "AWS (Glue, S3, Lambda)", rating: "3.5" },
+    { name: "React", rating: "3" },
+  ],
+  certifications: ["AWS Certified Data Engineer – Associate"],
+  tools: ["JIRA", "Git", "Confluence"],
+  managerialExperience: ["Sprint Planning", "Mentoring"],
+  domains: ["Retail", "Logistics"],
+  languages: ["English", "Hindi", "Marathi"],
+};
+
+const externalSample = {
+  name: "Daniel Ortiz",
+  jobTitle: "Senior QA Engineer",
+  experienceSummary: "8+ Years of Industry Experience",
+  specialization: "Test Automation",
+  overview:
+    "Plans and automates testing for web and mobile banking products, covering functional, regression and API testing. Introduced contract tests between front-end and back-end teams and keeps release regression suites under two hours. Works closely with product owners on acceptance criteria.",
+  education: [{ year: "2015", qualification: "Master of Computer Applications, Northfield Institute of Technology" }],
+  skills: ["Test Automation", "API Testing", "Regression Testing", "Performance Testing", "Agile"],
+  tools: ["Selenium", "Postman", "JMeter", "Jenkins", "JIRA"],
+  certifications: ["ISTQB Certified Tester – Foundation Level"],
+  projects: [
+    {
+      duration: "Jan 2023 – Present",
+      client: "Mobile Banking Regression Suite",
+      teamSize: "8",
+      role: "QA Lead",
+      description:
+        "Automated regression suite for a mobile banking app used by retail customers, covering account opening, transfers, card controls and statements on Android and iOS, run on every release candidate in the delivery pipeline.",
+      responsibilities: ["Designed the page-object framework for Android and iOS tests.", "Cut the regression run from six hours to under two by running suites in parallel."],
+    },
+    {
+      duration: "Apr 2020 – Dec 2022",
+      client: "Payments API Contract Testing",
+      teamSize: "5",
+      role: "Senior QA Engineer",
+      description:
+        "Contract and integration tests for the payments APIs shared by the web and mobile channels, checking request and response formats, error handling and limits for every payment type before each deployment.",
+      responsibilities: ["Wrote Postman collections and contract tests for twelve payment endpoints.", "Added JMeter load tests for peak-hour payment volumes."],
+    },
+  ],
+  experience: [
+    { company: "Brightwave Systems", position: "Senior QA Engineer", duration: "Apr 2020 – Present", highlights: ["Leads a team of four testers across two product lines.", "Set up nightly automated runs in Jenkins."] },
+    { company: "Contoso Software", position: "QA Engineer", duration: "Jul 2015 – Mar 2020", highlights: ["Tested insurance claims portals for web and mobile."] },
+  ],
+};
+
 // ------------------------------------------------------------------------------------------------- rendering
 const templateXml = {};
 function render(id, data) {
@@ -640,6 +728,7 @@ if (process.argv.includes("--pdf")) {
     };
     cases.push([`${id}-full`, id, base], [`${id}-bare`, id, bare], [`${id}-sparse`, id, sparse], [`${id}-mixed`, id, mixed], [`${id}-long`, id, long]);
   }
+  cases.push(["internal-sample", "internal", internalSample], ["external-sample", "external", externalSample]);
   // internal: one project with 1..8 bullets, so the last bullet lands at the foot of page 1 in one of them
   const footProject = (n) => ({ ...internal.projects[0], description: "DESC-MARK a payments platform for a retail bank with a focus on reliability.", responsibilities: Array.from({ length: n }, (_, k) => `RESP-MARK ${k + 1} for the project.`) });
   const foot = Array.from({ length: 8 }, (_, k) => [`internal-foot-${k + 1}`, "internal", { ...internal, certifications: [], tools: [], managerialExperience: [], domains: [], languages: [], projects: [footProject(k + 1)] }]);

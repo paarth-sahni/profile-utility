@@ -108,13 +108,17 @@ python3 scripts/patch-templates.py
 ```
 
 It wraps every optional section in a `{#hasX}` condition (flags set in `lib/docxData.ts`) and applies the formatting:
-the logo at its true aspect ratio directly under "A PROUD MEMBER OF" (left edges aligned), one bullet style for all
-responsibilities, a blank line before the project description and before its bullets, sidebar spacing (1.15 inside an
-item, 1.5 between items) and no stretched last line in justified paragraphs. Change the script and run it again.
+the reference format (the internal profile format in `eval/reference/`, git-ignored: margins, "A PROUD MEMBER OF" and
+the logo at 130.5 x 42.0pt, header lines, every section heading in Lexend Light 10pt with the same space after it, body
+text in Lexend Light 11pt on 17.25pt lines, project lines, the footer logo and the page number mirroring it), one bullet
+style for all responsibilities, a blank line before the project description and before its bullets, sidebar spacing
+(1.15 inside an item, 1.5 between items) and no stretched last line in justified paragraphs. The external template
+keeps its one-column layout with the same rules. Change the script and run it again.
 
 `npm run test:render` checks the generated templates; `npm run test:render -- --pdf` also converts full / empty /
-sparse / mixed / long renders exactly as Download PDF does into `/tmp/render-check/` and measures them (logo
-position and ratio, bullets, blank lines, sidebar spacing). Open those PDFs to look at them.
+sparse / mixed / long renders exactly as Download PDF does into `/tmp/render-check/` and measures them against the
+reference format (positions within 1pt, fonts and sizes exact, only Lexend embedded, numbers included), plus bullets,
+blank lines and sidebar spacing. Open those PDFs to look at them (`internal-sample.pdf`, `external-sample.pdf`).
 
 ## Key files
 
@@ -191,7 +195,7 @@ default**. Everything about it, including how to deploy it safely, is in [docs/C
 | `npm run test:compliance` | the client-name registry in the database: privileges, row security, constraints, sync behaviour per role, the rollback script | local Supabase + seed, `psql` |
 | `npm run test:sync` | the real registry sync path against the local database with a fake sheet (leaves rows; see docs/COMPLIANCE.md) | local Supabase + seed |
 | `npm run sync:inspect` | reads the real Google Sheet and prints its structure only (no names, no database write) | the Google settings in `.env` |
-| `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags, the formatting in the XML (logo ratio, bullet definition, spacing). Add `-- --pdf` to also convert full / empty / sparse / mixed / long renders as Download PDF does into `/tmp/render-check/` and measure them (logo position and ratio, bullets, blank lines, sidebar spacing) | nothing (`--pdf`: LibreOffice + poppler) |
+| `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags, the formatting in the XML (logo crop and size, bullet definition, spacing). Add `-- --pdf` to also convert full / empty / sparse / mixed / long renders as Download PDF does into `/tmp/render-check/` and measure them (the reference format: header, headings, body text, project lines, footer, fonts; bullets, blank lines, sidebar spacing) | nothing (`--pdf`: LibreOffice + poppler) |
 | `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
 
 ### End-to-end browser checks (optional)
@@ -356,8 +360,9 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
    with `{"template": "internal", "consentVersion": "1"}`.
 4. **Same file**: the downloaded file is named like `Jane_Doe-Senior_Engineer-InfoBeans.pdf` and looks exactly like the
    preview. There is no *Download DOCX* anywhere (Preview, My Profiles, Manage).
-5. **Formatting** (open the PDF at 100-200 %): the logo is not stretched and sits directly under "A PROUD MEMBER OF",
-   left edges aligned, top right; all bullets look the same, with even gaps; a blank line before the project
+5. **Formatting** (open the PDF at 100-200 %): the internal PDF looks like the reference format
+   (`eval/reference/format.pdf`) side by side; the logo sits under "A PROUD MEMBER OF", top right; the footer logo and
+   the page number are the same distance from the left and right edges; all bullets look the same, with even gaps; a blank line before the project
    description and before its bullets; in the internal sidebar a wrapped item is tight (1.15) and items are further apart
    (1.5); the last line of the overview is not stretched. Text is in Lexend (Light for body text).
 6. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
