@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { renderProfilePdf } from "./pdfRender";
-import { extractResumeText, removeHeaderFooterItems, splitColumns, stripRepeatedLines, type PdfTextItem } from "./extractText";
+import { extractResumeText, itemsToLines, removeHeaderFooterItems, splitColumns, stripRepeatedLines, type PdfTextItem } from "./extractText";
 import type { ExternalResume, InternalResume } from "./schemas";
 
 const overview = "Engineer with broad platform experience across many projects and domains. ".repeat(4);
@@ -144,4 +144,12 @@ test("removeHeaderFooterItems: drops footer numbers and repeated band text, keep
   ]);
   const cleaned = removeHeaderFooterItems(pages, [792, 792, 792]);
   cleaned.forEach((items) => assert.deepEqual(items.map((i) => i.str), ["Team Size", "5-6", "3"]));
+});
+
+test("itemsToLines: a ligature item flush with its neighbours stays inside the word (project names read whole)", () => {
+  // how pdf.js returns "Solar certification portal" when "fi" is drawn as one ligature glyph (fictional name)
+  const line = (parts: [string, number, number][]) => parts.map(([str, x, width]) => ({ str, x, y: 500, width }));
+  assert.deepEqual(itemsToLines(line([["Solar certi", 50, 53], ["fi", 103, 7], ["cation portal", 110, 70]])), ["Solar certification portal"]);
+  // real word gaps keep their space, also between separate items
+  assert.deepEqual(itemsToLines(line([["Team", 50, 29], ["Size", 82.5, 21.5]])), ["Team Size"]);
 });

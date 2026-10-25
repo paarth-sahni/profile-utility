@@ -153,21 +153,28 @@ export interface PdfTextItem {
 
 const SIDEBAR_MARKER = "--- SIDEBAR ---";
 
-/** Groups items into lines: same baseline (±3pt) = one line, read left to right, top to bottom. */
-function itemsToLines(items: PdfTextItem[]): string[] {
+/** Items closer than this (pt) are pieces of one word: a ligature ("fi", "fl") is its own item, flush with its neighbours. */
+const SAME_WORD_GAP = 0.5;
+
+/**
+ * Groups items into lines: same baseline (±3pt) = one line, read left to right, top to bottom. Items that touch are
+ * joined without a space, so "certi" + "fi" + "cation" reads "certification" (not "certi fi cation", which reached the
+ * model as a different project name).
+ */
+export function itemsToLines(items: PdfTextItem[]): string[] {
   const rows: { y: number; items: PdfTextItem[] }[] = [];
   for (const item of [...items].sort((p, q) => q.y - p.y)) {
     const row = rows.find((r) => Math.abs(r.y - item.y) <= 3);
     if (row) row.items.push(item);
     else rows.push({ y: item.y, items: [item] });
   }
-  return rows.map((r) =>
-    r.items
-      .sort((p, q) => p.x - q.x)
-      .map((i) => i.str)
-      .join(" ")
-      .trim(),
-  );
+  return rows.map((r) => {
+    const sorted = r.items.sort((p, q) => p.x - q.x);
+    return sorted
+      .map((it, n) => (n > 0 && it.x - (sorted[n - 1].x + sorted[n - 1].width) > SAME_WORD_GAP ? " " : "") + it.str)
+      .join("")
+      .trim();
+  });
 }
 
 /**

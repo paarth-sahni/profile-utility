@@ -67,6 +67,11 @@ FIELD HANDLING
 - Project dates: if a project has no stated duration, keep "duration" as "" and add a reviewFlag (path "projects.<index>.duration"). Never invent dates, and never borrow employer dates unless an adaptation below explicitly allows it.
 - Dates: write every date as "MMM YYYY" (three-letter month, four-digit year), e.g. "Feb 2020", whatever form the resume uses ("June-2020", "06/2020", "2020-06"). A period is "Feb 2020 – Jun 2020" (spaces around an en dash); an ongoing one ends in "Present", or "Current" when the resume says so. Never invent a month: when the resume gives only a year, keep it as written and add a reviewFlag for that duration.
 - Content in the wrong field: if a field clearly contains content that belongs in another field (e.g. "Tools & Technologies" holding a sentence of description), move it where it belongs when that is obvious. Otherwise keep it and add a reviewFlag with the reason "looks like a description, not tools" (or the equivalent for that field).
+- PROJECT NAME (the internal "title" and the external "client" field are both printed as the project's name; the form calls it Project Name):
+  * Use the project's own name exactly as the resume writes it: the value of a "Project", "Project Name" or "Project Title" label, or the name line directly under a "Project <N> - <dates>" heading. Keep the whole name, also when it wraps onto a second line.
+  * NEVER use the client, customer or employer as the project name, even when the resume puts "Client: …" next to the project: the client is not the project's name.
+  * NEVER use a sentence or the opening words of the description as the name. A name is a short noun phrase (a few words) with no leading verb ("Developed …", "Worked on …"), no "is / was / that / which" and no full stop.
+  * If the resume states no name for a project, use a short neutral name made only of words the resume uses for what the project is (e.g. "Claims Processing Portal"), never a client or company name, and add a reviewFlag on that name field with the reason "project name not stated in the resume".
 - Team size: keep ranges exactly as written (e.g. "2-3", "10-12"). Do not collapse them to one number.
 - Project text — never invent actions and never move content:
   * Keep each project's content in that project. Never move content between projects, and never move content from the overview or any other section into a project.
@@ -89,7 +94,7 @@ export const INTERNAL_RULES = `INTERNAL PROFILE RULES
 - languages: never assume English. If none are stated, return [] and flag it.`;
 
 export const EXTERNAL_RULES = `EXTERNAL PROFILE RULES
-- projects[].client: use the client or project name as written. If it is marked confidential or NDA, keep that wording.
+- projects[].client: holds the PROJECT'S NAME (see PROJECT NAME), not the client company. If the resume marks the project name confidential or NDA, keep that wording.
 - experience: one entry per employer.`;
 
 interface PromptModule {
@@ -129,7 +134,7 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   if (a.projectsLayout === "embedded_in_jobs") {
     m.push({
       name: "projects-embedded-in-jobs",
-      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry. If a project has no dates of its own and clearly spans one employer engagement, you may use that employer's dates (never for an existing InfoBeans profile); otherwise leave the duration empty. Flag every such case in reviewFlags.",
+      text: "Projects are described inside job entries. Split each distinct project or client engagement into its own project entry, named by its project name (see PROJECT NAME), never by the client. If a project has no dates of its own and clearly spans one employer engagement, you may use that employer's dates (never for an existing InfoBeans profile); otherwise leave the duration empty. Flag every such case in reviewFlags.",
     });
   } else if (a.projectsLayout === "none") {
     m.push({
@@ -194,7 +199,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   "certifications": [string],      // Professional certifications stated in the resume, e.g. ["AWS Solutions Architect – Associate"]; [] if none
   "projects": [                    // One entry per project (numbering is added automatically); [] if none
     { "duration": string,          // Project period, e.g. "Feb 2021 – Aug 2021"; "" if not stated (flag it)
-      "client": string,            // Client/project name, e.g. "Northwind Retail, UK"
+      "client": string,            // The project's own name as written (NOT the client company, never a sentence), e.g. "Card Processing Migration"
       "teamSize": string,          // e.g. "5" or a range "2-3" exactly as written; "" if not stated
       "role": string,              // Candidate's role on the project, e.g. "Backend Developer"
       "description": string,       // ${DESC_COMMENT}
@@ -215,7 +220,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const EXTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 – Nov 2023","client":"Harbor Mutual Bank","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform, with infrastructure defined in Terraform, automated build and deployment pipelines, and monitoring of service health across environments.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"Jun 2019 – Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
+{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 – Nov 2023","client":"Card Processing Platform Migration","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform, with infrastructure defined in Terraform, automated build and deployment pipelines, and monitoring of service health across environments.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"Jun 2019 – Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
 
 const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
@@ -230,7 +235,7 @@ const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
   ],
   "projects": [                    // One entry per project, most recent first (numbering is added automatically); [] if none
     { "duration": string,          // Project period, e.g. "Feb 2021 – Aug 2021"; "" if not stated (flag it)
-      "title": string,             // Project title, e.g. "Customer loyalty portal"
+      "title": string,             // The project's own name as written (never the client, never a sentence), e.g. "Customer Loyalty Portal"
       "toolsAndTechnologies": [string], // Technologies stated for the project, e.g. ["Node", "HTML", "PostgreSQL", "React"]; [] if none stated
       "teamSize": string,          // e.g. "3" or a range "2-3" exactly as written; "" if not stated
       "role": string,              // e.g. "Project Lead"

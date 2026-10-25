@@ -69,3 +69,20 @@ test("descriptions: at least 2 lines from the resume's own facts, never padded, 
     for (const [, d] of p.matchAll(/"description":"([^"]+)"/g)) assert.ok(d.split(/\s+/).length >= 25, `${template} example description has ${d.split(/\s+/).length} words`);
   }
 });
+
+test("project names: the project's own name, never the client or a sentence; external 'client' holds the name", () => {
+  for (const template of ["internal", "external"] as const) {
+    const p = buildExtractionPrompt(template, analysis("mid"), "2026-10-12");
+    assert.ok(p.includes("PROJECT NAME"), template);
+    assert.ok(p.includes("NEVER use the client, customer or employer as the project name"), template);
+    assert.ok(p.includes("NEVER use a sentence or the opening words of the description as the name"), template);
+    assert.ok(p.includes('"project name not stated in the resume"'), template);
+    assert.ok(!/use the client or project name as written/.test(p), `${template}: the old rule that invited the client name is gone`);
+  }
+  const external = buildExtractionPrompt("external", analysis("mid"), "2026-10-12");
+  assert.ok(external.includes("holds the PROJECT'S NAME"));
+  const exampleName = external.match(/"client":"([^"]+)"/)?.[1] ?? "";
+  assert.ok(exampleName && !/\b(bank|inc|ltd|llc|corp|mutual)\b/i.test(exampleName), `the example names a project, not a company: ${exampleName}`);
+  const embedded = buildExtractionPrompt("internal", { ...analysis("mid"), projectsLayout: "embedded_in_jobs" } as ResumeAnalysis, "2026-10-12");
+  assert.ok(embedded.includes("named by its project name (see PROJECT NAME), never by the client"));
+});

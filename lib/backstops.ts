@@ -13,6 +13,8 @@
  *   3h. project description that starts with the project title (internal title / external client) -> flag
  *   3i. project / employer durations rewritten as "MMM YYYY" ranges (lib/dates.ts); one it cannot read -> flag
  *   3j. project description under 2 lines (fewer than 25 words), or none at all -> flag (never padded in code)
+ *   3k. project name that is the client (the resume's "Client:" value) -> the resume's "Project:" name when it has one,
+ *       else flag; a name that reads like part of the description (a sentence, a leading action verb) -> flag
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -572,6 +574,89 @@ export function flagShortDescriptions(templateId: TemplateId, data: unknown, fla
   return out;
 }
 
+export const NAME_IS_CLIENT_REASON = "project name is the client's name: enter the project's own name";
+export const NAME_FROM_PROJECT_LINE_REASON = "project name taken from the resume's Project line (the client's name had been used)";
+export const NAME_LOOKS_LIKE_DESCRIPTION_REASON = "project name looks like part of the description: enter the project's own name";
+
+/** "Client: Contoso Bank" or "Client" on its own line followed by the name. */
+const CLIENT_LABEL = /^(?:client|customer|client\s*name|end\s*client)\s*(?:[:\-–—]\s*(.*))?$/i;
+/** "Project: …", "Project Name - …", "Project Title: …" (never the "Project 1 - Feb 2020" heading: no number allowed). */
+const PROJECT_LABEL = /^project(?:\s*(?:name|title))?\s*[:\-–—]\s*(.+)$/i;
+/** How far (in lines) a project's "Project:" label may sit from its "Client:" label. */
+const LABEL_REACH = 6;
+
+/** Words that open a sentence of description, never a project's name. */
+const SENTENCE_OPENERS = /^(?:developed|worked|built|created|designed|implemented|responsible|involved|managed|handled|maintained|working|developing|building|creating|designing|it|this|we|i|our|my)\b/i;
+/** A verb or relative pronoun that makes the name a clause ("… is a portal that …"). */
+const CLAUSE_WORDS = /\b(?:is|was|are|were|has|have|had|allows?|helps?|provides?|enables?|lets|which|that|where|who)\b/i;
+const NAME_MAX_WORDS = 10;
+
+/** True when `name` reads like a piece of the description rather than a project's name. */
+export function looksLikeDescription(name: string): boolean {
+  const n = name.trim();
+  if (!n) return false;
+  return wordCountOf(n) > NAME_MAX_WORDS || /[.,;:]$/.test(n) || SENTENCE_OPENERS.test(n) || CLAUSE_WORDS.test(n);
+}
+
+/**
+ * The resume's own project name next to the "Client" line whose value is `client`, or null. Returns undefined when the
+ * source has no "Client" line with that value (then `client` is not known to be a client).
+ */
+export function projectNameNextToClient(client: string, sourceText: string): string | null | undefined {
+  const lines = sourceText.split("\n").map((l) => l.trim());
+  const key = squash(client);
+  if (!key) return undefined;
+  let found: string | null | undefined;
+  lines.forEach((line, i) => {
+    if (found) return;
+    const m = CLIENT_LABEL.exec(line);
+    if (!m) return;
+    const value = m[1]?.trim() || (lines[i + 1] ?? "");
+    if (squash(value) !== key) return;
+    found = null;
+    for (let d = 1; d <= LABEL_REACH && !found; d++) {
+      for (const j of [i - d, i + d]) {
+        const p = PROJECT_LABEL.exec(lines[j] ?? "");
+        if (p && squash(p[1]) && squash(p[1]) !== key) {
+          found = p[1].trim();
+          break;
+        }
+      }
+    }
+  });
+  return found;
+}
+
+/**
+ * 3k. The project name is the project's own name: not the client (internal "title" / external "client" are both the
+ * name printed in the profile). When the model used the resume's "Client:" value and the resume has a "Project:" line
+ * next to it, that name is used; otherwise the name is flagged. A name that reads like part of the description is
+ * flagged. Mutates `data`.
+ */
+export function fixProjectNames(templateId: TemplateId, data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (!isRecord(data) || !Array.isArray(data.projects)) return flags;
+  const key = projectNameKey(templateId);
+  const out = [...flags];
+  const flag = (path: string, reason: string) => {
+    if (!hasFlag(out, path, reason)) out.push({ path, reason });
+  };
+  data.projects.forEach((p, i) => {
+    if (!isRecord(p)) return;
+    const name = str(p[key]);
+    if (!name) return;
+    const path = `projects.${i}.${key}`;
+    const projectName = projectNameNextToClient(name, sourceText);
+    if (projectName) {
+      p[key] = projectName;
+      flag(path, NAME_FROM_PROJECT_LINE_REASON);
+      return;
+    }
+    if (projectName === null) flag(path, NAME_IS_CLIENT_REASON);
+    else if (looksLikeDescription(name)) flag(path, NAME_LOOKS_LIKE_DESCRIPTION_REASON);
+  });
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -582,7 +667,9 @@ export function applyBackstops(
 ): { data: unknown; flags: ReviewFlag[] } {
   const copy = structuredClone(data);
   const withoutRatingFlags = blankUnstatedRatings(templateId, copy, flags, sourceText);
-  let next = fillEmptyResponsibilities(templateId, copy, withoutRatingFlags);
+  // the project's real name first: later steps (responsibilities built from the name, description checks) use it
+  let next = fixProjectNames(templateId, copy, withoutRatingFlags, sourceText);
+  next = fillEmptyResponsibilities(templateId, copy, next);
   next = flagPronounOverview(copy, next);
   next = flagBannedWords(copy, next, sourceText);
   next = flagUnfoundValues(copy, next, sourceText);

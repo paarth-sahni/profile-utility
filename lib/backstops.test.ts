@@ -40,6 +40,11 @@ import {
   NO_DESCRIPTION_REASON,
   SHORT_DESCRIPTION_REASON,
   flagShortDescriptions,
+  NAME_FROM_PROJECT_LINE_REASON,
+  NAME_IS_CLIENT_REASON,
+  NAME_LOOKS_LIKE_DESCRIPTION_REASON,
+  fixProjectNames,
+  looksLikeDescription,
 } from "./backstops";
 import { normalizeToShape } from "./normalize";
 import type { ReviewFlag } from "./extract.types";
@@ -594,4 +599,77 @@ test("backstop 3j: one flag per description (3c's 'missing' flag or the model's 
     { path: "projects.1.description", reason: "description under 2 lines: the resume has no more detail" },
   ];
   assert.deepEqual(flagShortDescriptions("internal", data, existing), existing);
+});
+
+/* ---------- 3k. project names (fictional resumes) ---------- */
+
+// A general resume that labels each engagement with its client AND its project.
+const CLIENT_AND_PROJECT_RESUME = `Ravi Menon
+Senior Developer, Brightwave Systems (2019 - Present)
+Client: Northwind Traders
+Project: Inventory Planning Suite
+Duration: Mar 2022 - Jan 2023
+Built forecasting screens for store managers.
+Client
+Contoso Bank
+Project Name - Loan Origination Portal
+Developed the document upload service.`;
+
+// A resume that names the client only.
+const CLIENT_ONLY_RESUME = `Asha Rao
+Client: Fabrikam Insurance
+Role: QA Engineer
+Tested the claims intake workflow end to end.`;
+
+test("backstop 3k: the client used as the project name is replaced by the resume's own Project line (same line or next)", () => {
+  const data = { projects: [{ title: "Northwind Traders" }, { title: "Contoso Bank" }] };
+  const flags = fixProjectNames("internal", data, [], CLIENT_AND_PROJECT_RESUME);
+  assert.deepEqual(data.projects.map((p) => p.title), ["Inventory Planning Suite", "Loan Origination Portal"]);
+  assert.deepEqual(flags, [
+    { path: "projects.0.title", reason: NAME_FROM_PROJECT_LINE_REASON },
+    { path: "projects.1.title", reason: NAME_FROM_PROJECT_LINE_REASON },
+  ]);
+});
+
+test("backstop 3k: external profiles too (their 'client' field is the project name)", () => {
+  const data = { projects: [{ client: "Northwind Traders" }] };
+  assert.deepEqual(fixProjectNames("external", data, [], CLIENT_AND_PROJECT_RESUME), [{ path: "projects.0.client", reason: NAME_FROM_PROJECT_LINE_REASON }]);
+  assert.equal(data.projects[0].client, "Inventory Planning Suite");
+});
+
+test("backstop 3k: the client as the name with no Project line nearby is flagged, not guessed", () => {
+  const data = { projects: [{ title: "Fabrikam Insurance" }] };
+  assert.deepEqual(fixProjectNames("internal", data, [], CLIENT_ONLY_RESUME), [{ path: "projects.0.title", reason: NAME_IS_CLIENT_REASON }]);
+  assert.equal(data.projects[0].title, "Fabrikam Insurance", "left for the person to rename");
+});
+
+test("backstop 3k: a description fragment used as the name is flagged", () => {
+  for (const name of [
+    "Developed a web portal for patients to book appointments",
+    "A web portal that lets patients book appointments",
+    "Portal for patients to book appointments.",
+    "This is an internal tool for the finance team",
+    "Booking platform which handles appointments, reminders, payments and follow-ups for clinics",
+  ]) {
+    assert.ok(looksLikeDescription(name), name);
+    const data = { projects: [{ title: name }] };
+    assert.deepEqual(fixProjectNames("internal", data, [], "source"), [{ path: "projects.0.title", reason: NAME_LOOKS_LIKE_DESCRIPTION_REASON }], name);
+    assert.equal(data.projects[0].title, name, "never rewritten");
+  }
+});
+
+test("backstop 3k: real project names are left alone", () => {
+  for (const name of ["Patient Appointment Portal", "Automated Testing Framework", "Inventory Planning Suite", "Field Service Scheduler", "ERP Migration (Phase 2)", "Fleet Maintenance Tracker"]) {
+    assert.ok(!looksLikeDescription(name), name);
+    const data = { projects: [{ title: name }] };
+    assert.deepEqual(fixProjectNames("internal", data, [], CLIENT_AND_PROJECT_RESUME), [], name);
+  }
+});
+
+test("applyBackstops: the corrected name is the one the role bullet is built from", () => {
+  const data = { projects: [{ title: "Northwind Traders", role: "Developer", responsibilities: [] }] };
+  const r = applyBackstops("internal", data, [], CLIENT_AND_PROJECT_RESUME);
+  const p = (r.data as { projects: { title: string; responsibilities: string[] }[] }).projects[0];
+  assert.equal(p.title, "Inventory Planning Suite");
+  assert.deepEqual(p.responsibilities, ["Contributed as Developer to Inventory Planning Suite"]);
 });
