@@ -63,6 +63,13 @@ test("internal: per-project flags follow each field", () => {
   assert.equal(mk({ role: "N/A" }).role, "", "an N/A value is emptied, never printed");
 });
 
+test("external: only a project with another one after it gets the gap after it (hasNext)", () => {
+  const p = { ...FULL_EXTERNAL.projects[0] };
+  const projects = (list: ExternalResume["projects"]) => (prepareData("external", { ...FULL_EXTERNAL, projects: list }) as { projects: { hasNext: boolean }[] }).projects;
+  assert.deepEqual(projects([p]).map((x) => x.hasNext), [false]);
+  assert.deepEqual(projects([p, p]).map((x) => x.hasNext), [true, false]);
+});
+
 test("internal: only a project with another one after it gets the blank line after it (hasNext)", () => {
   const empty = { ...FULL_INTERNAL.projects[0], duration: "", title: "", toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [] };
   const projects = (list: InternalResume["projects"]) => (prepareData("internal", { ...FULL_INTERNAL, projects: list }) as { projects: { hasNext: boolean }[] }).projects;

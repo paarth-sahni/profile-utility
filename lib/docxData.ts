@@ -11,7 +11,7 @@
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
  *             hasRole, hasProjectLink, hasDescription, hasResponsibilities, hasNext
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
- *             hasResponsibilities; per employer: hasPosition, hasDuration, hasHighlights
+ *             hasResponsibilities, hasNext; per employer: hasPosition, hasDuration, hasHighlights
  * Required content (name, job title, overview, education, skills) has no flag.
  */
 import { isNAValue, type ExternalResume, type InternalResume, type ResumeData, type TemplateId } from "./schemas";
@@ -37,7 +37,7 @@ export function prepareData(id: TemplateId, data: ResumeData): Record<string, un
 function prepareExternal(d: ExternalResume): Record<string, unknown> {
   const projects = d.projects
     .filter((p) => anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities))
-    .map((p, i) => ({
+    .map((p, i, all) => ({
       number: i + 1,
       client: p.client,
       duration: text(p.duration),
@@ -50,6 +50,8 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
       hasDescription: real(p.description),
       responsibilities: clean(p.responsibilities),
       hasResponsibilities: clean(p.responsibilities).length > 0,
+      // as internal: the gap after a project only separates it from the next one (none before the Experience heading)
+      hasNext: i < all.length - 1,
     }));
   const experience = d.experience
     .filter((x) => anyReal(x.company, x.position, x.duration, x.highlights))

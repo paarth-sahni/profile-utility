@@ -23,6 +23,36 @@ const assert = (cond, msg) => {
   }
 };
 
+// ------------------------------------------- the reference format (eval/reference/format.pdf, measured; see the patcher)
+// PDF points from the page's top left. "top" of a text line = baseline - 0.75 x size (the convention of the targets).
+// Internal matches the reference; external keeps its own layout (one column, logo flush right) with the same rules.
+const TEXT_RIGHT = 612 - 43.2;
+const REF = {
+  page: { w: 612, h: 792 },
+  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: 15.4 },
+  pageNumber: { size: 8.4 },
+  label: { font: "Lexend-Regular", size: 8, top: 38.4, x: { internal: 411.7, external: TEXT_RIGHT - 130.5 - 0.5 } },
+  logo: { w: 130.5, h: 42.0, top: 59.25, x: { internal: 412.2, external: TEXT_RIGHT - 130.5 } },
+  textX: { internal: 50.7, external: 43.2 },
+  sidebarX: 409.2,
+  name: { font: "Lexend-Medium", size: 24, top: 59.0 },
+  jobTitle: { font: "Lexend-Regular", size: 12, top: 91.0 },
+  experienceSummary: { font: "Lexend-Light", size: 11, top: 109.3 },
+  specialization: { font: "Lexend-Light", size: 11, top: 126.6 },
+  heading: { font: "Lexend-Light", size: 10, firstTop: 182.1, toText: 24.2, sectionGap: 46.3 },
+  body: { font: "Lexend-Light", size: 11, pitch: 17.25 },
+  project: { heading: "Lexend-Regular", name: "Lexend-Light", label: "Lexend-Regular", value: "Lexend-Light", size: 11, toName: 16.5, toFirstLabel: 24.0, toValue: 15.0, toLabel: 25.5, toDescription: 25.5, toNext: 54.7 },
+};
+const HEADINGS = {
+  internal: ["Overview", "Education & Training", "Projects", "Skills", "Certifications", "Tools", "Managerial Experience", "Domain", "Languages"],
+  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"],
+};
+const FIELD_LABELS = ["Tools & Technologies", "Team Size", "Role", "Project Link"];
+const near = (value, want, tol) => Math.abs(value - want) <= tol;
+const POS = 1; // positions within 1pt
+const fixed = (v) => v.toFixed(1);
+const ART = { l: 153 / 1000, t: 141 / 500, r: (1000 - 847) / 1000, b: (500 - 359) / 500 }; // the logo artwork inside its PNG
+
 // ---------------------------------------------------------------------------------------------- sample profiles
 // Marker words (UPPER-CASE) make each piece of content easy to find and cannot collide with a heading.
 const internal = {
@@ -249,13 +279,14 @@ const ART_RATIO = (847 - 153) / (359 - 141); // the logo artwork inside its 1000
 for (const id of ["internal", "external"]) {
   const zip = new PizZip(fs.readFileSync(`public/templates/${id}.docx`));
   const xml = templateXml[id];
-  // logo: cropped to the artwork and drawn at the artwork's own ratio, positioned from the page margin
+  // logo: cropped exactly to the artwork and drawn at the reference's size (130.5 x 42.0pt)
   const drawing = xml.match(/<w:drawing>.*?<\/w:drawing>/s)[0];
   const [, cx, cy] = drawing.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/).map(Number);
   const crop = Object.fromEntries([...drawing.match(/<a:srcRect ([^>]*)\/>/)[1].matchAll(/(\w)="(\d+)"/g)].map((m) => [m[1], Number(m[2]) / 100000]));
   const shown = (1000 * (1 - crop.l - crop.r)) / (500 * (1 - crop.t - crop.b));
-  assert(Math.abs(cx / cy - ART_RATIO) / ART_RATIO < 0.005 && Math.abs(shown - ART_RATIO) / ART_RATIO < 0.005, `${id}: the logo must keep its aspect ratio (box ${(cx / cy).toFixed(3)}, crop ${shown.toFixed(3)}, artwork ${ART_RATIO.toFixed(3)})`);
-  // the label: no tabs or padding, indented exactly to the logo's left edge
+  assert(Math.abs(shown - ART_RATIO) / ART_RATIO < 0.005, `${id}: the logo must show exactly the artwork (crop ratio ${shown.toFixed(3)}, artwork ${ART_RATIO.toFixed(3)})`);
+  assert(near(cx / 12700, REF.logo.w, 0.05) && near(cy / 12700, REF.logo.h, 0.05), `${id}: the logo box is ${(cx / 12700).toFixed(2)} x ${(cy / 12700).toFixed(2)}pt, want ${REF.logo.w} x ${REF.logo.h}`);
+  // the label: no tabs or padding, a fixed indent
   const labelPara = xml.match(/<w:p[ >].*?<\/w:p>/s)[0];
   assert(/>A PROUD MEMBER OF</.test(labelPara) && !labelPara.includes("<w:tab/>") && /<w:ind w:left="\d+"/.test(labelPara), `${id}: "A PROUD MEMBER OF" has no tabs or padding spaces and a fixed indent`);
   // bullets: one numbering definition, one indent, one bullet, one spacing
@@ -271,7 +302,7 @@ for (const id of ["internal", "external"]) {
   assert(lvl0.includes('w:val="•"') && lvl0.includes('w:ascii="Lexend"') && lvl0.includes('<w:sz w:val="22"/>') && lvl0.includes('<w:ind w:left="720" w:hanging="360"/>'), `${id}: the bullet is a Lexend "•" at text size with a 720/360 indent`);
   assert(zip.file("word/settings.xml").asText().includes("<w:doNotExpandShiftReturn/>"), `${id}: justified lines ending in a line break must not be stretched`);
 }
-console.log("templates: logo ratio and position, one bullet style, no stretched manual-break lines");
+console.log("templates: logo crop and size, one bullet style, no stretched manual-break lines");
 
 // internal: the projects column ends with the last project's content. A trailing blank line there spilled onto an
 // extra, near-empty last page (footer only) whenever the last bullet sat at the foot of a page; see the PDF sweep below.
@@ -337,17 +368,7 @@ function inkBox(pdf, region, page = 1) {
 }
 
 const LINE = 13.75; // one line of 11pt Lexend
-const near = (value, want, tol) => Math.abs(value - want) <= tol;
 
-// ------------------------------------------- the reference format (eval/reference/format.pdf, measured; see the patcher)
-// PDF points from the page's top left. "top" of a text line = baseline - 0.75 x size (the convention of the targets).
-const REF = {
-  page: { w: 612, h: 792 },
-  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: 15.4 },
-  pageNumber: { size: 8.4 },
-};
-const POS = 1; // positions within 1pt
-const fixed = (v) => v.toFixed(1);
 
 /** Footer on every page: the logo's size and place, the page number's font, size, right edge (mirroring the logo) and height. */
 function checkFooter(file, pdf, pages) {
@@ -369,20 +390,164 @@ function checkFooter(file, pdf, pages) {
   });
 }
 
+let referenceChecks = 0;
+/** Text runs grouped into lines per column (internal: main / sidebar), each { page, col, baseline, top, x, size, font, text, runs }. */
+function measuredLines(pages, id) {
+  const out = [];
+  pages.forEach((p, page) => {
+    const lines = [];
+    for (const r of [...p.runs].sort((a, b) => a.baseline - b.baseline || a.x - b.x)) {
+      if (r.baseline > REF.page.h - 60) continue; // footer
+      const col = id === "internal" && r.x >= 400 ? "side" : "main";
+      const line = lines.find((l) => l.col === col && Math.abs(l.baseline - r.baseline) < 0.5);
+      if (line) line.runs.push(r);
+      else lines.push({ page, col, baseline: r.baseline, runs: [r] });
+    }
+    for (const l of lines) {
+      l.runs.sort((a, b) => a.x - b.x);
+      l.x = l.runs[0].x;
+      l.text = l.runs.map((r) => r.text).join(" ").replace(/\s+/g, " ").trim();
+      // the font and size of the line's words (a bullet glyph is drawn in the bullet's own font)
+      const words = l.runs.filter((r) => r.text.trim() !== "•");
+      l.font = (words[0] ?? l.runs[0]).font;
+      l.size = (words[0] ?? l.runs[0]).size;
+      l.top = l.baseline - 0.75 * l.size;
+    }
+    out.push(...lines.sort((a, b) => (a.col === b.col ? a.baseline - b.baseline : a.col === "main" ? -1 : 1)));
+  });
+  return out;
+}
+
+/**
+ * The reference format, measured on the generated PDF: header (label, logo, name, job title, header lines), section
+ * headings (font, size, the space after them, the gap before them), body text (font, size, line pitch), project lines
+ * (fonts, sizes, spacing) and every number (Lexend, the size of the text around it). Positions within POS.
+ */
+function checkReference(file, id, pages, data) {
+  const lines = measuredLines(pages, id);
+  const is = (line, font, size, what) => {
+    referenceChecks++;
+    assert(line.font === font && near(line.size, size, 0.01), `${file}: ${what} "${line.text}" is ${line.font} ${line.size}pt, want ${font} ${size}pt`);
+  };
+  const at = (value, want, what) => {
+    referenceChecks++;
+    assert(near(value, want, POS), `${file}: ${what} is ${fixed(value)}, want ${fixed(want)}`);
+  };
+  const real = (v) => typeof v === "string" && v.trim() && !/^n\/?a$/i.test(v.trim());
+
+  // header
+  const label = lines.find((l) => l.page === 0 && l.text === "A PROUD MEMBER OF");
+  assert(label, `${file}: no "A PROUD MEMBER OF"`);
+  is(label, REF.label.font, REF.label.size, "label");
+  at(label.x, REF.label.x[id], "label left edge");
+  at(label.top, REF.label.top, "label top");
+  const im = pages[0].images.find((i) => i.y < 150);
+  assert(im, `${file}: no header logo`);
+  const logo = { x: im.x + im.w * ART.l, y: im.y + im.h * ART.t, w: im.w * (1 - ART.l - ART.r), h: im.h * (1 - ART.t - ART.b) }; // the visible (cropped) artwork
+  assert(near(logo.w, REF.logo.w, 0.3) && near(logo.h, REF.logo.h, 0.3), `${file}: header logo ${fixed(logo.w)} x ${fixed(logo.h)}, want ${REF.logo.w} x ${REF.logo.h}`);
+  at(logo.x, REF.logo.x[id], "header logo left edge");
+  at(logo.y, REF.logo.top, "header logo top");
+  at(logo.y - label.top, REF.logo.top - REF.label.top, "logo top below the label's top");
+  for (const key of ["name", "jobTitle", "experienceSummary", "specialization"]) {
+    if (!real(data[key])) continue;
+    const line = lines.find((l) => l.page === 0 && l.col === "main" && l.text === data[key].trim());
+    assert(line, `${file}: header line ${key} not found`);
+    is(line, REF[key].font, REF[key].size, key);
+    at(line.x, REF.textX[id], `${key} left edge`);
+    // later lines move up when an optional one above them is empty: only check a line whose lines above are all there
+    const above = ["experienceSummary", "specialization"].slice(0, ["experienceSummary", "specialization"].indexOf(key));
+    if (above.every((k) => real(data[k]))) at(line.top, REF[key].top, `${key} top`);
+  }
+  at(lines.find((l) => l.text === data.name.trim()).top - label.top, REF.name.top - REF.label.top, "name top below the label's top");
+
+  // section headings: font and size, the first line after them, the gap before them
+  const names = HEADINGS[id];
+  const isHeading = (l) => names.includes(l.text) && l.font === REF.heading.font && near(l.size, REF.heading.size, 0.01);
+  let first = { main: true, side: true };
+  for (const [n, l] of lines.entries()) {
+    if (!names.includes(l.text)) continue;
+    is(l, REF.heading.font, REF.heading.size, "section heading");
+    const next = lines[n + 1];
+    if (next && next.page === l.page && next.col === l.col) at(next.top - l.top, REF.heading.toText, `space after "${l.text}" (heading top to first line top)`);
+    const prev = lines[n - 1];
+    const firstInColumn = first[l.col];
+    first[l.col] = false;
+    if (firstInColumn) {
+      // Overview / Skills: the reference's first headings (external: only with both header lines there)
+      if (id === "internal" || (real(data.experienceSummary) && real(data.specialization))) at(l.top, REF.heading.firstTop, `"${l.text}" top`);
+      continue;
+    }
+    if (!prev || prev.page !== l.page || prev.col !== l.col || isHeading(prev)) continue;
+    // after a project the gap is set for a project ending in bullets (the usual case)
+    const afterProject = id === "external" && l.text === "Experience";
+    if (afterProject && !(prev.x > REF.textX[id] + 10)) continue;
+    at(l.baseline - prev.baseline, REF.heading.sectionGap, `gap before "${l.text}" (last line to heading baseline)`);
+  }
+
+  // body text: overview lines
+  const overviewAt = lines.findIndex((l) => l.text === "Overview" && l.col === "main");
+  for (let n = overviewAt + 1; n < lines.length && !isHeading(lines[n]) && lines[n].page === lines[overviewAt].page; n++) {
+    is(lines[n], REF.body.font, REF.body.size, "overview");
+    if (n > overviewAt + 1) at(lines[n].baseline - lines[n - 1].baseline, REF.body.pitch, "overview line pitch");
+  }
+
+  // projects: heading -> name -> labels / values -> description; and from one project to the next
+  const P = REF.project;
+  const main = lines.filter((l) => l.col === "main");
+  for (const [n, l] of main.entries()) {
+    if (!/^Project \d+\b/.test(l.text) || l.font !== P.heading) continue;
+    is(l, P.heading, P.size, "project heading");
+    const k = Number(l.text.match(/^Project (\d+)/)[1]) - 1;
+    const project = (data.projects ?? []).filter((p) => Object.values(p).some((v) => (Array.isArray(v) ? v.some(real) : real(v))))[k];
+    const prev = main[n - 1];
+    if (k > 0 && prev && prev.page === l.page && prev.x > REF.textX[id] + 10) at(l.baseline - prev.baseline, P.toNext, `project ${k + 1}: gap from the previous project's last bullet`);
+    const nameText = id === "internal" ? project?.title : project?.client;
+    let m = n + 1;
+    if (real(nameText) && main[m]?.page === l.page) {
+      is(main[m], P.name, P.size, "project name");
+      at(main[m].baseline - l.baseline, P.toName, `project ${k + 1}: heading to name`);
+    }
+    // the field labels and their values
+    let previousValueEnd = main[m];
+    let firstLabel = true;
+    for (m = n + 2; m < main.length && main[m].page === l.page && !/^Project \d+\b/.test(main[m].text) && !isHeading(main[m]); m++) {
+      if (!FIELD_LABELS.includes(main[m].text) || main[m].font !== P.label) continue;
+      is(main[m], P.label, P.size, "field label");
+      const before = main[m - 1];
+      if (before.page === l.page) at(main[m].baseline - before.baseline, firstLabel ? P.toFirstLabel : P.toLabel, `project ${k + 1}: gap before "${main[m].text}"`);
+      firstLabel = false;
+      const value = main[m + 1];
+      if (value?.page === l.page) {
+        is(value, P.value, P.size, `"${main[m].text}" value`);
+        at(value.baseline - main[m].baseline, P.toValue, `project ${k + 1}: "${main[m].text}" label to value`);
+        previousValueEnd = value;
+      }
+    }
+    const description = real(project?.description) && main.find((x) => x.page === l.page && x.baseline > previousValueEnd.baseline && project.description.startsWith(x.text.split(" ").slice(0, 3).join(" ")));
+    if (description && previousValueEnd !== main[n + 1]) {
+      is(description, REF.body.font, REF.body.size, "project description");
+      const valueEnd = main.filter((x) => x.page === l.page && x.baseline < description.baseline).at(-1);
+      at(description.baseline - valueEnd.baseline, P.toDescription, `project ${k + 1}: last field to description`);
+    }
+  }
+
+  // numbers: in Lexend, at the size of the text around them
+  for (const l of lines) {
+    for (const r of l.runs.filter((r) => /\d/.test(r.text))) {
+      assert(/^Lexend-(Light|Regular|Medium)$/.test(r.font), `${file}: "${r.text}" is drawn in ${r.font}, not Lexend`);
+      assert(near(r.size, l.size, 0.01), `${file}: "${r.text}" is ${r.size}pt in a ${l.size}pt line ("${l.text}")`);
+    }
+  }
+  const fonts = new Set(pages.flatMap((p) => p.runs.map((r) => r.font)));
+  assert([...fonts].every((f) => /^Lexend-(Light|Regular|Medium)$/.test(f)), `${file}: fonts other than Lexend in the PDF: ${[...fonts]}`);
+}
+
 /** Logo, bullets, blank lines and sidebar spacing, measured on the PDF LibreOffice laid out. */
 function checkGeometry(file, id, pdf, data) {
   const pages = wordsOf(pdf);
-  // 1. logo: directly below "A PROUD MEMBER OF", left edges aligned, artwork ratio kept
+  // 1. the label is one line on page 1 (its place, and the logo's, are checked against the reference in checkReference)
   const first = linesOf(pages[0]);
-  const label = first.find((l) => l.text === "A PROUD MEMBER OF");
-  assert(label, `${file}: "A PROUD MEMBER OF" must be one line on page 1`);
-  const logo = inkBox(pdf, { x0: label.x0 - 6, y0: label.y1, x1: 612, y1: label.y1 + 60 });
-  assert(logo, `${file}: no logo found under the label`);
-  assert(near(logo.x0, label.x0, 1.5), `${file}: logo left edge ${logo.x0.toFixed(1)} must line up with the label at ${label.x0.toFixed(1)}`);
-  assert(logo.y0 >= label.y1 - 0.5 && logo.y0 - label.y1 <= 6, `${file}: the logo must sit directly below the label (gap ${(logo.y0 - label.y1).toFixed(1)}pt)`);
-  const ratio = (logo.x1 - logo.x0) / (logo.y1 - logo.y0);
-  assert(Math.abs(ratio - ART_RATIO) / ART_RATIO < 0.04, `${file}: logo drawn at ${ratio.toFixed(3)}, the artwork is ${ART_RATIO.toFixed(3)} (stretched?)`);
-  assert(logo.x0 > 306 && logo.y1 < 140, `${file}: the logo belongs in the top right`);
+  assert(first.some((l) => l.text === "A PROUD MEMBER OF"), `${file}: "A PROUD MEMBER OF" must be one line on page 1`);
 
   const SIDEBAR_X = 400; // internal sidebar column starts at ~421pt; external has one column
   for (const words of pages) {
@@ -492,6 +657,7 @@ if (process.argv.includes("--pdf")) {
     checkGeometry(file, id, `${dir}/${file}.pdf`, data);
     const measured = await measurePdf(`${dir}/${file}.pdf`);
     checkFooter(file, `${dir}/${file}.pdf`, measured);
+    checkReference(file, id, measured, data);
     // no extra near-empty last page: the last page carries more than its page number (and the footer's logo)
     const pages = execFileSync("pdftotext", [`${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\f").filter((p, n, all) => n < all.length - 1 || p.trim());
     assert(!/^\s*\d*\s*$/.test(pages.at(-1)), `${file}: the last page (${pages.length}) is empty apart from the footer`);
@@ -507,5 +673,6 @@ if (process.argv.includes("--pdf")) {
   }
   assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
   console.log("pdf: no near-empty last page (internal, last bullet at the foot of a page)");
+  console.log(`pdf: reference format, footer and fonts checked on ${cases.length} PDFs (${referenceChecks} measurements)`);
 }
 console.log("done");

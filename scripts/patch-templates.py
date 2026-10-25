@@ -10,14 +10,18 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    so does the whole block when the flag is false. The flags are set in lib/docxData.ts (prepareData). Two heading lines
    get an inline condition so no dangling " - " is left. The blank line after an internal project is kept only when
    another project follows (hasNext), so the projects column never ends in an empty line (no extra empty last page).
-2. Formatting (FORMAT, LOGO, BULLET, SETTINGS below):
-   - the InfoBeans logo keeps its aspect ratio (cropped exactly to the artwork, box = the artwork's ratio) and sits
-     directly below "A PROUD MEMBER OF", left edges aligned;
+2. Formatting (FORMAT, BULLET, SETTINGS below):
    - one bullet style for every responsibility / highlight (one numbering definition: Lexend "•" at text size, 720/360
      indent) with the same spacing between bullets;
    - a blank line between the Role line and the project description and between the description and the bullets;
    - sidebar items (internal): 1.15 line spacing inside an item, 1.5 lines from one item to the next;
    - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
+3. Footer (both templates): logo and page number placed as in the reference (footer()).
+4. The reference format (eval/reference/format.docx and format.pdf, git-ignored; LAYOUT): margins, the internal table's
+   columns, "A PROUD MEMBER OF" and the logo (130.5 x 42.0pt, cropped to the artwork), the header lines, every section
+   heading (Lexend Light 10pt #EA1B3D, the same space after it), body text (Lexend Light 11pt, 17.25pt lines) and the
+   project lines, each font, size and position as in the reference. The internal template matches it; the external one
+   keeps its own layout (one column, logo flush right) with the same rules for the same elements.
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -62,6 +66,7 @@ WRAPS = {
         (50, 50, "hasPosition"),  # employer: position line
         (51, 51, "hasDuration"),  # employer: duration line
         (52, 55, "hasHighlights"),  # employer: spacer + bullets
+        (43, 44, "hasNext"),  # the blank lines that separate a project from the next one (as internal)
     ],
 }
 
@@ -130,13 +135,6 @@ FORMAT = {
 ART = (153, 141, 847, 359)
 ART_SIZE = (1000, 500)
 EMU_PER_PT = 12700
-LOGO_WIDTH_PT = 104  # the artwork's width on the page (as before)
-LOGO_GAP_PT = 2  # from the bottom of the "A PROUD MEMBER OF" line to the top of the logo
-# Left edge of the label and the logo, from the left page margin. Internal: the sidebar's text column (where "Skills"
-# starts). External (one column): logo flush with the right margin (text width 468pt).
-LOGO_LEFT_PT = {"internal": 377.7, "external": 468 - LOGO_WIDTH_PT}
-# The label's glyphs reach 0.7pt below the bottom of its line (measured on the LibreOffice PDF).
-LABEL_DESCENT_PT = 0.7
 
 # settings.xml: do not stretch a justified line that ends in a manual line break (Word's "Don't expand character
 # spaces on a line ending with SHIFT+RETURN"; LibreOffice reads it too). The overview and qualification end in one.
@@ -164,6 +162,14 @@ PAGE_NUMBER_LINE_PT = 12.0
 
 def emu(pt: float) -> int:
     return round(pt * EMU_PER_PT)
+
+
+def marker(tag: str) -> str:
+    return f'<w:p><w:r><w:t xml:space="preserve">{tag}</w:t></w:r></w:p>'
+
+
+def attrs(values: dict) -> str:
+    return " ".join(f'w:{k}="{v}"' for k, v in values.items())
 
 
 def tw(pt: float) -> int:
@@ -210,6 +216,204 @@ def footer(xml: str) -> str:
     return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n{root}{number}{carrier}</w:ftr>'
 
 
+# --------------------------------------------------------------- 4. the reference format: header, headings and text
+# Fonts, sizes and colours from format.docx; positions from format.pdf. Lines that must land on a measured position
+# get an EXACT height, so the baseline is predictable (EXACT_BASELINE); each spacing value below is computed from the
+# reference position it produces, so changing a target changes the layout.
+# Margins (format.docx): top 0.4in, left / right / bottom 0.6in, header 0, footer 0.5in.
+MARGINS = {"top": 576, "right": 864, "bottom": 864, "left": 864, "header": 0, "footer": 720, "gutter": 0}
+PAGE_TOP = MARGINS["top"] / 20
+MARGIN_LEFT = MARGINS["left"] / 20
+TEXT_RIGHT = PAGE_W - MARGINS["right"] / 20
+# Internal table as in format.docx: columns of 7170 + 3300 twips; a 6-twip indent puts the text at x = 50.7 / 409.2.
+GRID = {"internal": (6, 7170, 3300)}
+CELL_TOP = 7.2  # the table cells' top margin (144 twips); the external name paragraph gets the same space above it
+ROW1_MIN = 107.0  # internal: the header row is at least 2140 twips tall, so row 2 (Overview, Skills) starts below it
+LEXEND_ASCENT = 1.0  # em: the baseline of an "auto" line sits this far below its top
+AUTO_LINE_EM = 1.25  # em: Lexend's single line height (ascent 1.0 + descent 0.25)
+
+# "A PROUD MEMBER OF": Lexend (the reference's Avenir) 8pt, #666666, baseline 44.4 (its "top", baseline - 6, is 38.4).
+LABEL = {"size": 8, "color": "666666", "baseline": 44.4, "line": 10.0}
+# The logo artwork 130.5 x 42.0pt, top 59.25 (12.8pt below the label); its left edge 0.5pt right of the label's.
+LOGO = {"w": 130.5, "h": 42.0, "top": 59.25}
+LOGO_X = {"internal": 412.2, "external": TEXT_RIGHT - LOGO["w"]}  # external (one column): flush with the right margin
+LABEL_X = {k: x - 0.5 for k, x in LOGO_X.items()}  # internal: 411.7 as in the reference
+# Header lines: baselines (reference: name top 59.0, job title top 91.0, first experience line top 109.3).
+NAME_BASELINE, TITLE_BASELINE, EXPERIENCE_BASELINE, SPECIALIZATION_BASELINE = 77.0, 100.0, 117.6, 134.8
+# Section headings: Lexend Light 10pt #EA1B3D. The first ones (Overview, Skills) sit at baseline 189.6 (top 182.1); the
+# first line after every heading starts 24.2pt below the heading's top (Overview 182.1 -> text 206.3).
+HEADING = {"font": "Lexend Light", "size": 10, "color": "EA1B3D", "line": 15.0}
+FIRST_HEADING_BASELINE = 189.6
+HEADING_TO_TEXT_TOP = 24.2
+TOP_EM = 0.75  # the targets' "top" of a line is baseline - 0.75 x size
+# From the last line of a section to the next heading (reference: Overview text -> Education & Training).
+SECTION_GAP = 46.3
+# Body text (overview, descriptions, the qualification): Lexend Light 11pt, 1.3 lines as the reference renders them.
+BODY_LINE = 17.25
+# Project: heading -> name 16.5, name -> first label 24.0, label -> value 15.0, value -> next label / description 25.5,
+# from the last line of a project to the next project's heading 54.7.
+FIELD_LINE = 15.0
+PROJECT = {"to_name": 16.5, "to_first_label": 24.0, "to_label": 25.5, "to_description": 25.5, "to_next": 54.7}
+YEAR_TO_QUALIFICATION = 17.5
+SPACER_LINE = 12.0  # the blank paragraphs between sections (external, internal sidebar)
+DARK, TEXT = "373742", "231F20"  # name / headings / labels, and field values (format.docx)
+
+
+def exact(line_pt: float, before: float = 0, after: float = 0) -> dict:
+    return {"before": str(tw(before)), "after": str(tw(after)), "line": str(tw(line_pt)), "lineRule": "exact"}
+
+
+def below(line_pt: float) -> float:
+    """From the baseline of an exact line to its bottom."""
+    return (1 - EXACT_BASELINE) * line_pt
+
+
+def auto_below(size: float, lines: float) -> float:
+    """From the baseline of an "auto" line (`lines` x single) of Lexend at `size` to its bottom."""
+    return lines * AUTO_LINE_EM * size - LEXEND_ASCENT * size
+
+
+def run(font: str, size: float, color: str) -> dict:
+    return {"font": font, "size": size, "color": color}
+
+
+def header_layout(template: str) -> dict:
+    """Label, name, job title and the two header lines; returns {paragraph: changes} and the logo's offsets."""
+    label_before = LABEL["baseline"] - PAGE_TOP - EXACT_BASELINE * LABEL["line"]
+    label_bottom = PAGE_TOP + label_before + LABEL["line"]
+    name_top = label_bottom + CELL_TOP  # internal: the cell's top margin; external: space before the paragraph
+    lines, top = [], name_top
+    for baseline in (NAME_BASELINE, TITLE_BASELINE, EXPERIENCE_BASELINE, SPECIALIZATION_BASELINE):
+        line = tw((baseline - top) / EXACT_BASELINE) / 20  # what the .docx can hold (whole twips)
+        lines.append(line)
+        top += line
+    name_before = CELL_TOP if template == "external" else 0
+    layout = {
+        0: {"spacing": exact(LABEL["line"], before=label_before), "run": run("Lexend", LABEL["size"], LABEL["color"])},
+        1: {"spacing": exact(lines[0], before=name_before), "run": run("Lexend Medium", 24, DARK)},
+        2: {"spacing": exact(lines[1]), "run": run("Lexend", 12, DARK)},
+        3: {"spacing": exact(lines[2]), "run": run("Lexend Light", 11, DARK)},
+        4: {"spacing": exact(lines[3]), "run": run("Lexend Light", 11, DARK)},
+    }
+    return {"paragraphs": layout, "header_bottom": top, "label_bottom": label_bottom, "name_top": name_top}
+
+
+def heading(before: float, content: str) -> dict:
+    """A section heading whose first content line starts HEADING_TO_TEXT_TOP below the heading's top. `content` is how
+    that first line is laid out: "exact" (a BODY_LINE line) or "auto" (an 11pt item, 1.15 lines)."""
+    to_baseline = HEADING_TO_TEXT_TOP - TOP_EM * HEADING["size"] + TOP_EM * 11
+    first = EXACT_BASELINE * BODY_LINE if content == "exact" else LEXEND_ASCENT * 11
+    return {"spacing": exact(HEADING["line"], before=before, after=to_baseline - below(HEADING["line"]) - first), "run": run(HEADING["font"], HEADING["size"], HEADING["color"])}
+
+
+def section_before(previous_below: float, spacers: int = 0) -> float:
+    """`before` of a heading so its baseline is SECTION_GAP below the previous section's last baseline."""
+    return SECTION_GAP - previous_below - spacers * SPACER_LINE - EXACT_BASELINE * HEADING["line"]
+
+
+# What each kind of paragraph looks like (the run formatting of every run in it).
+BODY = {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK), "ind": {"left": "0", "right": "0", "firstLine": "0"}, "jc": "both", "no_break": True}
+PROJECT_HEADING = {"spacing": exact(BODY_LINE), "run": run("Lexend", 11, DARK)}
+PROJECT_NAME_LINE = tw((PROJECT["to_name"] - below(BODY_LINE)) / EXACT_BASELINE) / 20
+PROJECT_NAME = {"spacing": exact(PROJECT_NAME_LINE), "run": run("Lexend Light", 11, TEXT)}
+LABEL_LINE = {"spacing": exact(FIELD_LINE), "run": run("Lexend", 11, DARK)}
+VALUE_LINE = {"spacing": exact(FIELD_LINE), "run": run("Lexend Light", 11, TEXT)}
+# blank paragraphs inside a project
+FIRST_LABEL_GAP = PROJECT["to_first_label"] - below(PROJECT_NAME_LINE) - EXACT_BASELINE * FIELD_LINE
+LABEL_GAP = PROJECT["to_label"] - below(FIELD_LINE) - EXACT_BASELINE * FIELD_LINE
+DESCRIPTION_GAP = PROJECT["to_description"] - below(FIELD_LINE) - EXACT_BASELINE * BODY_LINE
+# a project ends in bullets (1.15 lines, 4.8pt after each: ITEM)
+BULLET_BELOW = auto_below(11, 1.15) + ITEM_GAP / 20
+NEXT_PROJECT_GAP = PROJECT["to_next"] - BULLET_BELOW - EXACT_BASELINE * BODY_LINE
+SIDEBAR_ITEM_BELOW = BULLET_BELOW  # sidebar items use the same 1.15 lines + ITEM_GAP
+
+
+def blank(height: float) -> dict:
+    return {"spacing": exact(height), "no_numbering": True}
+
+
+def blank_xml(height: float) -> str:
+    return f'<w:p><w:pPr><w:spacing {attrs(exact(height))}/><w:jc w:val="left"/></w:pPr></w:p>'
+
+
+def internal_layout() -> dict:
+    h = header_layout("internal")
+    row2_top = max(h["label_bottom"] + ROW1_MIN, h["header_bottom"])
+    first_heading_before = FIRST_HEADING_BASELINE - (row2_top + CELL_TOP) - EXACT_BASELINE * HEADING["line"]
+    main_section = section_before(below(BODY_LINE))
+    side_section = section_before(SIDEBAR_ITEM_BELOW, spacers=1)
+    layout = dict(h["paragraphs"])
+    layout.update({
+        5: heading(first_heading_before, "exact"),  # Overview
+        6: BODY,  # overview
+        7: heading(main_section, "exact"),  # Education & Training
+        9: {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK)},  # year
+        10: {**BODY, "spacing": exact(BODY_LINE, before=YEAR_TO_QUALIFICATION - BODY_LINE), "jc": "left"},  # qualification
+        13: heading(main_section, "exact"),  # Projects
+        16: PROJECT_HEADING,
+        17: PROJECT_NAME,
+        18: blank(FIRST_LABEL_GAP),  # (hasTech) before "Tools & Technologies"
+        19: LABEL_LINE, 20: VALUE_LINE,
+        22: blank(LABEL_GAP), 23: LABEL_LINE, 24: VALUE_LINE,  # Team Size
+        26: blank(LABEL_GAP), 27: LABEL_LINE, 28: VALUE_LINE,  # Role
+        30: blank(LABEL_GAP), 31: LABEL_LINE, 32: VALUE_LINE,  # Project Link
+        34: BODY,  # description (its blank line before it: DESCRIPTION_SPACER)
+        38: blank(NEXT_PROJECT_GAP),  # (hasNext) between projects
+        40: heading(first_heading_before, "auto"),  # Skills
+        42: {"run": run("Lexend", 11, DARK)},  # skill name
+        43: {"run": run("Lexend Light", 11, DARK)},  # rating
+        46: heading(side_section, "auto"), 50: blank(SPACER_LINE),  # Certifications
+        51: heading(side_section, "auto"), 53: blank(SPACER_LINE),  # Tools
+        55: heading(side_section, "auto"),  # Managerial Experience (its spacer: SPACERS)
+        60: heading(side_section, "auto"), 64: blank(SPACER_LINE),  # Domain
+        65: heading(side_section, "auto"),  # Languages
+    })
+    for i in (48, 52, 57, 62, 67):  # sidebar items
+        layout[i] = {"run": run("Lexend Light", 11, DARK)}
+    return {"paragraphs": layout, "name_top": h["name_top"]}
+
+
+def external_layout() -> dict:
+    h = header_layout("external")
+    first_heading_before = FIRST_HEADING_BASELINE - h["header_bottom"] - 2 * SPACER_LINE - EXACT_BASELINE * HEADING["line"]
+    section = section_before(below(BODY_LINE), spacers=1)
+    layout = dict(h["paragraphs"])
+    layout.update({
+        5: blank(SPACER_LINE), 6: blank(SPACER_LINE),
+        7: heading(first_heading_before, "exact"), 8: BODY,  # Overview
+        9: blank(SPACER_LINE), 10: heading(section, "exact"),  # Education & Training
+        12: {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK)},  # year
+        13: {**BODY, "spacing": exact(BODY_LINE, before=YEAR_TO_QUALIFICATION - BODY_LINE), "jc": "left"},  # qualification
+        15: blank(SPACER_LINE), 16: heading(section, "exact"), 17: BODY,  # Skills
+        18: blank(SPACER_LINE), 19: heading(section, "exact"), 20: BODY,  # Tools
+        21: blank(SPACER_LINE), 22: heading(section, "exact"), 23: BODY,  # Certifications
+        24: blank(SPACER_LINE), 25: heading(section, "exact"),  # Projects/Experience
+        27: PROJECT_HEADING,
+        28: PROJECT_NAME,
+        30: blank(FIRST_LABEL_GAP), 31: LABEL_LINE, 32: VALUE_LINE,  # Team Size
+        34: blank(LABEL_GAP), 35: LABEL_LINE, 36: VALUE_LINE,  # Role
+        37: blank(DESCRIPTION_GAP), 38: BODY,  # description
+        39: {"spacing": {"before": "0", "after": "0", "line": "240", "lineRule": "auto"}},  # blank line before the bullets
+        43: blank(NEXT_PROJECT_GAP), 44: {"drop": True},  # (hasNext) between projects
+        46: {"drop": True}, 47: heading(section, "exact"),  # Experience (the spacer before it: END_OF_PROJECTS)
+        49: PROJECT_HEADING,  # employer
+        50: VALUE_LINE, 51: VALUE_LINE,  # position, duration
+    })
+    return {"paragraphs": layout, "name_top": h["name_top"] - CELL_TOP}
+
+
+LAYOUT = {"internal": internal_layout(), "external": external_layout()}
+# The internal description's blank line before it (PRE_SPACERS) sized like the other project gaps, and the two sidebar
+# spacers (SPACERS) like the other sidebar spacers.
+PRE_SPACERS["internal"][0] = (34, blank_xml(DESCRIPTION_GAP))
+SPACERS["internal"] = [(at, blank_xml(SPACER_LINE)) for at, _ in SPACERS["internal"]]
+# External: the Experience heading follows either the last project (its bullets) or another section's spacer. After the
+# LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
+# SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
+END_OF_PROJECTS = blank_xml(below(BODY_LINE) + SPACER_LINE - BULLET_BELOW)
+AFTER_CLOSE = {"internal": [], "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))]}
+
+
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 PPR_ORDER = [
     "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl", "numPr", "suppressLineNumbers",
@@ -219,14 +423,6 @@ PPR_ORDER = [
     "rPr", "sectPr", "pPrChange",
 ]
 PPR_CHILD = re.compile(r"<w:(rPr|numPr|tabs|pBdr|sectPr|pPrChange|framePr)\b[^>]*?(?:/>|>.*?</w:\1>)|<w:(\w+)\b[^>]*/>", re.S)
-
-
-def marker(tag: str) -> str:
-    return f'<w:p><w:r><w:t xml:space="preserve">{tag}</w:t></w:r></w:p>'
-
-
-def attrs(values: dict) -> str:
-    return " ".join(f'w:{k}="{v}"' for k, v in values.items())
 
 
 def set_ppr(para: str, changes: dict) -> str:
@@ -242,6 +438,8 @@ def set_ppr(para: str, changes: dict) -> str:
         children["ind"] = f"<w:ind {attrs(changes['ind'])}/>"
     if "numPr" in changes:
         children["numPr"] = changes["numPr"]
+    if changes.get("no_numbering"):
+        children.pop("numPr", None)
     if "jc" in changes:
         children["jc"] = f'<w:jc w:val="{changes["jc"]}"/>'
     ppr = "<w:pPr>" + "".join(children[k] for k in sorted(children, key=lambda k: PPR_ORDER.index(k) if k in PPR_ORDER else 99)) + "</w:pPr>"
@@ -251,12 +449,67 @@ def set_ppr(para: str, changes: dict) -> str:
     return head + ppr + para[len(head) :]
 
 
+RPR_ORDER = [
+    "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "outline", "shadow", "emboss",
+    "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color", "spacing", "w", "kern", "position", "sz", "szCs",
+    "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout",
+    "specVanish", "oMath",
+]
+RPR_CHILD = re.compile(r"<w:(\w+)\b[^>]*?(?:/>|>.*?</w:\1>)", re.S)
+
+
+def rpr(inner: str, font: str, size: float, color: str) -> str:
+    """Run properties with this font (all four scripts, not bold), size and colour, keeping the rest, in schema order."""
+    children = {m.group(1): m.group(0) for m in RPR_CHILD.finditer(inner)}
+    children["rFonts"] = f'<w:rFonts w:ascii="{font}" w:cs="{font}" w:eastAsia="{font}" w:hAnsi="{font}"/>'
+    children["b"], children["bCs"] = '<w:b w:val="0"/>', '<w:bCs w:val="0"/>'
+    children["color"] = f'<w:color w:val="{color}"/>'
+    children["sz"], children["szCs"] = f'<w:sz w:val="{round(size * 2)}"/>', f'<w:szCs w:val="{round(size * 2)}"/>'
+    return "<w:rPr>" + "".join(children[k] for k in sorted(children, key=lambda k: RPR_ORDER.index(k) if k in RPR_ORDER else 99)) + "</w:rPr>"
+
+
+def set_runs(para: str, font: str, size: float, color: str) -> str:
+    """Every run of the paragraph, and its paragraph mark, in this font, size and colour (digits included: a run's
+    font covers every character, so no number can fall back to another font)."""
+    def fix(m: re.Match) -> str:
+        r = m.group(0)
+        props = re.search(r"<w:rPr>(.*?)</w:rPr>|<w:rPr/>", r, re.S)
+        new = rpr(props.group(1) or "" if props else "", font, size, color)
+        if props:
+            return r[: props.start()] + new + r[props.end() :]
+        head = re.match(r"<w:r\b[^>]*>", r).group(0)
+        return head + new + r[len(head) :]
+
+    para = re.sub(r"<w:r\b(?:\s[^>]*)?>.*?</w:r>", fix, para, flags=re.S)
+    ppr = re.search(r"<w:pPr>.*?</w:pPr>", para, re.S)
+    if ppr:
+        mark = re.search(r"<w:rPr>(.*?)</w:rPr>|<w:rPr/>", ppr.group(0), re.S)
+        new_mark = rpr(mark.group(1) or "" if mark else "", font, size, color)
+        new_ppr = ppr.group(0)[: mark.start()] + new_mark + ppr.group(0)[mark.end() :] if mark else ppr.group(0).replace("</w:pPr>", new_mark + "</w:pPr>")
+        para = para[: ppr.start()] + new_ppr + para[ppr.end() :]
+    return para
+
+
+def table_grid(xml: str, name: str) -> str:
+    """The internal table's indent and column widths as in format.docx (the sidebar text starts at x = 409.2)."""
+    if name not in GRID:
+        return xml
+    ind, main, side = GRID[name]
+    xml = re.sub(r'<w:tblW w:w="[\d.]+" w:type="dxa"/>', f'<w:tblW w:w="{main + side}" w:type="dxa"/>', xml, count=1)
+    xml = re.sub(r'<w:tblInd w:w="[\d.]+" w:type="dxa"/>', f'<w:tblInd w:w="{ind}" w:type="dxa"/>', xml, count=1)
+    return re.sub(r'<w:gridCol w:w="\d+"/><w:gridCol w:w="\d+"/>', f'<w:gridCol w:w="{main}"/><w:gridCol w:w="{side}"/>', xml)
+
+
+def page_margins(xml: str) -> str:
+    """The section's page margins as in format.docx (both templates)."""
+    return re.sub(r"<w:pgMar [^>]*/>", f"<w:pgMar {attrs(MARGINS)}/>", xml)
+
+
 def label(para: str, name: str) -> str:
-    """'A PROUD MEMBER OF': no tabs or padding spaces, starts exactly where the logo starts."""
+    """'A PROUD MEMBER OF': no tabs or padding spaces, starting at LABEL_X (just left of the logo, as in the reference)."""
     para = para.replace("<w:tab/>", "")
     para = re.sub(r"(<w:t[^>]*>)([^<]*)(</w:t>)", lambda t: t.group(1) + t.group(2).strip() + t.group(3), para)
-    twips = round(LOGO_LEFT_PT[name] * 20)
-    return set_ppr(para, {"ind": {"left": str(twips), "right": "0", "firstLine": "0"}, "jc": "left"})
+    return set_ppr(para, {"ind": {"left": str(tw(LABEL_X[name] - MARGIN_LEFT)), "right": "0", "firstLine": "0"}, "jc": "left"})
 
 
 def cell_left_pt(xml: str) -> float:
@@ -269,26 +522,18 @@ def cell_left_pt(xml: str) -> float:
     return (float(ind.group(1)) if ind else 0) / 20 + (float(mar.group(1)) if mar else 0) / 20
 
 
-def cell_top_pt(xml: str) -> float:
-    """The first table cell's top margin (0 without a table): its first paragraph starts that far below the row."""
-    table = re.search(r"<w:tbl>.*?<w:tc>.*?</w:tcPr>", xml, re.S)
-    mar = table and re.search(r'<w:tcMar>.*?<w:top w:w="([\d.]+)" w:type="dxa"/>', table.group(0), re.S)
-    return float(mar.group(1)) / 20 if mar else 0.0
-
-
 def logo(para: str, name: str, xml: str) -> str:
-    """The anchored logo: cropped to the artwork, true aspect ratio, directly below the label, left edges aligned."""
+    """The anchored logo: cropped to the artwork, drawn at the reference's 130.5 x 42.0pt (the artwork is 2.4% wider for
+    its height than that box; the reference squeezes its own copy of the logo the same way), at LOGO_X, LOGO["top"]."""
     l, t, r, b = ART
     w, h = ART_SIZE
-    cx = LOGO_WIDTH_PT * EMU_PER_PT
-    cy = round(cx * (b - t) / (r - l))
+    cx, cy = emu(LOGO["w"]), emu(LOGO["h"])
     crop = f'<a:srcRect l="{round(l / w * 100000)}" t="{round(t / h * 100000)}" r="{round((w - r) / w * 100000)}" b="{round((h - b) / h * 100000)}"/>'
     # horizontal: from the text column the anchor is in. In the internal template that is the table cell holding the
     # name (Word and LibreOffice agree on that), whose text starts tblInd + the cell's left margin from the page margin.
-    x = round((LOGO_LEFT_PT[name] - cell_left_pt(xml)) * EMU_PER_PT)
-    # vertical: from the paragraph the logo is anchored in (the name), which starts right below the label's line, plus
-    # the cell's top margin in the internal template
-    y = round((LOGO_GAP_PT + LABEL_DESCENT_PT - cell_top_pt(xml)) * EMU_PER_PT)
+    x = emu(LOGO_X[name] - MARGIN_LEFT - cell_left_pt(table_grid(xml, name)))  # the table as patched
+    # vertical: from the top of the paragraph the logo is anchored in (the name)
+    y = emu(LOGO["top"] - LAYOUT[name]["name_top"])
     drawing = re.search(r"<w:drawing>.*?</w:drawing>", para, re.S).group(0)
     # no wrap distance above the logo: it sits right under the label, which must not be pushed down by it
     new = re.sub(r'(<wp:(?:anchor|wrapSquare)\b[^>]*?)distT="\d+"', r'\1distT="0"', drawing)
@@ -331,7 +576,12 @@ def patch(name: str) -> bytes:
             for old, new in INLINE[name]:
                 if old in text:
                     text = text.replace(old, new)
-            change = FORMAT[name].get(i, {})
+            change = {**LAYOUT[name]["paragraphs"].get(i, {}), **FORMAT[name].get(i, {})}
+            if "run" in change:
+                text = set_runs(text, **change["run"])
+            if change.get("no_break"):
+                # the template's own trailing line break (a {tag}'s line breaks come in when it is filled)
+                text = re.sub(r"<w:br\b[^>]*/>", "", text)
             if i == 0:
                 text = label(text, name)
             if "<w:drawing>" in text:
@@ -344,9 +594,10 @@ def patch(name: str) -> bytes:
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
             pre = "".join(xml_ for at, xml_ in PRE_SPACERS[name] if at == i)  # inside any condition that opens here
             extra = "".join(xml_ for at, xml_ in SPACERS[name] if at == i)  # still inside any condition that closes here
-            return opens + pre + text + extra + closes
+            post = "".join(xml_ for at, xml_ in AFTER_CLOSE[name] if at == i)  # outside every condition that closes here
+            return opens + pre + text + extra + closes + post
 
-        new_xml = PARA.sub(rebuild, xml)
+        new_xml = page_margins(table_grid(PARA.sub(rebuild, xml), name))
         out = OUT / f"{name}.docx"
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
