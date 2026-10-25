@@ -36,6 +36,10 @@ import {
   tokenOverlap,
   DATE_NOT_RECOGNISED_REASON,
   normalizeDurations,
+  DESCRIPTION_MIN_WORDS,
+  NO_DESCRIPTION_REASON,
+  SHORT_DESCRIPTION_REASON,
+  flagShortDescriptions,
 } from "./backstops";
 import { normalizeToShape } from "./normalize";
 import type { ReviewFlag } from "./extract.types";
@@ -121,8 +125,9 @@ test("applyBackstops: clones the input, normalised output then passes the respon
   assert.deepEqual((original.projects[0].responsibilities as unknown[]).length, 0, "input is not mutated");
   const normalized = normalizeToShape("internal", data);
   assert.equal(normalized.projects[0].responsibilities.length, 1);
-  // the throwaway source text "source" contains neither the duration nor the team size, so those are flagged too
-  assert.deepEqual(flags.map((f) => f.path).sort(), ["overview", "projects.0.duration", "projects.0.responsibilities", "projects.0.teamSize"]);
+  // the throwaway source text "source" contains neither the duration nor the team size, so those are flagged too, and
+  // the 3-word description is under 2 lines
+  assert.deepEqual(flags.map((f) => f.path).sort(), ["overview", "projects.0.description", "projects.0.duration", "projects.0.responsibilities", "projects.0.teamSize"]);
 });
 
 /* ---------- 4. flag paths ---------- */
@@ -564,4 +569,29 @@ test("applyBackstops normalises durations after the source check (a reformatted 
   const r = applyBackstops("internal", data, [], source);
   assert.deepEqual((r.data as typeof data).projects.map((p) => p.duration), ["Jun 2020 – Jun 2021", "Jan 2019 – Mar 2020"]);
   assert.ok(!r.flags.some((f) => f.reason === VALUE_NOT_FOUND_REASON || f.reason === DATE_NOT_RECOGNISED_REASON), JSON.stringify(r.flags));
+});
+
+const words = (n: number) => Array.from({ length: n }, (_, k) => `word${k}`).join(" ");
+
+test("backstop 3j: a description under 2 lines (fewer than 25 words) is flagged, never lengthened", () => {
+  const data = { projects: [{ title: "Store Locator", description: words(DESCRIPTION_MIN_WORDS - 1) }, { title: "Order Tracker", description: words(DESCRIPTION_MIN_WORDS) }] };
+  const before = structuredClone(data);
+  const flags = flagShortDescriptions("internal", data, []);
+  assert.deepEqual(flags, [{ path: "projects.0.description", reason: SHORT_DESCRIPTION_REASON }]);
+  assert.deepEqual(data, before, "the description is not changed");
+  assert.deepEqual(flagShortDescriptions("internal", data, flags), flags, "no duplicate flag");
+});
+
+test("backstop 3j: a named project without a description is flagged; external projects use the client field", () => {
+  const data = { projects: [{ client: "Claims Portal", description: "" }, { client: "", description: "" }] };
+  assert.deepEqual(flagShortDescriptions("external", data, []), [{ path: "projects.0.description", reason: NO_DESCRIPTION_REASON }]);
+});
+
+test("backstop 3j: one flag per description (3c's 'missing' flag or the model's own 'under 2 lines' flag is enough)", () => {
+  const data = { projects: [{ title: "Store Locator", description: "" }, { title: "Order Tracker", description: "Tracks orders." }] };
+  const existing = [
+    { path: "projects.0.description", reason: MISSING_DESCRIPTION_REASON },
+    { path: "projects.1.description", reason: "description under 2 lines: the resume has no more detail" },
+  ];
+  assert.deepEqual(flagShortDescriptions("internal", data, existing), existing);
 });

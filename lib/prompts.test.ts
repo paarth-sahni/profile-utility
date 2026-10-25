@@ -58,3 +58,14 @@ test("dates: every template asks for MMM YYYY, en-dash ranges and Present / Curr
     for (const [, d] of p.matchAll(/"duration":\s*"([^"]+)"/g)) assert.match(d, /^[A-Z][a-z]{2} \d{4} – ([A-Z][a-z]{2} \d{4}|Present|Current)$/, `${template} example duration ${d}`);
   }
 });
+
+test("descriptions: at least 2 lines from the resume's own facts, never padded, flagged when the resume has too little", () => {
+  for (const template of ["internal", "external"] as const) {
+    const p = buildExtractionPrompt(template, analysis("mid"), "2026-10-12");
+    assert.ok(p.includes("a description is at least 2 lines, about 25 words or more"), template);
+    assert.ok(p.includes("ONLY with facts the resume states for that same project") && p.includes("Never add a fact, purpose or outcome the resume does not state"), template);
+    assert.ok(p.includes("description under 2 lines: the resume has no more detail"), template);
+    // the example teaches the length too
+    for (const [, d] of p.matchAll(/"description":"([^"]+)"/g)) assert.ok(d.split(/\s+/).length >= 25, `${template} example description has ${d.split(/\s+/).length} words`);
+  }
+});

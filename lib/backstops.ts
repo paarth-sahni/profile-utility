@@ -12,6 +12,7 @@
  *   3g. near-duplicate bullets in one entry, or a bullet copying the description -> flag the later bullet
  *   3h. project description that starts with the project title (internal title / external client) -> flag
  *   3i. project / employer durations rewritten as "MMM YYYY" ranges (lib/dates.ts); one it cannot read -> flag
+ *   3j. project description under 2 lines (fewer than 25 words), or none at all -> flag (never padded in code)
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
@@ -545,6 +546,32 @@ export function normalizeDurations(data: unknown, flags: ReviewFlag[]): ReviewFl
   return out;
 }
 
+/** A description fills at least 2 lines of the profile at about 25 words (11 pt Lexend Light in the project column). */
+export const DESCRIPTION_MIN_WORDS = 25;
+export const SHORT_DESCRIPTION_REASON = "description under 2 lines: add detail from the resume if it has more";
+export const NO_DESCRIPTION_REASON = "no description: add 2 or more lines from the resume if it has them";
+
+/**
+ * 3j. A project description should run to at least 2 lines. One under DESCRIPTION_MIN_WORDS words is flagged, and so is
+ * a named project with none at all (unless 3c already flagged it). Code never lengthens a description: only the person
+ * can add facts the resume does not state.
+ */
+export function flagShortDescriptions(templateId: TemplateId, data: unknown, flags: ReviewFlag[]): ReviewFlag[] {
+  if (!isRecord(data) || !Array.isArray(data.projects)) return flags;
+  const out = [...flags];
+  data.projects.forEach((p, i) => {
+    if (!isRecord(p) || !str(p[projectNameKey(templateId)])) return;
+    const path = `projects.${i}.description`;
+    const words = wordCountOf(str(p.description));
+    if (words >= DESCRIPTION_MIN_WORDS || hasFlag(out, path, MISSING_DESCRIPTION_REASON)) return;
+    // the model's own "the resume has no more detail" flag says the same thing: one flag is enough
+    if (out.some((f) => f.path === path && /under 2 lines/i.test(f.reason))) return;
+    const reason = words === 0 ? NO_DESCRIPTION_REASON : SHORT_DESCRIPTION_REASON;
+    if (!hasFlag(out, path, reason)) out.push({ path, reason });
+  });
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -568,6 +595,7 @@ export function applyBackstops(
   next = flagOverviewRepeatsHeader(copy, next);
   next = flagRepeatedBullets(templateId, copy, next);
   next = flagDescriptionStartsWithTitle(templateId, copy, next);
+  next = flagShortDescriptions(templateId, copy, next);
   return { data: copy, flags: next };
 }
 
