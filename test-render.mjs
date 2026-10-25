@@ -35,6 +35,9 @@ const REF = {
   logo: { w: 130.5, h: 42.0, top: 59.25, x: { internal: 412.2, external: TEXT_RIGHT - 130.5 } },
   textX: { internal: 50.7, external: 43.2 },
   sidebarX: 409.2,
+  // internal sidebar (format.pdf): a rating line to the next skill name, a skill name to its rating, one item to the
+  // next in Certifications / Tools / Managerial Experience / Domain / Languages (baseline to baseline); the text colours
+  sidebar: { ratingToNextName: 27.0, nameToRating: 15.0, itemGap: 23.3, wrap: 1.15 * 13.75, text: "#231F20", name: "#373742" },
   name: { font: "Lexend-Medium", size: 24, top: 59.0 },
   jobTitle: { font: "Lexend-Regular", size: 12, top: 91.0 },
   experienceSummary: { font: "Lexend-Light", size: 11, top: 109.3 },
@@ -463,6 +466,36 @@ function inkBox(pdf, region, page = 1) {
   return box && { x0: box.x0 / k, y0: box.y0 / k, x1: (box.x1 + 1) / k, y1: (box.y1 + 1) / k };
 }
 
+const colourPages = new Map(); // "pdf#page" -> { w, data } for the colour checks (rendered once per run)
+/**
+ * The colour of the text in a box (pt, top left origin) of a page: the darkest pixel of a 288 dpi render, which for
+ * 11pt Lexend is at full strength where a stem is covered. Returns [r, g, b].
+ */
+function inkColour(pdf, page, box) {
+  const { execFileSync } = globalThis.__child;
+  const key = `${pdf}#${page}`;
+  if (!colourPages.has(key)) {
+    const base = pdf.replace(/\.pdf$/, `-c${page}`);
+    execFileSync("pdftoppm", ["-r", "288", "-singlefile", "-f", String(page), "-l", String(page), pdf, base]); // writes <base>.ppm (P6)
+    const ppm = fs.readFileSync(`${base}.ppm`);
+    const head = ppm.toString("latin1", 0, 30).match(/^P6\s+(\d+)\s+(\d+)\s+255\s/);
+    colourPages.set(key, { w: Number(head[1]), h: Number(head[2]), data: ppm.subarray(head[0].length) });
+  }
+  const { w, h, data } = colourPages.get(key);
+  const k = 288 / 72;
+  let best = null;
+  for (let y = Math.max(0, Math.floor(box.y0 * k)); y < Math.min(h, Math.ceil(box.y1 * k)); y++) {
+    for (let x = Math.max(0, Math.floor(box.x0 * k)); x < Math.min(w, Math.ceil(box.x1 * k)); x++) {
+      const o = (y * w + x) * 3;
+      const sum = data[o] + data[o + 1] + data[o + 2];
+      if (!best || sum < best[0]) best = [sum, data[o], data[o + 1], data[o + 2]];
+    }
+  }
+  return best && best.slice(1);
+}
+const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const colourDistance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
 const LINE = 13.75; // one line of 11pt Lexend
 
 
@@ -519,7 +552,7 @@ function measuredLines(pages, id) {
  * headings (font, size, the space after them, the gap before them), body text (font, size, line pitch), project lines
  * (fonts, sizes, spacing) and every number (Lexend, the size of the text around it). Positions within POS.
  */
-function checkReference(file, id, pages, data) {
+function checkReference(file, id, pages, data, pdf) {
   const lines = measuredLines(pages, id);
   const is = (line, font, size, what) => {
     referenceChecks++;
@@ -654,6 +687,39 @@ function checkReference(file, id, pages, data) {
     }
   }
 
+  // internal sidebar: spacing between skills and between the items of the other sections, and the text colours
+  if (id === "internal") {
+    const S = REF.sidebar;
+    const RATING = /^\(\d(?:\.\d)?\/5\)$/;
+    const side = lines.filter((l) => l.col === "side");
+    const nearest = (rgb) => (colourDistance(rgb, hexRgb(S.text)) < colourDistance(rgb, hexRgb(S.name)) ? S.text : S.name);
+    const colourOf = (l) => {
+      const run = l.runs.filter((r) => /\S/.test(r.text));
+      return inkColour(pdf, l.page + 1, { x0: run[0].x, x1: run.at(-1).x1, y0: l.baseline - 9, y1: l.baseline + 3 });
+    };
+    for (const [n, l] of side.entries()) {
+      if (names.includes(l.text) && isHeading(l)) continue;
+      const rating = RATING.test(l.text);
+      const skillName = l.font === "Lexend-Regular";
+      // colours: ratings and item text #231F20, skill names #373742
+      referenceChecks++;
+      const want = skillName ? S.name : S.text;
+      const got = colourOf(l);
+      assert(nearest(got) === want, `${file}: sidebar "${l.text}" is drawn in rgb(${got}), want ${want}`);
+      // spacing to the previous line of the sidebar (a heading above is covered by the heading checks)
+      const prev = side[n - 1];
+      if (!prev || prev.page !== l.page || (names.includes(prev.text) && isHeading(prev))) continue;
+      const gap = l.baseline - prev.baseline;
+      if (skillName && RATING.test(prev.text)) at(gap, S.ratingToNextName, `sidebar: "${prev.text}" to the next skill "${l.text}"`);
+      else if (rating && prev.font === "Lexend-Regular") at(gap, S.nameToRating, `sidebar: skill "${prev.text}" to its rating`);
+      else if (!skillName && !rating) {
+        // an item's wrapped line stays at the line height; the next item is S.itemGap further
+        referenceChecks++;
+        assert(near(gap, S.itemGap, POS) || near(gap, S.wrap, POS), `${file}: sidebar "${prev.text}" to "${l.text}" is ${fixed(gap)}pt, want ${fixed(S.itemGap)} (next item) or ${fixed(S.wrap)} (wrapped line)`);
+      }
+    }
+  }
+
   // nothing else carries the text-colour underline: one per project heading on internal, none on external
   const headings = lines.filter((x) => /^Project \d+\b/.test(x.text) && x.col === "main").length;
   const underlines = pages.reduce((n, p) => n + p.lines.filter((x) => x.color.toLowerCase() === REF.underline.color).length, 0);
@@ -704,7 +770,7 @@ function checkGeometry(file, id, pdf, data) {
       }
     }
   }
-  // 4. internal sidebar: 1.15 lines inside an item, 1.5 lines from item to item
+  // 4. internal sidebar: 1.15 lines inside an item; 27pt from a rating to the next skill, 23.3pt from item to item
   if (id === "internal") {
     const side = linesOf(pages[0].filter((w) => w.x0 >= SIDEBAR_X && w.y0 > 140));
     const HEADINGS = /^(Skills|Certifications|Tools|Managerial Experience|Domain|Languages)$/;
@@ -729,7 +795,8 @@ function checkGeometry(file, id, pdf, data) {
       for (let j = 1; j < item.length; j++) assert(near(item[j].y0 - item[j - 1].y0, 1.15 * LINE, 1), `${file}: inside a sidebar item lines must be 1.15 apart ("${item[j].text}": ${(item[j].y0 - item[j - 1].y0).toFixed(1)}pt)`);
       const next = items[i + 1];
       const between = next && side.slice(side.indexOf(item.at(-1)) + 1, side.indexOf(next[0]));
-      if (next && between.length === 0) assert(near(next[0].y0 - item.at(-1).y0, 1.5 * LINE, 1.2), `${file}: sidebar items must be 1.5 lines apart ("${next[0].text}": ${(next[0].y0 - item.at(-1).y0).toFixed(1)}pt)`);
+      const want = /^\(\d(?:\.\d)?\/5\)$/.test(item.at(-1).text) ? REF.sidebar.ratingToNextName : REF.sidebar.itemGap; // after a skill's rating / between other items
+      if (next && between.length === 0) assert(near(next[0].y0 - item.at(-1).y0, want, 1.2), `${file}: sidebar items must be ${want}pt apart ("${next[0].text}": ${(next[0].y0 - item.at(-1).y0).toFixed(1)}pt)`);
     }
   }
 }
@@ -786,7 +853,7 @@ if (process.argv.includes("--pdf")) {
     checkGeometry(file, id, `${dir}/${file}.pdf`, data);
     const measured = await measurePdf(`${dir}/${file}.pdf`);
     checkFooter(file, `${dir}/${file}.pdf`, measured);
-    checkReference(file, id, measured, data);
+    checkReference(file, id, measured, data, `${dir}/${file}.pdf`);
     // no extra near-empty last page: the last page carries more than its page number (and the footer's logo)
     const pages = execFileSync("pdftotext", [`${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\f").filter((p, n, all) => n < all.length - 1 || p.trim());
     assert(!/^\s*\d*\s*$/.test(pages.at(-1)), `${file}: the last page (${pages.length}) is empty apart from the footer`);

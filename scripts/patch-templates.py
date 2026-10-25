@@ -14,7 +14,8 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    - one bullet style for every responsibility / highlight (one numbering definition: Lexend "•" at text size, 720/360
      indent) with the same spacing between bullets;
    - a blank line between the Role line and the project description and between the description and the bullets;
-   - sidebar items (internal): 1.15 line spacing inside an item, 1.5 lines from one item to the next;
+   - sidebar items (internal): 1.15 line spacing inside an item, 23.3pt from one item to the next, 27pt from a skill's
+     rating to the next skill (SIDEBAR, as in the reference);
    - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
 3. Footer (both templates): logo and page number placed as in the reference (footer()).
 4. The reference format (eval/reference/format.docx and format.pdf, git-ignored; LAYOUT): margins, the internal table's
@@ -94,7 +95,7 @@ PRE_SPACERS = {"internal": [(34, PROJECT_SPACER), (35, PROJECT_SPACER)], "extern
 
 # ---------------------------------------------------------------------------------------------------- 2. formatting
 # 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside an item (w:line 276), and
-# 1.5 lines from item to item: 0.35 lines = 4.8pt = 96 twips after each item.
+# 1.5 lines from bullet to bullet: 0.35 lines = 4.8pt = 96 twips after each bullet (the sidebar has its own: SIDEBAR).
 ITEM_GAP = 96
 TIGHT = {"before": "0", "after": "0", "line": "276", "lineRule": "auto"}  # inside an item
 ITEM = {"before": "0", "after": str(ITEM_GAP), "line": "276", "lineRule": "auto"}  # last paragraph of an item
@@ -117,14 +118,8 @@ BULLET_PPR = {
 FORMAT = {
     "internal": {
         36: BULLET_PPR,  # project responsibilities
-        42: {"spacing": TIGHT},  # sidebar: skill name...
-        43: {"spacing": ITEM},  # ...and its rating are one item
         44: {"drop": True},  # the blank paragraph after every skill (the item gap replaces it)
-        48: {"spacing": ITEM},  # certification
-        52: {"spacing": ITEM},  # tools (one comma-separated item)
-        57: {"spacing": ITEM},  # managerial experience
-        62: {"spacing": ITEM},  # domain
-        67: {"spacing": ITEM},  # language
+        # sidebar item spacing (skill name + rating, certification, tools, managerial experience, domain, language): see SIDEBAR
     },
     "external": {
         41: BULLET_PPR,  # project responsibilities
@@ -351,8 +346,22 @@ LABEL_GAP = PROJECT["to_label"] - below(FIELD_LINE) - EXACT_BASELINE * FIELD_LIN
 DESCRIPTION_GAP = PROJECT["to_description"] - below(FIELD_LINE) - EXACT_BASELINE * BODY_LINE
 # a project ends in bullets (1.15 lines, 4.8pt after each: ITEM)
 BULLET_BELOW = auto_below(11, 1.15) + ITEM_GAP / 20
+# Internal sidebar (format.pdf, baseline to baseline): the next item 23.3pt below the last line of an item (a wrapped line
+# inside an item stays 1.15 lines); in Skills a rating line is 27.0pt above the next skill name, a name 15pt above its
+# rating. The item's spacing AFTER makes the gap (1.15 lines have auto_below under the baseline, the next item's first
+# line an ascent above its baseline). Not a spacing BEFORE on the next paragraph: LibreOffice uses the larger of the two,
+# not their sum. A rating's longer spacing after (the last skill's too) is taken off the spacer after the Skills block,
+# so the next section heading is as far from the last skill as from the last item of any other section. Item text and
+# ratings are #231F20 (TEXT), skill names #373742.
+SIDEBAR = {"item_gap": 23.3, "rating_to_name": 27.0}
+SIDEBAR_ITEM_AFTER = SIDEBAR["item_gap"] - auto_below(11, 1.15) - LEXEND_ASCENT * 11
+SIDEBAR_RATING_AFTER = SIDEBAR["rating_to_name"] - auto_below(11, 1.15) - LEXEND_ASCENT * 11
+SKILLS_SPACER = SPACER_LINE - (tw(SIDEBAR_RATING_AFTER) - tw(SIDEBAR_ITEM_AFTER)) / 20
+TIGHT_ITEM = {"before": "0", "after": "0", "line": "276", "lineRule": "auto"}  # a skill name (its rating follows at once)
+RATING_ITEM = {"before": "0", "after": str(tw(SIDEBAR_RATING_AFTER)), "line": "276", "lineRule": "auto"}  # a skill's rating
+SIDEBAR_ITEM = {"before": "0", "after": str(tw(SIDEBAR_ITEM_AFTER)), "line": "276", "lineRule": "auto"}  # last paragraph of an item
 NEXT_PROJECT_GAP = PROJECT["to_next"] - BULLET_BELOW - EXACT_BASELINE * BODY_LINE
-SIDEBAR_ITEM_BELOW = BULLET_BELOW  # sidebar items use the same 1.15 lines + ITEM_GAP
+SIDEBAR_ITEM_BELOW = auto_below(11, 1.15) + SIDEBAR_ITEM_AFTER  # from the last baseline of a sidebar item to its bottom
 
 
 def blank(height: float) -> dict:
@@ -387,16 +396,16 @@ def internal_layout() -> dict:
         34: BODY,  # description (its blank line before it: DESCRIPTION_SPACER)
         38: blank(NEXT_PROJECT_GAP),  # (hasNext) between projects
         40: heading(first_heading_before, "auto"),  # Skills
-        42: {"run": run("Lexend", 11, DARK)},  # skill name
-        43: {"run": run("Lexend Light", 11, DARK)},  # rating
+        42: {"spacing": TIGHT_ITEM, "run": run("Lexend", 11, DARK)},  # skill name
+        43: {"spacing": RATING_ITEM, "run": run("Lexend Light", 11, TEXT)},  # rating (with the name, one item)
         46: heading(side_section, "auto"), 50: blank(SPACER_LINE),  # Certifications
         51: heading(side_section, "auto"), 53: blank(SPACER_LINE),  # Tools
         55: heading(side_section, "auto"),  # Managerial Experience (its spacer: SPACERS)
         60: heading(side_section, "auto"), 64: blank(SPACER_LINE),  # Domain
         65: heading(side_section, "auto"),  # Languages
     })
-    for i in (48, 52, 57, 62, 67):  # sidebar items
-        layout[i] = {"run": run("Lexend Light", 11, DARK)}
+    for i in (48, 52, 57, 62, 67):  # sidebar items: certification, tools, managerial experience, domain, language
+        layout[i] = {"spacing": SIDEBAR_ITEM, "run": run("Lexend Light", 11, TEXT)}
     return {"paragraphs": layout, "name_top": h["name_top"]}
 
 
@@ -433,7 +442,7 @@ LAYOUT = {"internal": internal_layout(), "external": external_layout()}
 # The internal description's blank line before it (PRE_SPACERS) sized like the other project gaps, and the two sidebar
 # spacers (SPACERS) like the other sidebar spacers.
 PRE_SPACERS["internal"][0] = (34, blank_xml(DESCRIPTION_GAP))
-SPACERS["internal"] = [(at, blank_xml(SPACER_LINE)) for at, _ in SPACERS["internal"]]
+SPACERS["internal"] = [(at, blank_xml(SKILLS_SPACER if at == 45 else SPACER_LINE)) for at, _ in SPACERS["internal"]]
 # External: the Experience heading follows either the last project (its bullets) or another section's spacer. After the
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.

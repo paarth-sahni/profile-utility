@@ -112,7 +112,7 @@ the reference format (the internal profile format in `eval/reference/`, git-igno
 the logo at 130.5 x 42.0pt, header lines, every section heading in Lexend Light 10pt with the same space after it, body
 text in Lexend Light 11pt on 17.25pt lines, project lines, the footer logo and the page number mirroring it), one bullet
 style for all responsibilities, a blank line before the project description and before its bullets, sidebar spacing
-(1.15 inside an item, 1.5 between items) and no stretched last line in justified paragraphs. The external template
+(1.15 inside an item; 23.3pt between items, 27pt from a skill's rating to the next skill; ratings and item text in #231F20) and no stretched last line in justified paragraphs. The external template
 keeps its one-column layout with the same rules. Change the script and run it again.
 
 `npm run test:render` checks the generated templates; `npm run test:render -- --pdf` also converts full / empty /
@@ -371,8 +371,8 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 5. **Formatting** (open the PDF at 100-200 %): the internal PDF looks like the reference format
    (`eval/reference/format.pdf`) side by side; the logo sits under "A PROUD MEMBER OF", top right; the footer logo and
    the page number are the same distance from the left and right edges; all bullets look the same, with even gaps; a blank line before the project
-   description and before its bullets; in the internal sidebar a wrapped item is tight (1.15) and items are further apart
-   (1.5); the last line of the overview is not stretched. Text is in Lexend (Light for body text).
+   description and before its bullets; in the internal sidebar a wrapped item is tight (1.15), items are 23.3pt apart and a
+   skill is 27pt below the previous one's rating, with ratings and item text slightly darker than skill names; the last line of the overview is not stretched. Text is in Lexend (Light for body text).
 6. **No save on Edit details**: no *Save* button, *Version label*, role-specific box or saved/unsaved line; nothing is in
    `profiles` until you Submit. **Submit (internal)**: tick, *Submit* → stays on Preview and shows "Submitted · saved to My Profiles · v1" with a
    *View in My Profiles* link (no new step, no form link); Download PDF still works. *My Profiles* lists it. Submit
