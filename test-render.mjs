@@ -41,6 +41,10 @@ const REF = {
   specialization: { font: "Lexend-Light", size: 11, top: 126.6 },
   heading: { font: "Lexend-Light", size: 10, firstTop: 182.1, toText: 24.2, sectionGap: 46.3 },
   body: { font: "Lexend-Light", size: 11, pitch: 17.25 },
+  // internal only: the grey line under the header block, and the underline of "Project N - <dates>" (stroke widths are
+  // drawn widths: the reference's underline is 1.0pt, LibreOffice draws the font's own thickness, 0.7pt for Lexend)
+  rule: { color: "#888888", width: 1.0, x0: 54.0, x1: 541.0, y: 146.5 },
+  underline: { color: "#373742", width: [0.5, 1.1], below: [1.0, 1.6] },
   project: { heading: "Lexend-Regular", name: "Lexend-Light", label: "Lexend-Regular", value: "Lexend-Light", size: 11, toName: 16.5, toFirstLabel: 24.0, toValue: 15.0, toLabel: 25.5, toDescription: 25.5, toNext: 54.7 },
 };
 const HEADINGS = {
@@ -548,6 +552,19 @@ function checkReference(file, id, pages, data) {
   }
   at(lines.find((l) => l.text === data.name.trim()).top - label.top, REF.name.top - REF.label.top, "name top below the label's top");
 
+  // the thin grey line under the header block: colour, thickness, width and height as in the reference, with any optional
+  // header line empty too (internal only; the external layout has no such line)
+  const rules = pages[0].lines.filter((x) => x.color.toLowerCase() === REF.rule.color && x.y < 200);
+  if (id === "internal") {
+    assert(rules.length > 0, `${file}: no grey line under the header block`);
+    for (const r of rules) {
+      at(r.x0, REF.rule.x0, "header line left end");
+      at(r.x1, REF.rule.x1, "header line right end");
+      at(r.y, REF.rule.y, "header line vertical centre");
+      assert(near(r.width, REF.rule.width, 0.05), `${file}: header line is ${r.width.toFixed(2)}pt thick, want ${REF.rule.width}`);
+    }
+  } else assert(rules.length === 0, `${file}: the external template must have no header line`);
+
   // section headings: font and size, the first line after them, the gap before them
   const names = HEADINGS[id];
   const isHeading = (l) => names.includes(l.text) && l.font === REF.heading.font && near(l.size, REF.heading.size, 0.01);
@@ -585,6 +602,17 @@ function checkReference(file, id, pages, data) {
   for (const [n, l] of main.entries()) {
     if (!/^Project \d+\b/.test(l.text) || l.font !== P.heading) continue;
     is(l, P.heading, P.size, "project heading");
+    // internal: the whole heading is underlined in the text colour (one line from its first to its last character)
+    const under = pages[l.page].lines.filter((x) => x.color.toLowerCase() === REF.underline.color && x.y > l.baseline + REF.underline.below[0] && x.y < l.baseline + REF.underline.below[1] + 0.5 && x.x0 < l.runs.at(-1).x1 && x.x1 > l.x);
+    if (id === "internal") {
+      referenceChecks++;
+      assert(under.length > 0, `${file}: "${l.text}" is not underlined`);
+      const u = under[0];
+      at(u.x0, l.x, `underline of "${l.text}": left end vs the text`);
+      at(u.x1, l.runs.at(-1).x1, `underline of "${l.text}": right end vs the text`);
+      assert(u.width >= REF.underline.width[0] && u.width <= REF.underline.width[1], `${file}: underline of "${l.text}" is ${u.width.toFixed(2)}pt thick`);
+      assert(u.y - l.baseline >= REF.underline.below[0] && u.y - l.baseline <= REF.underline.below[1], `${file}: underline of "${l.text}" is ${(u.y - l.baseline).toFixed(2)}pt below the baseline, want ${REF.underline.below.join("–")}`);
+    } else assert(under.length === 0, `${file}: external "${l.text}" must not be underlined`);
     const k = Number(l.text.match(/^Project (\d+)/)[1]) - 1;
     const project = (data.projects ?? []).filter((p) => Object.values(p).some((v) => (Array.isArray(v) ? v.some(real) : real(v))))[k];
     const prev = main[n - 1];
@@ -618,6 +646,11 @@ function checkReference(file, id, pages, data) {
       at(description.baseline - valueEnd.baseline, P.toDescription, `project ${k + 1}: last field to description`);
     }
   }
+
+  // nothing else carries the text-colour underline: one per project heading on internal, none on external
+  const headings = lines.filter((x) => /^Project \d+\b/.test(x.text) && x.col === "main").length;
+  const underlines = pages.reduce((n, p) => n + p.lines.filter((x) => x.color.toLowerCase() === REF.underline.color).length, 0);
+  assert(underlines === (id === "internal" ? headings : 0), `${file}: ${underlines} underlines for ${headings} project headings`);
 
   // numbers: in Lexend, at the size of the text around them
   for (const l of lines) {

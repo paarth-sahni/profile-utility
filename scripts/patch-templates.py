@@ -22,6 +22,7 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    heading (Lexend Light 10pt #EA1B3D, the same space after it), body text (Lexend Light 11pt, 17.25pt lines) and the
    project lines, each font, size and position as in the reference. The internal template matches it; the external one
    keeps its own layout (one column, logo flush right) with the same rules for the same elements.
+   Internal only: the grey line under the header block (RULE) and the underlined project heading line.
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -273,8 +274,8 @@ def auto_below(size: float, lines: float) -> float:
     return lines * AUTO_LINE_EM * size - LEXEND_ASCENT * size
 
 
-def run(font: str, size: float, color: str) -> dict:
-    return {"font": font, "size": size, "color": color}
+def run(font: str, size: float, color: str, underline: bool = False) -> dict:
+    return {"font": font, "size": size, "color": color, "underline": underline}
 
 
 def header_layout(template: str) -> dict:
@@ -295,7 +296,7 @@ def header_layout(template: str) -> dict:
         3: {"spacing": exact(lines[2]), "run": run("Lexend Light", 11, DARK)},
         4: {"spacing": exact(lines[3]), "run": run("Lexend Light", 11, DARK)},
     }
-    return {"paragraphs": layout, "header_bottom": top, "label_bottom": label_bottom, "name_top": name_top}
+    return {"paragraphs": layout, "header_bottom": top, "label_bottom": label_bottom, "name_top": name_top, "lines": lines}
 
 
 def heading(before: float, content: str) -> dict:
@@ -311,9 +312,30 @@ def section_before(previous_below: float, spacers: int = 0) -> float:
     return SECTION_GAP - previous_below - spacers * SPACER_LINE - EXACT_BASELINE * HEADING["line"]
 
 
+# The thin grey line under the header block (internal): format.pdf draws a #888888 stroke 1.0pt wide from x 54.0 to
+# 541.0 with its centre at y 146.5. It is the bottom border of an empty paragraph at the end of the header cell.
+RULE = {"color": "888888", "width": 1.0, "x0": 54.0, "x1": 541.0, "y": 146.5}
+CELL_TEXT_RIGHT = MARGIN_LEFT + (GRID["internal"][0] + GRID["internal"][1] + GRID["internal"][2]) / 20 - CELL_TOP  # the header cell's text edge
+
+
+def rule_paragraph(header_bottom: float) -> str:
+    """The empty paragraph whose bottom border is the rule: it fills the space from the last header line down to the
+    border's top edge, and is indented so the border runs from RULE x0 to x1."""
+    top_edge = RULE["y"] - RULE["width"] / 2
+    left = RULE["x0"] - (MARGIN_LEFT + GRID["internal"][0] / 20 + CELL_TOP)
+    right = CELL_TEXT_RIGHT - RULE["x1"]
+    border = f'<w:pBdr><w:bottom w:val="single" w:sz="{round(RULE["width"] * 8)}" w:space="0" w:color="{RULE["color"]}"/></w:pBdr>'
+    return (
+        f'<w:p><w:pPr>{border}<w:spacing {attrs(exact(top_edge - header_bottom))}/>'
+        f'<w:ind w:left="{tw(left)}" w:right="{tw(right)}" w:firstLine="0"/><w:jc w:val="left"/></w:pPr></w:p>'
+    )
+
+
 # What each kind of paragraph looks like (the run formatting of every run in it).
 BODY = {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK), "ind": {"left": "0", "right": "0", "firstLine": "0"}, "jc": "both", "no_break": True}
 PROJECT_HEADING = {"spacing": exact(BODY_LINE), "run": run("Lexend", 11, DARK)}
+# Internal only: the whole "Project N - <dates>" line is underlined (format.docx: <w:u w:val="single"/>)
+PROJECT_HEADING_UNDERLINED = {**PROJECT_HEADING, "run": run("Lexend", 11, DARK, underline=True)}
 PROJECT_NAME_LINE = tw((PROJECT["to_name"] - below(BODY_LINE)) / EXACT_BASELINE) / 20
 PROJECT_NAME = {"spacing": exact(PROJECT_NAME_LINE), "run": run("Lexend Light", 11, TEXT)}
 LABEL_LINE = {"spacing": exact(FIELD_LINE), "run": run("Lexend", 11, DARK)}
@@ -350,7 +372,7 @@ def internal_layout() -> dict:
         9: {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK)},  # year
         10: {**BODY, "spacing": exact(BODY_LINE, before=YEAR_TO_QUALIFICATION - BODY_LINE), "jc": "left"},  # qualification
         13: heading(main_section, "exact"),  # Projects
-        16: PROJECT_HEADING,
+        16: PROJECT_HEADING_UNDERLINED,
         17: PROJECT_NAME,
         18: blank(FIRST_LABEL_GAP),  # (hasTech) before "Tools & Technologies"
         19: LABEL_LINE, 20: VALUE_LINE,
@@ -403,6 +425,7 @@ def external_layout() -> dict:
 
 
 LAYOUT = {"internal": internal_layout(), "external": external_layout()}
+_HEADER = header_layout("internal")
 # The internal description's blank line before it (PRE_SPACERS) sized like the other project gaps, and the two sidebar
 # spacers (SPACERS) like the other sidebar spacers.
 PRE_SPACERS["internal"][0] = (34, blank_xml(DESCRIPTION_GAP))
@@ -411,7 +434,15 @@ SPACERS["internal"] = [(at, blank_xml(SPACER_LINE)) for at, _ in SPACERS["intern
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
 END_OF_PROJECTS = blank_xml(below(BODY_LINE) + SPACER_LINE - BULLET_BELOW)
-AFTER_CLOSE = {"internal": [], "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))]}
+# Internal: the rule after the specialisation line. An empty experience / specialisation line leaves a blank line of its
+# own height ({^hasX}), so the rule stays where the reference has it whatever the header holds.
+AFTER_CLOSE = {
+    "internal": [
+        (3, marker("{^hasExperienceSummary}") + blank_xml(_HEADER["lines"][2]) + marker("{/hasExperienceSummary}")),
+        (4, marker("{^hasSpecialization}") + blank_xml(_HEADER["lines"][3]) + marker("{/hasSpecialization}") + rule_paragraph(_HEADER["header_bottom"])),
+    ],
+    "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))],
+}
 
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
@@ -458,23 +489,27 @@ RPR_ORDER = [
 RPR_CHILD = re.compile(r"<w:(\w+)\b[^>]*?(?:/>|>.*?</w:\1>)", re.S)
 
 
-def rpr(inner: str, font: str, size: float, color: str) -> str:
+def rpr(inner: str, font: str, size: float, color: str, underline: bool = False) -> str:
     """Run properties with this font (all four scripts, not bold), size and colour, keeping the rest, in schema order."""
     children = {m.group(1): m.group(0) for m in RPR_CHILD.finditer(inner)}
     children["rFonts"] = f'<w:rFonts w:ascii="{font}" w:cs="{font}" w:eastAsia="{font}" w:hAnsi="{font}"/>'
     children["b"], children["bCs"] = '<w:b w:val="0"/>', '<w:bCs w:val="0"/>'
     children["color"] = f'<w:color w:val="{color}"/>'
     children["sz"], children["szCs"] = f'<w:sz w:val="{round(size * 2)}"/>', f'<w:szCs w:val="{round(size * 2)}"/>'
+    if underline:
+        children["u"] = '<w:u w:val="single"/>'  # as in the reference (a single line in the text colour)
+    else:
+        children.pop("u", None)
     return "<w:rPr>" + "".join(children[k] for k in sorted(children, key=lambda k: RPR_ORDER.index(k) if k in RPR_ORDER else 99)) + "</w:rPr>"
 
 
-def set_runs(para: str, font: str, size: float, color: str) -> str:
+def set_runs(para: str, font: str, size: float, color: str, underline: bool = False) -> str:
     """Every run of the paragraph, and its paragraph mark, in this font, size and colour (digits included: a run's
     font covers every character, so no number can fall back to another font)."""
     def fix(m: re.Match) -> str:
         r = m.group(0)
         props = re.search(r"<w:rPr>(.*?)</w:rPr>|<w:rPr/>", r, re.S)
-        new = rpr(props.group(1) or "" if props else "", font, size, color)
+        new = rpr(props.group(1) or "" if props else "", font, size, color, underline)
         if props:
             return r[: props.start()] + new + r[props.end() :]
         head = re.match(r"<w:r\b[^>]*>", r).group(0)
@@ -484,7 +519,7 @@ def set_runs(para: str, font: str, size: float, color: str) -> str:
     ppr = re.search(r"<w:pPr>.*?</w:pPr>", para, re.S)
     if ppr:
         mark = re.search(r"<w:rPr>(.*?)</w:rPr>|<w:rPr/>", ppr.group(0), re.S)
-        new_mark = rpr(mark.group(1) or "" if mark else "", font, size, color)
+        new_mark = rpr(mark.group(1) or "" if mark else "", font, size, color, underline)
         new_ppr = ppr.group(0)[: mark.start()] + new_mark + ppr.group(0)[mark.end() :] if mark else ppr.group(0).replace("</w:pPr>", new_mark + "</w:pPr>")
         para = para[: ppr.start()] + new_ppr + para[ppr.end() :]
     return para
