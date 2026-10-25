@@ -7,7 +7,7 @@
  * Two steps because popups need a user click: loadGoogleIdentity() on page load, then requestDriveToken() called
  * synchronously inside the click handler.
  */
-import { DRIVE_SCOPE, GoogleDocsError } from "./googleDocs";
+import { DRIVE_SCOPE, GoogleDocsError, tokenHints } from "./googleDocs";
 
 // The slice of Google's GIS token client this app uses (https://developers.google.com/identity/oauth2/web).
 interface TokenResponse {
@@ -21,6 +21,9 @@ interface GoogleOauth2 {
   initTokenClient: (config: {
     client_id: string;
     scope: string;
+    /** Which account should sign in (the app user's email) and its Workspace domain. */
+    hint?: string;
+    hd?: string;
     callback: (response: TokenResponse) => void;
     error_callback?: (error: { type?: string }) => void;
   }) => TokenClient;
@@ -73,10 +76,11 @@ export function loadGoogleIdentity(): Promise<void> {
 export const isGoogleIdentityReady = (): boolean => oauth2() !== undefined;
 
 /**
- * Opens Google's consent popup and resolves with a short-lived access token for drive.file.
- * MUST be called synchronously from a click handler (before any `await`), or browsers block the popup.
+ * Opens Google's consent popup and resolves with a short-lived access token for drive.file. `accountEmail` (the
+ * app's signed-in user) tells Google which account to use, so the popup does not default to another Google account
+ * of the browser. MUST be called synchronously from a click handler (before any `await`), or browsers block the popup.
  */
-export function requestDriveToken(clientId: string): Promise<string> {
+export function requestDriveToken(clientId: string, accountEmail?: string | null): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const api = oauth2();
     if (!api) {
@@ -88,6 +92,7 @@ export function requestDriveToken(clientId: string): Promise<string> {
         .initTokenClient({
           client_id: clientId,
           scope: DRIVE_SCOPE,
+          ...tokenHints(accountEmail),
           callback: (response) => {
             if (response.access_token) resolve(response.access_token);
             else reject(new GoogleDocsError("access_denied"));

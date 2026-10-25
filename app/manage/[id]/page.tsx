@@ -58,7 +58,7 @@ export default async function ManageProfilePage({ params }: { params: Promise<{ 
             {/* Read-only: exports are made from the version shown; nothing is changed or saved. */}
             <div className="mb-4 flex flex-wrap items-start gap-2">
               <DownloadPdfButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
-              {canUseGoogleDocs(user.role) && <GoogleDocsForVersion template={shown.template} data={shown.data} />}
+              {canUseGoogleDocs(user.role) && <GoogleDocsForVersion template={shown.template} data={shown.data} accountEmail={user.email} />}
             </div>
             <SavedProfileDocument template={shown.template} data={shown.data} />
           </>

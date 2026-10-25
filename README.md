@@ -304,9 +304,17 @@ In Google Cloud (the same project as the sign-in is fine):
    popup flow, and the client secret is not used.
 5. Copy the client ID into `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
-Note for the sign-in code: `components/LoginCard.tsx` still requests `drive.file` when signing in (an earlier plan that
-read `session.provider_token` on the server). Open in Google Docs no longer uses it, so that scope can be dropped from
-the sign-in to keep it to the minimum.
+The sign-in (`components/LoginCard.tsx`) asks for no Drive access, only Supabase's default email and profile. `drive.file`
+is requested by the Open in Google Docs popup itself, when someone clicks the button (step 3 above still applies).
+
+**Whose Drive, and "You need access".** The document is created in the Drive of the Google account that grants the token in
+the popup and is private to it: nothing is shared automatically (profiles hold personal data; sharing would be a policy
+decision). A plain `docs.google.com` link opens as the browser's *default* Google account, which shows "You need access"
+when that is another account than the one that owns the file (typically a personal account signed in first). So the
+button passes the signed-in InfoBeans email to Google's popup as a hint (`hint`, `hd`), opens the document through
+Google's account chooser (`accounts.google.com/AccountChooser?Email=...`) for the account Drive reports as the owner, and
+the message under the button names that account, warns if it differs from the app's signed-in user, and says to open the
+link as that account. If that account is not signed in to the browser yet, Google asks for it.
 
 ## Roles and saving
 

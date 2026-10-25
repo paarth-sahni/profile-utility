@@ -58,9 +58,9 @@ await send("Page.addScriptToEvaluateOnNewDocument", {
       HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__downloads.push(this.download); return; } return click.call(this); };
       const dispatch = HTMLAnchorElement.prototype.dispatchEvent;
       HTMLAnchorElement.prototype.dispatchEvent = function (e) { if (this.download && e.type === 'click') { window.__downloads.push(this.download); return true; } return dispatch.call(this, e); }; }
-    window.__gis = { calls: 0, scope: null, mode: 'ok' };
+    window.__gis = { calls: 0, scope: null, hint: null, hd: null, mode: 'ok' };
     window.google = { accounts: { oauth2: { initTokenClient(cfg) { return { requestAccessToken() {
-      window.__gis.calls++; window.__gis.scope = cfg.scope;
+      window.__gis.calls++; window.__gis.scope = cfg.scope; window.__gis.hint = cfg.hint ?? null; window.__gis.hd = cfg.hd ?? null;
       const m = window.__gis.mode;
       setTimeout(() => {
         if (m === 'ok') cfg.callback({ access_token: '${FAKE_TOKEN}' });
@@ -125,7 +125,11 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   check("one upload went to www.googleapis.com", driveRequests.length === 1 && req.url.startsWith(DRIVE_URL));
   check("the token was sent to Google as a Bearer header", req.headers.Authorization === `Bearer ${FAKE_TOKEN}`);
   check("the upload asks Drive to convert the DOCX to a Google Doc", req.body.includes("application/vnd.google-apps.document") && req.body.includes("E2E Docs Person"));
-  check("a link to the new document is shown", (await ev("document.querySelector('[data-google-docs] a')?.href")) === "https://docs.google.com/document/d/e2e-doc/edit");
+  const hinted = await ev("window.__gis.hint");
+  check("Google's popup was told which account to use (the signed-in email and its domain)", /^[^@\s]+@[^@\s]+$/.test(hinted ?? "") && (await ev("window.__gis.hd")) === hinted.split("@")[1].toLowerCase(), hinted);
+  const docLink = new URL(await ev("document.querySelector('[data-google-docs] a')?.href"));
+  check("the link to the new document opens it through Google's account chooser for that account", docLink.origin + docLink.pathname === "https://accounts.google.com/AccountChooser" && docLink.searchParams.get("Email") === hinted && docLink.searchParams.get("continue") === "https://docs.google.com/document/d/e2e-doc/edit", docLink.href);
+  check("the message names the account and says what to do on 'You need access'", (await statusText()).includes("Only") && (await statusText()).includes("open the link as"));
   check("the token never went to our server (URLs, headers, bodies)", toApp.every((r) => !r.url.includes(FAKE_TOKEN) && !r.headers.includes(FAKE_TOKEN) && !r.body.includes(FAKE_TOKEN)));
   const stored = await ev(`JSON.stringify([document.cookie, Object.entries(localStorage), Object.entries(sessionStorage)])`);
   check("the token is not stored (cookies, localStorage, sessionStorage)", !stored.includes(FAKE_TOKEN));

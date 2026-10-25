@@ -12,12 +12,13 @@ import { checkComplianceRemote } from "@/lib/complianceClient";
 import { checkReadyForDocx } from "@/lib/docxReady";
 import type { ResumeData, TemplateId } from "@/lib/schemas";
 
-export default function GoogleDocsForVersion({ template, data }: { template: TemplateId; data: ResumeData }) {
+export default function GoogleDocsForVersion({ template, data, accountEmail }: { template: TemplateId; data: ResumeData; accountEmail?: string | null }) {
   const name = (data as { name?: string }).name?.trim() || "Profile";
   return (
     <OpenInGoogleDocsButton
       template={template}
       title={`${name} — ${template} profile`}
+      accountEmail={accountEmail}
       prepare={() => checkReadyForDocx(template, data)}
       beforeUpload={async () => {
         const r = await checkComplianceRemote(template, data);

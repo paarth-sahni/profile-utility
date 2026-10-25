@@ -30,9 +30,8 @@ export default function LoginCard({ next, initialError }: { next: string; initia
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        // drive.file lets the app touch only files it creates itself (for "Open in Google Docs").
-        // Supabase adds email/profile automatically. Add the same scope under Data Access in Google Cloud.
-        scopes: "https://www.googleapis.com/auth/drive.file",
+        // Sign-in asks for no Google Drive access (only Supabase's default email / profile). "Open in Google Docs" asks for
+        // drive.file itself, in its own popup, when someone clicks it (lib/googleTokenClient.ts).
         redirectTo: `${window.location.origin}${BASE}/auth/callback?next=${encodeURIComponent(next)}`,
         // `hd` only pre-selects the InfoBeans Workspace in Google's picker; the server re-checks the domain.
         queryParams: { hd: "infobeans.com", prompt: "select_account" },

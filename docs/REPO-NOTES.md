@@ -58,6 +58,10 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
 
 ## 4. Recent changes (newest first)
 
+- **2026-10-26** Open in Google Docs: the doc is private to the Google account that grants the token, which could differ
+  from the browser's default account ("You need access"). The popup now gets the signed-in email as a hint, the link opens
+  through Google's account chooser for the file's owner, and the message names that account (no automatic sharing: a policy
+  decision). Sign-in no longer requests the `drive.file` scope. See README, "Whose Drive".
 - **2026-10-25** Reference format: both templates laid out from the internal profile format in `eval/reference/`
   (git-ignored; header, logo, headings, body text, project lines, footer, margins; `scripts/patch-templates.py`
   section 4) and measured on every render by `test:render --pdf` (`scripts/pdf-measure.mjs`). Extraction: durations
@@ -95,8 +99,7 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
   rest of the database, so guard it like a root password. The production env file must not go into a bundle or git.
 - **Sub-path hosting**: `NEXT_PUBLIC_BASE_PATH` is baked in at build time and read by hand in a few files that build
   URLs (`SiteNav`, `style-guide`, `lib/generate.ts`).
-- **Known loose ends**: `LoginCard` still requests the `drive.file` scope at sign-in although Open in Google Docs no
-  longer uses it; the database policies still let a manager read other members' non-primary rows (ProfileHub hides
+- **Known loose ends**: the database policies still let a manager read other members' non-primary rows (ProfileHub hides
   them in the data layer); `lib/templates.ts` and the starter SVGs in `public/` are unused; `public/templates/` still
   holds 12 old `.docx` files and a `.textClipping` besides `internal.docx` / `external.docx`, which ship with the
   build and are worth removing before go-live.
