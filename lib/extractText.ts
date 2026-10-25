@@ -105,7 +105,7 @@ export function stripRepeatedLines(pages: string[]): string[] {
 
 /** Page-number-like text: "3", "Page 3", "3 of 10", "3 / 10". */
 const PAGE_NUMBER_TEXT = /^(page\s*)?\d{1,3}(\s*(of|\/)\s*\d+)?$/i;
-const FOOTER_BAND = 0.09; // bottom 9% of the page: our own internal PDF puts its page number at 61pt of 792 (body text ends above ~80pt)
+const FOOTER_BAND = 0.09; // bottom 9% of the page: our own PDFs put the page number about 20pt above the bottom edge (body text ends above ~43pt)
 const HEADER_BAND = 0.03; // top 3% of the page
 
 /**

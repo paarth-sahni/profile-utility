@@ -14,6 +14,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
+import { measurePdf } from "./scripts/pdf-measure.mjs";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -311,11 +312,13 @@ function linesOf(words) {
   return lines.sort((a, b) => a.y0 - b.y0);
 }
 
-/** Bounding box (pt) of the dark pixels in a region of page 1, from a 216 dpi greyscale render. */
-function inkBox(pdf, region) {
+const inkRendered = new Set(); // pages already rendered in this run (the files are rewritten on every run)
+/** Bounding box (pt) of the dark pixels in a region of a page (1-based), from a 216 dpi greyscale render. */
+function inkBox(pdf, region, page = 1) {
   const { execFileSync } = globalThis.__child;
-  const base = pdf.replace(/\.pdf$/, "-p1");
-  execFileSync("pdftoppm", ["-r", "216", "-gray", "-singlefile", "-f", "1", "-l", "1", pdf, base]);
+  const base = pdf.replace(/\.pdf$/, `-p${page}`);
+  if (!inkRendered.has(base)) execFileSync("pdftoppm", ["-r", "216", "-gray", "-singlefile", "-f", String(page), "-l", String(page), pdf, base]);
+  inkRendered.add(base);
   const pgm = fs.readFileSync(`${base}.pgm`);
   const header = pgm.toString("latin1", 0, 50).match(/^P5\s+(\d+)\s+(\d+)\s+(\d+)\s/);
   const [w, h] = [Number(header[1]), Number(header[2])];
@@ -335,6 +338,36 @@ function inkBox(pdf, region) {
 
 const LINE = 13.75; // one line of 11pt Lexend
 const near = (value, want, tol) => Math.abs(value - want) <= tol;
+
+// ------------------------------------------- the reference format (eval/reference/format.pdf, measured; see the patcher)
+// PDF points from the page's top left. "top" of a text line = baseline - 0.75 x size (the convention of the targets).
+const REF = {
+  page: { w: 612, h: 792 },
+  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: 15.4 },
+  pageNumber: { size: 8.4 },
+};
+const POS = 1; // positions within 1pt
+const fixed = (v) => v.toFixed(1);
+
+/** Footer on every page: the logo's size and place, the page number's font, size, right edge (mirroring the logo) and height. */
+function checkFooter(file, pdf, pages) {
+  const { footLogo, page } = REF;
+  pages.forEach((p, n) => {
+    const logo = p.images.find((im) => im.y > page.h - 60);
+    assert(logo, `${file} p${n + 1}: no footer logo`);
+    assert(near(logo.w, footLogo.w, 0.3) && near(logo.h, footLogo.h, 0.3), `${file} p${n + 1}: footer logo ${fixed(logo.w)} x ${fixed(logo.h)}, want ${footLogo.w} x ${footLogo.h}`);
+    assert(near(logo.x, footLogo.x, POS), `${file} p${n + 1}: footer logo left edge ${fixed(logo.x)}, want ${footLogo.x}`);
+    assert(near(page.h - logo.y - logo.h, footLogo.bottom, POS), `${file} p${n + 1}: footer logo bottom ${fixed(page.h - logo.y - logo.h)} above the page edge, want ${footLogo.bottom}`);
+    const number = p.runs.filter((r) => r.baseline > page.h - 60 && /^\d+$/.test(r.text.trim()));
+    assert(number.length === 1 && number[0].text.trim() === String(n + 1), `${file} p${n + 1}: page number missing or wrong (${number.map((r) => r.text)})`);
+    const [r] = number;
+    assert(/^Lexend-/.test(r.font) && near(r.size, REF.pageNumber.size, 0.05), `${file} p${n + 1}: page number in ${r.font} ${r.size}pt, want Lexend ${REF.pageNumber.size}pt`);
+    // drawn glyphs: right edge mirrors the logo's left edge, digits centred on the logo's middle
+    const ink = inkBox(pdf, { x0: page.w - 120, y0: logo.y - 3, x1: page.w, y1: page.h }, n + 1);
+    assert(near(page.w - ink.x1, logo.x, POS), `${file} p${n + 1}: page number ends ${fixed(page.w - ink.x1)}pt from the right edge, the logo starts ${fixed(logo.x)}pt from the left`);
+    assert(near((ink.y0 + ink.y1) / 2, logo.y + logo.h / 2, POS), `${file} p${n + 1}: page number centre ${fixed((ink.y0 + ink.y1) / 2)}, logo centre ${fixed(logo.y + logo.h / 2)}`);
+  });
+}
 
 /** Logo, bullets, blank lines and sidebar spacing, measured on the PDF LibreOffice laid out. */
 function checkGeometry(file, id, pdf, data) {
@@ -457,6 +490,8 @@ if (process.argv.includes("--pdf")) {
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
     assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
     checkGeometry(file, id, `${dir}/${file}.pdf`, data);
+    const measured = await measurePdf(`${dir}/${file}.pdf`);
+    checkFooter(file, `${dir}/${file}.pdf`, measured);
     // no extra near-empty last page: the last page carries more than its page number (and the footer's logo)
     const pages = execFileSync("pdftotext", [`${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\f").filter((p, n, all) => n < all.length - 1 || p.trim());
     assert(!/^\s*\d*\s*$/.test(pages.at(-1)), `${file}: the last page (${pages.length}) is empty apart from the footer`);

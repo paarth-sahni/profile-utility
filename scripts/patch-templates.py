@@ -142,6 +142,74 @@ LABEL_DESCENT_PT = 0.7
 # spaces on a line ending with SHIFT+RETURN"; LibreOffice reads it too). The overview and qualification end in one.
 NO_EXPAND_SHIFT_RETURN = "<w:doNotExpandShiftReturn/>"
 
+# ------------------------------------------------------------------------------------- 3. the reference format: footer
+# eval/reference/format.docx / format.pdf (git-ignored). Positions are PDF points from the page's top left, measured on
+# format.pdf; where the reference uses Avenir (the page number) we use Lexend at the same size.
+PAGE_W, PAGE_H = 612.0, 792.0
+# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge, its bottom 15.4pt above the page's bottom.
+FOOT_LOGO = {"w": 24.7, "h": 15.0, "left": 44.7, "bottom": 15.4}
+# Page number: Lexend at the reference's rendered size (a 14pt superscript, drawn at 8.4pt), its right edge as far from
+# the page's right edge as the logo is from the left one, its digits centred on the logo's middle.
+PAGE_NUMBER_PT = 8.4
+# A .docx size is whole half-points, so 8.4pt cannot be written directly. Like the reference, the number is a
+# superscript: LibreOffice draws a superscript at 58% of its size, so 14.5pt comes out at 8.41pt.
+SUPERSCRIPT_SCALE = 0.58
+SUPERSCRIPT_RISE = 6.05  # and raises it by 6.05pt at 14.5pt (measured on the PDF)
+DIGIT_HEIGHT_EM = 0.7  # Lexend's figures are 0.7 em tall (measured: 5.9pt at 8.4pt)
+# LibreOffice puts the baseline of an exact-height line at 80% of the line's height, whatever the font size (measured on
+# Lexend 8-24pt in lines of 12-30pt); an "auto" line puts it at the font's ascent (Lexend: 1.0 em), extra height below.
+EXACT_BASELINE = 0.8
+PAGE_NUMBER_LINE_PT = 12.0
+
+
+def emu(pt: float) -> int:
+    return round(pt * EMU_PER_PT)
+
+
+def tw(pt: float) -> int:
+    """Points to twips (1/20 pt), the unit of Word's spacing, indents and frame positions."""
+    return round(pt * 20)
+
+
+def footer(xml: str) -> str:
+    """The footer: the logo and the page number at fixed places on the page (both anchored to the page, so neither the
+    footer distance nor the body text moves them), plus one 1pt empty line so the footer takes no room from the body."""
+    root = re.search(r"<w:ftr\b[^>]*>", xml).group(0)
+    lw, lh = FOOT_LOGO["w"], FOOT_LOGO["h"]
+    logo_top = PAGE_H - FOOT_LOGO["bottom"] - lh
+    drawing = (
+        '<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="1" layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        f'<wp:positionH relativeFrom="page"><wp:posOffset>{emu(FOOT_LOGO["left"])}</wp:posOffset></wp:positionH>'
+        f'<wp:positionV relativeFrom="page"><wp:posOffset>{emu(logo_top)}</wp:posOffset></wp:positionV>'
+        f'<wp:extent cx="{emu(lw)}" cy="{emu(lh)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        '<wp:docPr id="101" name="footer logo"/><wp:cNvGraphicFramePr/>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+        '<pic:nvPicPr><pic:cNvPr id="0" name="footer logo"/><pic:cNvPicPr preferRelativeResize="0"/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="rId1"/><a:srcRect l="0" t="0" r="0" b="0"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{emu(lw)}" cy="{emu(lh)}"/></a:xfrm><a:prstGeom prst="rect"/><a:ln/></pic:spPr>'
+        "</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing>"
+    )
+    # the page number: a frame on the page whose right edge mirrors the logo's left edge; one exact line, right-aligned
+    frame_w = 40.0
+    right = PAGE_W - FOOT_LOGO["left"]
+    baseline = logo_top + lh / 2 + DIGIT_HEIGHT_EM * PAGE_NUMBER_PT / 2
+    # the superscript is drawn SUPERSCRIPT_RISE above the line's baseline, so the line sits that much lower
+    frame_top = baseline + SUPERSCRIPT_RISE - EXACT_BASELINE * PAGE_NUMBER_LINE_PT
+    size = round(PAGE_NUMBER_PT / SUPERSCRIPT_SCALE * 2)  # half-points
+    rpr = f'<w:rPr><w:rFonts w:ascii="Lexend" w:cs="Lexend" w:eastAsia="Lexend" w:hAnsi="Lexend"/><w:b w:val="0"/><w:bCs w:val="0"/><w:color w:val="231F20"/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/><w:vertAlign w:val="superscript"/></w:rPr>'
+    number = (
+        "<w:p><w:pPr>"
+        f'<w:framePr w:w="{tw(frame_w)}" w:h="{tw(PAGE_NUMBER_LINE_PT)}" w:hRule="exact" w:wrap="notBeside" w:vAnchor="page" w:hAnchor="page" w:x="{tw(right - frame_w)}" w:y="{tw(frame_top)}"/>'
+        f'<w:spacing w:before="0" w:after="0" w:line="{tw(PAGE_NUMBER_LINE_PT)}" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="right"/>{rpr}</w:pPr>'
+        f'<w:r>{rpr}<w:fldChar w:fldCharType="begin"/></w:r><w:r>{rpr}<w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+        f'<w:r>{rpr}<w:fldChar w:fldCharType="separate"/></w:r><w:r>{rpr}<w:t>1</w:t></w:r><w:r>{rpr}<w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    )
+    tiny = '<w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>'
+    carrier = f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/>{tiny}</w:pPr><w:r>{tiny}{drawing}</w:r></w:p>'
+    return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n{root}{number}{carrier}</w:ftr>'
+
+
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 PPR_ORDER = [
     "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl", "numPr", "suppressLineNumbers",
@@ -289,6 +357,8 @@ def patch(name: str) -> bytes:
                     data = numbering(data.decode("utf8")).encode("utf8")
                 elif item.filename == "word/settings.xml":
                     data = settings(data.decode("utf8")).encode("utf8")
+                elif item.filename == "word/footer1.xml":
+                    data = footer(data.decode("utf8")).encode("utf8")
                 zout.writestr(item, data)
     return out.read_bytes()
 
