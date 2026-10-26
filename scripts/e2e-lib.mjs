@@ -111,6 +111,16 @@ export async function startHarness(title) {
     throw new Error(`timeout waiting for: ${label}`);
   };
 
+  // The app limits extractions, PDFs and saves per user (in memory, per 10 minutes: README). A full run stays under it, but
+  // runs one after another do not, and the failures then look like timeouts ("waiting for: preview ready"). Say so.
+  const rateLimited = [];
+  listeners.set("Network.responseReceived", [
+    ...(listeners.get("Network.responseReceived") ?? []),
+    (p) => {
+      if (p.response.status === 429 && p.response.url.startsWith(APP)) rateLimited.push(new URL(p.response.url).pathname);
+    },
+  ]);
+
   let pass = 0;
   let fail = 0;
   const h = {
@@ -179,13 +189,19 @@ export async function startHarness(title) {
     /** Fills the internal blank form with only the required fields (name, job title, years of experience, overview, education, one skill). */
     async fillRequired(name) {
       await h.setName(name);
-      await h.fill("Job title", "Engineer");
-      await h.fill("Years of Industry Experience", "4");
-      await h.fill("Overview", "Only the overview.");
-      await h.fill("Year", "2014");
-      await h.fill("Qualification", "B.E.");
-      await h.fill("Skill", "Java");
-      await h.fill("Rating out of 5 (e.g. 4)", "4");
+      // fill() answers false when no field has that label (the form's labels change); a missing field must stop the test
+      // here, naming the field, not show up later as a Preview that never opens ("Skill 1 -> Rating - Required")
+      for (const [label, value] of [
+        ["Job title", "Engineer"],
+        ["Years of Industry Experience", "4"],
+        ["Overview", "Only the overview."],
+        ["Year", "2014"],
+        ["Qualification", "B.E."],
+        ["Skill", "Java"],
+        ["Rating out of 5 (e.g. 4.5)", "4"],
+      ]) {
+        if (!(await h.fill(label, value))) throw new Error(`fillRequired: no field labelled "${label}" on the form`);
+      }
       await sleep(300);
     },
     /**
@@ -271,6 +287,10 @@ export async function startHarness(title) {
         rmSync(profileDir, { recursive: true, force: true });
       } catch {
         /* best effort */
+      }
+      if (rateLimited.length) {
+        const paths = [...new Set(rateLimited)].join(", ");
+        console.log(`\nNOTE  the app answered 429 (rate limit) ${rateLimited.length} time(s) on ${paths}. Timeouts such as "waiting for: preview" in this run are most likely that: wait 10 minutes (or restart the app) and run again.`);
       }
       console.log(`\n${title}: ${pass} passed, ${fail} failed`);
       process.exit(fail ? 1 : 0);

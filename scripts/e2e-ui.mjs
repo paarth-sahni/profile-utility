@@ -483,12 +483,10 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   // required fields only
   await fill("Name", "E2E Required Only");
   await fill("Job title", "Engineer");
-  await fill("Years of Industry Experience", "4");
-  await fill("Overview", "Only the overview.");
-  await fill("Year", "2014");
-  await fill("Qualification", "B.E.");
-  await fill("Skill", "Java");
-  await fill("Rating out of 5 (e.g. 4)", "4");
+  // a missing field must stop the test here, naming the field, not show up later as a Preview that never opens
+  for (const [label, value] of [["Years of Industry Experience", "4"], ["Overview", "Only the overview."], ["Year", "2014"], ["Qualification", "B.E."], ["Skill", "Java"], ["Rating out of 5 (e.g. 4.5)", "4"]]) {
+    if (!(await fill(label, value))) throw new Error(`no field labelled "${label}" on the form`);
+  }
   await sleep(300);
   await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview of a profile with only the required fields");
@@ -646,7 +644,8 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "external preview");
   const pbody = await bodyText();
   check("external Preview offers Back to edit and Download PDF, and no Submit", pbody.includes("← Back to edit") && pbody.includes("Download PDF") && !pbody.includes("DOCX") && !(await ev("[...document.querySelectorAll('[data-preview-step] button')].some(b=>b.textContent.trim()==='Submit')")));
-  check("no 'saved' wording on external Preview", !pbody.includes("My Profiles"));
+  // the Preview step itself (the header has a My Profiles link for everyone)
+  check("no 'saved' wording on external Preview", !(await ev("document.querySelector('[data-preview-step]').innerText")).includes("My Profiles"));
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   const externalSha = await ev("document.querySelector('[data-pdf-preview=ready]').dataset.pdfSha256");
   await click("Download PDF");
@@ -814,13 +813,16 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
 });
 
 await t.scenario("the header: ProfileHub only for managers and admins, no Style Guide for anyone", async () => {
-  const headerLinks = () => ev("[...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()).join('|')");
+  // the text links only: the first link in the nav is the logo (no text)
+  const headerLinks = () => ev("[...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()).filter(Boolean).join('|')");
   for (const [who, manage] of [["member", false], ["checker", false], ["manager", true], ["admin", true]]) {
     await signIn(who);
     await goto("/profiles");
     await waitFor("!!document.querySelector('header nav a')", "header");
     const links = await headerLinks();
-    check(`${who}: header is ${manage ? "ProfileHub | Generator | My Profiles | Instructions" : "Generator | Instructions | My Profiles"}`, links === (manage ? "ProfileHub|Generator|My Profiles|Instructions" : "Generator|Instructions|My Profiles"), links);
+    // administrators also get Registry, the client-name registry page (docs/COMPLIANCE.md)
+    const expected = manage ? "ProfileHub|Generator|My Profiles|Instructions" + (who === "admin" ? "|Registry" : "") : "Generator|Instructions|My Profiles";
+    check(`${who}: header is ${expected.replaceAll("|", " | ")}`, links === expected, links);
     check(`${who}: no Style Guide link in the header`, !links.includes("Style Guide"));
   }
 });
@@ -856,7 +858,8 @@ await t.scenario("checkers and managers create and submit their own profile like
     await ev("document.querySelector('button[aria-label^=\"Account menu\"]').click()");
     await waitFor("!!document.querySelector('[role=menuitem]')", "account menu");
     const menu = await ev("JSON.stringify([...document.querySelectorAll('[role=menuitem]')].map(a=>a.textContent.trim()))");
-    check(`${who} sees Generator and My Profiles`, JSON.parse(nav).includes("Generator") && JSON.parse(menu).includes("My Profiles"), nav + menu);
+    // both are links in the header; the account menu holds only Sign out
+    check(`${who} sees Generator and My Profiles`, JSON.parse(nav).includes("Generator") && JSON.parse(nav).includes("My Profiles") && JSON.parse(menu).includes("Sign out"), nav + menu);
     await ev("document.body.click()");
     await click("Get started");
     await waitFor("!!document.querySelector('label input')", `edit form (${who})`);
