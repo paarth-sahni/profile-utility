@@ -23,6 +23,7 @@
   --color-cream: #fff9ed; /* light cream — brand surface */
   --color-peach: #ffd0d8;
   --color-warm: #fff3d4;
+  --color-focus: #2563eb; /* focus ring: blue, so red stays reserved for errors */
   --color-brand-dark: #aa142d; /* dark red */
   --color-brand-deep: #7c2235; /* deep red */
 
@@ -53,4 +54,47 @@ body {
 }
 .animate-fade-up {
   animation: brand-fade-up 0.35s ease-out both;
+}
+
+/* indeterminate bar on the upload progress view */
+@keyframes upload-bar-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+.upload-bar {
+  animation: upload-bar-slide 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .upload-bar {
+    animation: none;
+    width: 100%;
+  }
+}
+
+/* left sidebar on phones */
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.drawer-in {
+  animation: drawer-slide-in 0.22s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in {
+    animation: none;
+  }
+}
+
+/* one focus indicator for everything that can be focused: blue, never the browser's black ring */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
