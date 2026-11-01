@@ -120,3 +120,17 @@ Tests use fictional names only. Never run any of the database tests against a ho
 - **Notifications** are in-app only (the admin page and the run history). No email or chat integration exists.
 - **Key rotation**: the service-account key is rotated once or twice a year by hand (Google Cloud → IAM → Service Accounts → Keys → add, update `.env`, restart, delete the old key).
 - `lib/database.types.ts` was not regenerated; the new code calls the registry functions untyped. Run `npm run db:types` against the local stack when convenient.
+
+## 11. Testing with your own Google login (development only)
+
+For testing before the service account can read the real sheet. The sheet is a copy in **your own** Google account, read as you (read-only), against the **local** database only. It is refused in a production build and with any non-local `NEXT_PUBLIC_SUPABASE_URL`; the service account stays the production path.
+
+1. Local stack: Docker running, `npm run db:start`, `npm run db:reset` (seeds `admin@example.test`, `member@example.test`, password `password123`, development mode only).
+2. Test sheet: tab `Sheet1`, header `S.No | Client Name | Legal Name | Friendly Name | Client Group`, a few rows plus fictional ones ("Example Client One"). Share it with nobody.
+3. An OAuth client in a Google Cloud project that has the **Sheets API enabled**: either the one already used for local sign-in (its values are in `supabase/.env`; as a *Web application* client it needs `http://127.0.0.1:53682` added once under Authorized redirect URIs) or a new **Desktop app** client. If a consent screen is needed, make it Internal (or add yourself as a test user).
+4. In `.env.local` (git-ignored; overrides `.env`; started from `.env.local.localdb`) fill `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_SHEETS_SPREADSHEET_ID` (the test sheet) and `SYNC_CRON_SECRET`; keep `SYNC_AUTH_MODE=user_oauth` and `COMPLIANCE_ENFORCE=on`.
+5. `npm run sync:login` (browser opens, approve read-only access; the token is written to `.env.local`, never printed).
+6. `npm run sync:inspect:local` (structure only; no names, no database write).
+7. `npm run dev`, sign in as `admin@example.test`, open `/admin/compliance`, press **Synchronise now**.
+8. Try the checker: a registered name in a field (red mark, Preview blocked), in a bullet and a tag, on the external form, then as `member@example.test` (no registry page). Delete a sheet row and sync again: the name shows as pending review and stays enforced.
+9. Clean up: delete the test sheet, revoke the sign-in at https://myaccount.google.com/permissions, remove the `GOOGLE_OAUTH_*` / `SYNC_AUTH_MODE` lines, and empty the local registry with `truncate compliance_name_sources, compliance_names, compliance_sync_runs` (inside the local database container).

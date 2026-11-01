@@ -5,7 +5,8 @@
  */
 import { createSign } from "node:crypto";
 import { SyncError } from "./errors";
-import { tokenHint } from "./hints";
+import type { SheetsConfig } from "./config";
+import { tokenHint, userTokenHint } from "./hints";
 
 export const TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
@@ -46,6 +47,46 @@ export function codeForStatus(status: number): "SHEETS_AUTH" | "SHEETS_NOT_FOUND
   return "SHEETS_PARSE";
 }
 
+/** What the token endpoint answered, as an access token or one of our errors (Google's text is never repeated). */
+async function tokenFrom(res: Response): Promise<string> {
+  let token: unknown;
+  try {
+    token = ((await res.json()) as { access_token?: unknown }).access_token;
+  } catch {
+    throw new SyncError("SHEETS_UNAVAILABLE");
+  }
+  if (typeof token !== "string" || !token) throw new SyncError("SHEETS_UNAVAILABLE");
+  return token;
+}
+
+/**
+ * DEV ONLY (see config.ts): an access token for a person, from the refresh token written by `npm run sync:login`.
+ * A rejected refresh (revoked, expired, wrong client) is an authentication problem with its own fixed hint.
+ */
+export async function getUserAccessToken(creds: { clientId: string; clientSecret: string; refreshToken: string }, fetchFn: FetchFn): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetchFn(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", client_id: creds.clientId, client_secret: creds.clientSecret, refresh_token: creds.refreshToken }).toString(),
+    });
+  } catch {
+    throw new SyncError("SHEETS_UNAVAILABLE");
+  }
+  if (!res.ok) {
+    const code = res.status === 400 || res.status === 401 || res.status === 403 ? "SHEETS_AUTH" : codeForStatus(res.status);
+    if (code === "SHEETS_AUTH") throw new SyncError(code, userTokenHint(await res.text().catch(() => "")));
+    throw new SyncError(code);
+  }
+  return tokenFrom(res);
+}
+
+/** The access token for whichever credential set the configuration holds. */
+export function accessTokenFor(config: SheetsConfig, fetchFn: FetchFn): Promise<string> {
+  return config.mode === "user_oauth" ? getUserAccessToken(config, fetchFn) : getAccessToken(config, fetchFn);
+}
+
 export async function getAccessToken(
   creds: { clientEmail: string; privateKey: string },
   fetchFn: FetchFn,
@@ -69,12 +110,5 @@ export async function getAccessToken(
     if (code === "SHEETS_AUTH") throw new SyncError(code, tokenHint(await res.text().catch(() => "")));
     throw new SyncError(code);
   }
-  let token: unknown;
-  try {
-    token = ((await res.json()) as { access_token?: unknown }).access_token;
-  } catch {
-    throw new SyncError("SHEETS_UNAVAILABLE");
-  }
-  if (typeof token !== "string" || !token) throw new SyncError("SHEETS_UNAVAILABLE");
-  return token;
+  return tokenFrom(res);
 }

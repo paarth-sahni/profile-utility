@@ -6,7 +6,7 @@
  */
 import { SyncError } from "./errors";
 import { sheetsHint } from "./hints";
-import { codeForStatus, getAccessToken, type FetchFn } from "./googleAuth";
+import { accessTokenFor, codeForStatus, type FetchFn } from "./googleAuth";
 import type { SheetsConfig } from "./config";
 
 const BASE = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -34,7 +34,7 @@ export function createSheetsClient(config: SheetsConfig, deps: Deps = {}): Sheet
   const fetchFn: FetchFn = deps.fetchFn ?? ((input, init) => fetch(input, init));
   let token: Promise<string> | null = null;
   const getToken = (): Promise<string> => {
-    token ??= (deps.getToken ?? (() => getAccessToken(config, fetchFn)))();
+    token ??= (deps.getToken ?? (() => accessTokenFor(config, fetchFn)))();
     // a failed token request must not be cached forever
     token.catch(() => (token = null));
     return token;

@@ -6,17 +6,23 @@
  *   GOOGLE_SA_CLIENT_EMAIL        the service account address (...@...iam.gserviceaccount.com)
  *   GOOGLE_SA_PRIVATE_KEY         the PEM key on one line, with \n for the line breaks (real line breaks work too)
  *   SYNC_TAB_NAMES                optional: only these tabs (comma separated); default is every tab
+ *
+ * DEV-ONLY alternative (SYNC_AUTH_MODE=user_oauth): read the sheet as a person instead of the service account, with
+ *   GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN (written by `npm run sync:login`).
+ * It is refused in a production build and whenever NEXT_PUBLIC_SUPABASE_URL is not a loopback address, so a personal token
+ * can only ever be used with the local database. The service-account path above is unchanged.
  */
 import { SyncError } from "./errors";
 import { parseTabNames } from "./tabs";
 
 export type SheetsConfig = {
   spreadsheetId: string;
-  clientEmail: string;
-  privateKey: string;
   /** Restrict the read to these tabs, or null for every tab. */
   tabNames: string[] | null;
-};
+} & (
+  | { mode: "service_account"; clientEmail: string; privateKey: string }
+  | { mode: "user_oauth"; clientId: string; clientSecret: string; refreshToken: string }
+);
 
 type Env = Record<string, string | undefined>;
 
@@ -33,6 +39,17 @@ export function normalizePrivateKey(value: string): string {
   return value.trim().replace(/^["']|["']$/g, "").replace(/\\n/g, "\n").trim();
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/** True when the value is an http(s) URL pointing at this computer. */
+export function isLoopbackUrl(value: string): boolean {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function loadSheetsConfig(env: Env = process.env): SheetsConfig {
   const need = (name: string): string => {
     const v = env[name]?.trim();
@@ -42,6 +59,20 @@ export function loadSheetsConfig(env: Env = process.env): SheetsConfig {
 
   const spreadsheetId = extractSpreadsheetId(need("GOOGLE_SHEETS_SPREADSHEET_ID"));
   if (!spreadsheetId) throw new SyncError("CONFIG", "GOOGLE_SHEETS_SPREADSHEET_ID is not a spreadsheet id or link.");
+
+  if (env.SYNC_AUTH_MODE?.trim() === "user_oauth") {
+    if (env.NODE_ENV === "production") throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is a development setting and is refused in production.");
+    const db = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+    if (db && !isLoopbackUrl(db)) throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is only allowed with the local database (NEXT_PUBLIC_SUPABASE_URL is not a local address).");
+    return {
+      mode: "user_oauth",
+      spreadsheetId,
+      clientId: need("GOOGLE_OAUTH_CLIENT_ID"),
+      clientSecret: need("GOOGLE_OAUTH_CLIENT_SECRET"),
+      refreshToken: need("GOOGLE_OAUTH_REFRESH_TOKEN"),
+      tabNames: parseTabNames(env.SYNC_TAB_NAMES),
+    };
+  }
 
   const clientEmail = need("GOOGLE_SA_CLIENT_EMAIL").replace(/^["']|["']$/g, "");
   if (!/^[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.iam\.gserviceaccount\.com$/.test(clientEmail)) {
@@ -54,5 +85,5 @@ export function loadSheetsConfig(env: Env = process.env): SheetsConfig {
   }
 
   const tabNames = parseTabNames(env.SYNC_TAB_NAMES);
-  return { spreadsheetId, clientEmail, privateKey, tabNames };
+  return { mode: "service_account", spreadsheetId, clientEmail, privateKey, tabNames };
 }

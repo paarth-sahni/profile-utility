@@ -24,6 +24,20 @@ export function tokenHint(body: string): string {
   return "While getting the access token: Google refused the request.";
 }
 
+/** Hint for a refused refresh-token request (the dev-only "user_oauth" mode). */
+export function userTokenHint(body: string): string {
+  let error = "";
+  try {
+    const j = JSON.parse(body) as { error?: unknown };
+    error = typeof j.error === "string" ? j.error : "";
+  } catch {
+    /* not JSON: fall through to the generic sentence */
+  }
+  if (error === "invalid_grant") return "While getting the access token: your saved Google sign-in was revoked or has expired. Run npm run sync:login again.";
+  if (error === "invalid_client" || error === "unauthorized_client") return "While getting the access token: Google does not accept this OAuth client id and secret. Check GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET (a Desktop app client).";
+  return "While getting the access token: Google refused the request. Run npm run sync:login again.";
+}
+
 /** Hint for a refused Sheets API call (status 401 or 403). */
 export function sheetsHint(status: number, body: string): string {
   let reasons = "";

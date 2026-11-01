@@ -24,6 +24,7 @@ const goodEnv = () => ({
 
 test("config: reads a good environment, with a bare id or a full link", () => {
   const c = loadSheetsConfig(goodEnv());
+  if (c.mode !== "service_account") throw new Error("expected the service-account mode by default");
   assert.equal(c.spreadsheetId, SHEET_ID);
   assert.equal(c.clientEmail, EMAIL);
   assert.ok(c.privateKey.startsWith("-----BEGIN PRIVATE KEY-----\n"));
@@ -36,6 +37,7 @@ test("config: reads a good environment, with a bare id or a full link", () => {
 test("config: key with literal \\n, wrapping quotes or real line breaks all work", () => {
   assert.equal(normalizePrivateKey('"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"'), "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
   const real = loadSheetsConfig({ ...goodEnv(), GOOGLE_SA_PRIVATE_KEY: PEM });
+  if (real.mode !== "service_account") throw new Error("service account expected");
   assert.ok(real.privateKey.includes("\n"));
 });
 
