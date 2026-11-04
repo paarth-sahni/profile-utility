@@ -1,22 +1,31 @@
 /**
  * Purpose: decides whether a saved profile is complete enough to turn into a document, and says why not in
  * plain words. Shared by POST /api/pdf, the "Download PDF" and "Open in Google Docs" buttons on the saved-profile pages
- * (an incomplete draft must be finished on the Review screen first). Pure; unit-tested (lib/docxReady.test.ts).
+ * (an incomplete draft must be finished on the Review screen first), and the Submit check on the server (lib/profileSave.ts).
+ * Pure; unit-tested (lib/docxReady.test.ts).
  */
+import { friendlyMessage, pathKey } from "./fieldErrors";
 import { describeFieldPath, findNAIssues, schemaFor, type ResumeData, type TemplateId } from "./schemas";
 
-export type DocxReady = { ok: true; data: ResumeData } | { ok: false; message: string };
+/** A field that is not ready: its dot path ("projects.0.title", "" for the whole profile) and a short message. */
+export type ReadyIssue = { path: string; message: string };
 
-/** Validates with the strict schema and the "N/A" check; returns the validated data or a friendly message. */
+export type DocxReady = { ok: true; data: ResumeData } | { ok: false; message: string; issues: ReadyIssue[] };
+
+/** Validates with the strict schema and the "N/A" check; returns the validated data or a friendly message and every field to fix. */
 export function checkReadyForDocx(template: TemplateId, data: ResumeData): DocxReady {
   const parsed = schemaFor(template).safeParse(data);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     const where = first.path.length ? describeFieldPath(first.path as (string | number)[]) : "profile";
-    return { ok: false, message: `Incomplete: ${where} — ${first.message}. Open in editor to finish it.` };
+    const issues = parsed.error.issues.map((i) => ({ path: pathKey(i.path as (string | number)[]), message: friendlyMessage(i.message) }));
+    return { ok: false, message: `Incomplete: ${where} — ${first.message}. Open in editor to finish it.`, issues };
   }
   const na = findNAIssues(template, parsed.data);
-  if (na.length > 0) return { ok: false, message: `Fix "${na[0].path}" in the editor before downloading.` };
+  if (na.length > 0) {
+    const issues = na.map((n) => ({ path: n.key ?? "", message: 'Replace the placeholder "N/A" with the real value.' }));
+    return { ok: false, message: `Fix "${na[0].path}" in the editor before downloading.`, issues };
+  }
   return { ok: true, data: parsed.data as ResumeData };
 }
 

@@ -5,16 +5,30 @@ import { buildMatcher } from "./compliance/match";
 import { REDACTED_TEXT, redactMetadata } from "./compliance/redact";
 import { parseSavePayload, type SavePayload } from "./profilePayload";
 import { processSave, type SaveDeps } from "./profileSave";
-import { blankResume } from "./schemas";
 
-// Fictional names only.
+// Fictional names only. Complete, because Submit runs the strict check first.
+const COMPLETE = {
+  name: "Asha Rao",
+  jobTitle: "Engineer",
+  experienceSummary: "6+ Years of Industry Experience",
+  specialization: "",
+  overview: "Built a claims platform.",
+  education: [{ year: "2016", qualification: "B.E." }],
+  projects: [],
+  skills: [{ name: "Go", rating: "4" }],
+  certifications: [],
+  tools: [],
+  managerialExperience: [],
+  domains: [],
+  languages: [],
+};
 const matcher = buildMatcher([{ id: "n1", name: "Example Client One", types: ["client"] }]);
 
 const body = (extra: Record<string, unknown> = {}) => ({
   template: "internal",
   kind: "base",
   source: "scratch",
-  data: blankResume("internal"),
+  data: COMPLETE,
   ...extra,
 });
 const payload = (extra: Record<string, unknown> = {}): SavePayload => {
@@ -40,6 +54,30 @@ test("Submit: order is gate, sanitize, consent, save", async () => {
   const out = await processSave(payload({ submit: true, consent: { accepted: true } }), d);
   assert.equal(out.kind, "saved");
   assert.deepEqual(calls, ["gate", "sanitize", "consent", "save"]);
+});
+
+test("Submit runs the strict check first: missing required fields and N/A give 422 INCOMPLETE with every field, nothing else runs", async () => {
+  const { d, calls } = deps();
+  const incomplete = { ...COMPLETE, overview: "", education: [{ year: "2016", qualification: "N/A" }], skills: [{ name: "Go", rating: "" }] };
+  const out = await processSave(payload({ submit: true, consent: { accepted: true }, data: incomplete }), d);
+  assert.ok(out.kind === "response");
+  assert.equal(out.response.status, 422);
+  const json = (await out.response.json()) as { error: { code: string; fields: { path: string; message: string }[] } };
+  assert.equal(json.error.code, "INCOMPLETE");
+  assert.deepEqual(json.error.fields.map((f) => f.path).sort(), ["overview", "skills.0.rating"], "schema problems first (the N/A check runs once the schema passes)");
+  assert.deepEqual(calls, [], "no gate, no consent record, nothing saved");
+  const na = await processSave(payload({ submit: true, consent: { accepted: true }, data: { ...COMPLETE, education: [{ year: "2016", qualification: "N/A" }] } }), d);
+  assert.ok(na.kind === "response");
+  const naJson = (await na.response.json()) as { error: { code: string; fields: { path: string; message: string }[] } };
+  assert.deepEqual([na.response.status, naJson.error.code, naJson.error.fields.map((f) => f.path)], [422, "INCOMPLETE", ["education.0.qualification"]]);
+  assert.deepEqual(calls, []);
+});
+
+test("a plain save (not Submit) keeps the lenient schema: an incomplete profile is still saved", async () => {
+  const { d, calls } = deps();
+  const out = await processSave(payload({ data: { ...COMPLETE, overview: "" } }), d);
+  assert.equal(out.kind, "saved");
+  assert.deepEqual(calls, ["gate", "sanitize", "save"]);
 });
 
 test("Submit refused by the gate (422): no consent record, nothing saved", async () => {

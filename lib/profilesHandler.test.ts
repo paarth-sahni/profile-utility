@@ -5,13 +5,28 @@ import { buildMatcher } from "./compliance/match";
 import { RegistryUnavailableError } from "./compliance/registryCache";
 import { redactMetadata } from "./compliance/redact";
 import { handleProfilesPost, type ProfilesDeps } from "./profilesHandler";
-import { blankResume, type InternalResume } from "./schemas";
+import type { InternalResume } from "./schemas";
 
 // Fictional names only. These tests drive the real request handler of POST /api/profiles (parsing, ordering, answers) with
 // fakes for the session, the registry, the audit insert and the database.
 const matcher = buildMatcher([{ id: "n1", name: "Example Client One", types: ["client"] }]);
 
-const profile = (overview = "Built a claims platform."): InternalResume => ({ ...(blankResume("internal") as InternalResume), overview });
+// complete (Submit runs the strict check first), with the overview as the part each test changes
+const profile = (overview = "Built a claims platform."): InternalResume => ({
+  name: "Asha Rao",
+  jobTitle: "Engineer",
+  experienceSummary: "6+ Years of Industry Experience",
+  specialization: "",
+  overview: overview,
+  education: [{ year: "2016", qualification: "B.E." }],
+  projects: [],
+  skills: [{ name: "Go", rating: "4" }],
+  certifications: [],
+  tools: [],
+  managerialExperience: [],
+  domains: [],
+  languages: [],
+});
 const request = (extra: Record<string, unknown> = {}, data: unknown = profile()) =>
   new Request("http://localhost:3000/api/profiles", {
     method: "POST",

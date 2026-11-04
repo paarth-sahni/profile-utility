@@ -82,15 +82,16 @@ const route = import("../app/api/profiles/route");
 const registry = import("./compliance/registry");
 let userCounter = 0;
 
+// complete (Submit runs the strict check first), with the overview as the part each test changes
 const overview = (text: string) => ({
-  name: "",
-  jobTitle: "",
-  experienceSummary: "",
+  name: "Asha Rao",
+  jobTitle: "Engineer",
+  experienceSummary: "6+ Years of Industry Experience",
   specialization: "",
   overview: text,
-  education: [],
+  education: [{ year: "2016", qualification: "B.E." }],
   projects: [],
-  skills: [],
+  skills: [{ name: "Go", rating: "4" }],
   certifications: [],
   tools: [],
   managerialExperience: [],
