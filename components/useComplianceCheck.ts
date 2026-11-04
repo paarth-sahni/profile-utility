@@ -4,7 +4,8 @@
  * Purpose: keeps the client-name marks on the Edit step up to date. While `active`, it asks the server (debounced) whether the
  * current profile names a registered client and exposes the matches; any newer edit cancels the older request, so a slow answer
  * for old text never overwrites a newer one. `checkNow` is the one-off check used right before Preview. When enforcement is off
- * on the server, or the check is unavailable, there is nothing to show.
+ * on the server, or the check is unavailable, there is nothing to show. External profiles are never checked (the rule is for
+ * internal profiles only, docs/COMPLIANCE.md), so for them no request is sent at all.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkComplianceRemote, type ComplianceMatch, type ComplianceResult } from "@/lib/complianceClient";
@@ -20,13 +21,15 @@ export type LiveCompliance = {
 
 const NONE: LiveCompliance = { matches: [], forData: null, unavailable: false };
 const DEBOUNCE_MS = 500;
+const NOT_CHECKED: ComplianceResult = { status: "ok", enforced: false, matches: [] };
 
 export function useComplianceCheck(template: TemplateId, data: ResumeData | null, active: boolean) {
   const [live, setLive] = useState<LiveCompliance>(NONE);
   const seq = useRef(0);
+  const applies = template === "internal"; // as complianceApplies() on the server
 
   useEffect(() => {
-    if (!active || !data) return;
+    if (!active || !data || !applies) return;
     const mine = ++seq.current;
     const controller = new AbortController();
     const timer = setTimeout(() => {
@@ -41,14 +44,17 @@ export function useComplianceCheck(template: TemplateId, data: ResumeData | null
       clearTimeout(timer);
       controller.abort();
     };
-  }, [template, data, active]);
+  }, [template, data, active, applies]);
 
   /** Marks set from outside (the server refused Preview, PDF or Submit): shown at once, refreshed by the next check. */
   const setFromServer = useCallback((matches: ComplianceMatch[], forData: ResumeData | null) => {
     setLive({ matches, forData, unavailable: false });
   }, []);
 
-  const checkNow = useCallback((d: ResumeData): Promise<ComplianceResult> => checkComplianceRemote(template, d), [template]);
+  const checkNow = useCallback(
+    (d: ResumeData): Promise<ComplianceResult> => (applies ? checkComplianceRemote(template, d) : Promise.resolve(NOT_CHECKED)),
+    [template, applies],
+  );
 
   return { live, setFromServer, checkNow };
 }

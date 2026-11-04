@@ -197,9 +197,9 @@ and must never be zipped into a bundle or committed.
 
 ## Client-name compliance
 
-A profile must not name a client, company or project from the business's client list (a Google Sheet, synced into the database on
-the 5th and 20th and on demand). The server refuses such a profile at Preview, PDF and Submit when `COMPLIANCE_ENFORCE=on`; the Edit
-step marks the text. Administrators get `/admin/compliance` (status, run history, names to review, "Synchronise now"). It is **off by
+An **internal** profile must not name a client, company or project from the business's client list (a Google Sheet, synced into the
+database on the 5th and 20th and on demand). The server refuses such a profile at Preview, PDF and Submit when `COMPLIANCE_ENFORCE=on`;
+the Edit step marks the text. External profiles are not checked (confirmed by Paarth/HR, 4 Nov 2026). Administrators get `/admin/compliance` (status, run history, names to review, "Synchronise now"). It is **off by
 default**. Everything about it, including how to deploy it safely, is in [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
 ## Tests

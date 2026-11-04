@@ -257,14 +257,14 @@ describe("the registry as the profile check and the scheduler read it", () => {
     const getMatcher = async () => buildMatcher(names);
     const profile = { ...(blankResume("internal") as InternalResume) };
     profile.overview = `Built the platform for ${CLIENT2}, reducing manual effort.`;
-    const refused = await gateResponse(profile, { mode: "on", getMatcher });
+    const refused = await gateResponse("internal", profile, { mode: "on", getMatcher });
     assert.ok(refused);
     assert.equal(refused.status, 422);
     const body = (await refused.json()) as { error: { code: string; matches: { path: string; matchedText: string }[] } };
     assert.equal(body.error.code, "COMPLIANCE");
     assert.deepEqual(body.error.matches.map((m) => [m.path, m.matchedText]), [["overview", CLIENT2]]);
     profile.overview = "Built the platform for a large insurer, reducing manual effort.";
-    assert.equal(await gateResponse(profile, { mode: "on", getMatcher }), null);
+    assert.equal(await gateResponse("internal", profile, { mode: "on", getMatcher }), null);
   });
 
   test("the scheduler state shows the settings and the latest run of the day, with no names", async () => {

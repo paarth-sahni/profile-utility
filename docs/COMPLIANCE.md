@@ -5,13 +5,19 @@ repository; nothing has been applied to a hosted database and enforcement is **o
 
 ## 1. What it does
 
-A generated profile (internal or external) must not name a client, company or project from the business's client list.
+An **internal** profile must not name a client, company or project from the business's client list.
+
+**Scope: internal profiles only.** Confirmed by Paarth (HR) on 4 Nov 2026. External profiles are not checked anywhere: no red
+marks on the external Edit form, no live check request, and `/api/pdf` never refuses an external profile for a client name, even
+when the registry is unavailable. In code, `complianceApplies(template)` in `lib/compliance/gate.ts` decides this, and
+`checkProfile` / `gateResponse` / `complianceGate` take the template. Before 4 Nov 2026 external profiles were checked as well.
 
 1. The list lives in a Google Sheet ("InfoBeans Client List": one tab, header `S.No | Client Name | Legal Name | Friendly Name | Client Group`).
 2. A job copies the four name columns into the database (the **registry**) on the 5th and 20th of each month, or when an administrator
    presses a button. Profiles are never checked against Google directly.
 3. While editing, the browser asks the server which typed text matches a registered name and marks it in red, with the text highlighted.
-4. The server refuses the profile at the protected steps: **Preview** (the PDF), **PDF download** and **Submit**, whatever the browser did.
+4. The server refuses an internal profile at the protected steps: **Preview** (the PDF), **PDF download** and **Submit**, whatever the
+   browser did.
 
 Not covered, by decision: names that are not on the list (no unknown-company detection), and project names (the new sheet has none).
 
@@ -23,6 +29,7 @@ Google Sheet --(read-only service account, A:E)--> runSync --(service_role-only 
                                                                               |
    browser (Edit step) -> /api/compliance/check -------------------------------+--> red marks + highlighted text
    Preview / PDF / Submit -> /api/pdf, /api/profiles -> complianceGate -> 422 COMPLIANCE or 503 REGISTRY_UNAVAILABLE
+   (internal profiles only; an external profile is passed through unchecked)
 ```
 
 ## 2. Where things are
@@ -89,7 +96,7 @@ deactivated name. Every decision and every sync is written to `audit_log`.
 4. **Service key.** Add `SUPABASE_SERVICE_ROLE_KEY` and `SYNC_CRON_SECRET` to `/var/www/profile/.env` (chmod 600), restart the app.
 5. **First sync.** Sign in as an administrator, open `/admin/compliance`, press *Synchronise now*, and compare the counts with the sheet.
 6. **Timer.** Install `ops/profile-sync.service` and `.timer`, add `ops/nginx-block-internal.conf`, reload nginx.
-7. **Switch enforcement on.** Set `COMPLIANCE_ENFORCE=on`, restart, test with a fictional registered name on both the internal and external forms.
+7. **Switch enforcement on.** Set `COMPLIANCE_ENFORCE=on`, restart, test with a fictional registered name on the internal form (blocked) and the external form (not marked, not blocked).
 
 ## 8. Tests
 
@@ -132,5 +139,5 @@ For testing before the service account can read the real sheet. The sheet is a c
 5. `npm run sync:login` (browser opens, approve read-only access; the token is written to `.env.local`, never printed).
 6. `npm run sync:inspect:local` (structure only; no names, no database write).
 7. `npm run dev`, sign in as `admin@example.test`, open `/admin/compliance`, press **Synchronise now**.
-8. Try the checker: a registered name in a field (red mark, Preview blocked), in a bullet and a tag, on the external form, then as `member@example.test` (no registry page). Delete a sheet row and sync again: the name shows as pending review and stays enforced.
+8. Try the checker: a registered name in a field (red mark, Preview blocked), in a bullet and a tag, on the external form (no mark, Preview works), then as `member@example.test` (no registry page). Delete a sheet row and sync again: the name shows as pending review and stays enforced.
 9. Clean up: delete the test sheet, revoke the sign-in at https://myaccount.google.com/permissions, remove the `GOOGLE_OAUTH_*` / `SYNC_AUTH_MODE` lines, and empty the local registry with `truncate compliance_name_sources, compliance_names, compliance_sync_runs` (inside the local database container).

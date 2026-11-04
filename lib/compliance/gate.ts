@@ -1,6 +1,9 @@
 /**
- * Purpose: the server-side gate for the client-name rule. Routes call `complianceGate(data)` on the profile they are about to
- * turn into a PDF or store; it answers with the response to send when the profile must be refused, or null to carry on.
+ * Purpose: the server-side gate for the client-name rule. Routes call `complianceGate(template, data)` on the profile they are
+ * about to turn into a PDF or store; it answers with the response to send when the profile must be refused, or null to carry on.
+ * The rule applies to INTERNAL profiles only (confirmed by Paarth/HR on 4 Nov 2026, see docs/COMPLIANCE.md): an external
+ * profile is never checked, wherever it comes from (the gate, the live check).
+ *   external profile                      -> nothing is checked
  *   COMPLIANCE_ENFORCE unset or not "on"  -> dormant: nothing is checked (code can ship before the registry exists)
  *   "on" + a registered name is found     -> 422 COMPLIANCE with where it is (field path, offsets, the text the caller typed)
  *   "on" + the registry cannot be loaded  -> 503 REGISTRY_UNAVAILABLE (fails CLOSED, after the 24 h stale copy is used up)
@@ -11,7 +14,7 @@
 import { findViolations, toDto, COMPLIANCE_MESSAGE, type Violation, type ViolationDto } from "./check";
 import type { Matcher } from "./match";
 import { RegistryUnavailableError } from "./registryCache";
-import type { ResumeData } from "../schemas";
+import type { ResumeData, TemplateId } from "../schemas";
 
 export type ComplianceMode = "on" | "off";
 
@@ -22,9 +25,16 @@ export type CheckOutcome =
   | { enforced: false; violations: [] }
   | { enforced: true; violations: Violation[] };
 
+/** The templates the client-name rule applies to. */
+export const complianceApplies = (template: TemplateId): boolean => template === "internal";
+
 /** Pure: the decision, given the mode and a way to get the matcher. Throws RegistryUnavailableError when it cannot be loaded. */
-export async function checkProfile(data: unknown, deps: { mode: ComplianceMode; getMatcher: () => Promise<Matcher> }): Promise<CheckOutcome> {
-  if (deps.mode !== "on") return { enforced: false, violations: [] };
+export async function checkProfile(
+  template: TemplateId,
+  data: unknown,
+  deps: { mode: ComplianceMode; getMatcher: () => Promise<Matcher> },
+): Promise<CheckOutcome> {
+  if (deps.mode !== "on" || !complianceApplies(template)) return { enforced: false, violations: [] };
   const matcher = await deps.getMatcher();
   return { enforced: true, violations: findViolations(matcher, data as ResumeData) };
 }
@@ -38,9 +48,13 @@ const UNAVAILABLE = {
 };
 
 /** The response a route must send, or null to continue. Pure given `deps`. */
-export async function gateResponse(data: unknown, deps: { mode: ComplianceMode; getMatcher: () => Promise<Matcher> }): Promise<Response | null> {
+export async function gateResponse(
+  template: TemplateId,
+  data: unknown,
+  deps: { mode: ComplianceMode; getMatcher: () => Promise<Matcher> },
+): Promise<Response | null> {
   try {
-    const out = await checkProfile(data, deps);
+    const out = await checkProfile(template, data, deps);
     if (out.enforced && out.violations.length > 0) return Response.json(complianceBody(out.violations), { status: 422 });
     return null;
   } catch (e) {

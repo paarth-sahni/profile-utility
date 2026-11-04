@@ -1,5 +1,6 @@
 /**
- * Purpose: POST /api/compliance/check — the live check behind the red marks on the Edit step. Body: { template, data }.
+ * Purpose: POST /api/compliance/check — the live check behind the red marks on the Edit step. Body: { template, data }. An
+ * external profile is never checked ("enforced": false), like at the gate: the rule is for internal profiles only.
  * Answers { enforced, violations } where each violation is { path, start, end, matchedText, types } for text the caller typed.
  * The registry list itself is never sent to the browser. Signed-in users only, rate-limited per user. When enforcement is off
  * ("enforced": false) nothing is checked and nothing is highlighted. When it is on and the registry cannot be loaded the answer is
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const out = await checkProfile(body.data, { mode: complianceMode(), getMatcher: getRegistryMatcher });
+    const out = await checkProfile(body.template as TemplateId, body.data, { mode: complianceMode(), getMatcher: getRegistryMatcher });
     return NextResponse.json({ enforced: out.enforced, violations: out.violations.map(toDto) });
   } catch (e) {
     if (e instanceof RegistryUnavailableError) {

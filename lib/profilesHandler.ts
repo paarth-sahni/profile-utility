@@ -5,11 +5,12 @@
  */
 import { isExternalSave, parseSavePayload, type SavePayload } from "./profilePayload";
 import { processSave } from "./profileSave";
+import type { TemplateId } from "./schemas";
 
 export type ProfilesDeps<R> = {
   getUserId: () => Promise<string | null>;
   allow: (userId: string) => boolean;
-  gate: (data: unknown) => Promise<Response | null>;
+  gate: (template: TemplateId, data: unknown) => Promise<Response | null>;
   sanitize: (p: SavePayload) => Promise<SavePayload>;
   recordConsent: (userId: string) => Promise<void>;
   save: (p: SavePayload) => Promise<R>;

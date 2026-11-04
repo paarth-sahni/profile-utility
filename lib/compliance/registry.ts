@@ -1,7 +1,7 @@
 /**
  * Purpose: wires the compliance gate to the real registry. Server-only. The list is read through the service-role
  * client in lib/sync/adminClient.ts (the only code that holds that key) and cached in memory (see registryCache.ts).
- * Routes use `complianceGate(data)`.
+ * Routes use `complianceGate(template, data)`.
  */
 import "server-only";
 import { createRegistrySource } from "@/lib/sync/adminClient";
@@ -10,6 +10,7 @@ import { createRegistryCache } from "./registryCache";
 import type { Matcher } from "./match";
 import { redactMetadata } from "./redact";
 import type { SavePayload } from "../profilePayload";
+import type { TemplateId } from "../schemas";
 
 let cache: ReturnType<typeof createRegistryCache> | null = null;
 
@@ -21,7 +22,8 @@ export function getRegistryMatcher(): Promise<Matcher> {
 }
 
 /** The response to send when the profile must be refused (422 / 503), or null to carry on. */
-export const complianceGate = (data: unknown): Promise<Response | null> => gateResponse(data, { mode: complianceMode(), getMatcher: getRegistryMatcher });
+export const complianceGate = (template: TemplateId, data: unknown): Promise<Response | null> =>
+  gateResponse(template, data, { mode: complianceMode(), getMatcher: getRegistryMatcher });
 
 /** Removes registered names from the free-text metadata stored with a version (no-op while enforcement is off). */
 export async function sanitizeSaveMetadata(p: SavePayload): Promise<SavePayload> {

@@ -9,10 +9,11 @@
  * version is a database failure in step 4, which was a real attempt to submit.
  */
 import type { SavePayload } from "./profilePayload";
+import type { TemplateId } from "./schemas";
 
 export type SaveDeps<R> = {
   /** The gate: a response to send (422 / 503), or null to carry on. */
-  gate: (data: unknown) => Promise<Response | null>;
+  gate: (template: TemplateId, data: unknown) => Promise<Response | null>;
   /** The payload with registered names removed from its metadata. */
   sanitize: (p: SavePayload) => Promise<SavePayload>;
   /** Writes the Submit consent; throws on failure. */
@@ -28,7 +29,7 @@ export async function processSave<R>(payload: SavePayload, deps: SaveDeps<R>): P
   if (payload.submit && !payload.consent) {
     return { kind: "response", response: error(400, "CONSENT_REQUIRED", "Please confirm the statement to submit.") };
   }
-  const blocked = await deps.gate(payload.data);
+  const blocked = await deps.gate(payload.template, payload.data);
   if (blocked) return { kind: "response", response: blocked };
   const clean = await deps.sanitize(payload);
   if (payload.submit) {

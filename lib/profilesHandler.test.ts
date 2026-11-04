@@ -26,9 +26,9 @@ function setup(over: Partial<ProfilesDeps<{ profileId: string }>> = {}, mode: "o
   const deps: ProfilesDeps<{ profileId: string }> = {
     getUserId: async () => "user-1",
     allow: () => true,
-    gate: async (data) => {
+    gate: async (template, data) => {
       calls.push("gate");
-      return gateResponse(data, { mode, getMatcher: async () => matcher });
+      return gateResponse(template, data, { mode, getMatcher: async () => matcher });
     },
     sanitize: async (p) => {
       calls.push("sanitize");
@@ -65,9 +65,9 @@ test("Submit with a registered name: 422, no consent record, nothing saved", asy
 
 test("Submit while the registry is unavailable: 503, no consent record, nothing saved", async () => {
   const { deps, calls, saved } = setup({
-    gate: async (data) => {
+    gate: async (template, data) => {
       calls.push("gate");
-      return gateResponse(data, { mode: "on", getMatcher: async () => { throw new RegistryUnavailableError(); } });
+      return gateResponse(template, data, { mode: "on", getMatcher: async () => { throw new RegistryUnavailableError(); } });
     },
   });
   const res = await handleProfilesPost(request(submit), deps);
