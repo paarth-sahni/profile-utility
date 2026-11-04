@@ -17,9 +17,9 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    - sidebar items (internal): 1.15 line spacing inside an item, 23.3pt from one item to the next, 27pt from a skill's
      rating to the next skill (SIDEBAR, as in the reference);
    - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
-3. Footer (both templates): logo and page number at fixed places on the page (footer()). External: as in the reference.
-   Internal: the logo's bottom as far above the page's bottom as the logo is from the left edge (44.7pt), the page
-   number centred on it, and the body's bottom margin raised to keep the reference's clearance above the logo.
+3. Footer (both templates): logo and page number at fixed places on the page (footer()): the logo's bottom as far above the
+   page's bottom as the logo is from the left edge (44.7pt), the page number centred on it, and the body's bottom margin
+   raised to keep the reference's clearance above the logo.
 4. The reference format (eval/reference/format.docx and format.pdf, git-ignored; LAYOUT): margins, the internal table's
    columns, "A PROUD MEMBER OF" and the logo (130.5 x 42.0pt, cropped to the artwork), the header lines, every section
    heading (Lexend Light 10pt #EA1B3D, the same space after it), body text (Lexend Light 11pt, 17.25pt lines) and the
@@ -125,10 +125,11 @@ NO_EXPAND_SHIFT_RETURN = "<w:doNotExpandShiftReturn/>"
 # eval/reference/format.docx / format.pdf (git-ignored). Positions are PDF points from the page's top left, measured on
 # format.pdf; where the reference uses Avenir (the page number) we use Lexend at the same size.
 PAGE_W, PAGE_H = 612.0, 792.0
-# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge. Its bottom: external 15.4pt above the
-# page's bottom (the reference); internal 44.7pt, the same as its left edge.
+# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge and its bottom 44.7pt above the page's bottom
+# (the reference has it 15.4pt up: REFERENCE_FOOT_LOGO_BOTTOM).
 FOOT_LOGO = {"w": 24.7, "h": 15.0, "left": 44.7}
-FOOT_LOGO_BOTTOM = {"internal": 44.7, "external": 15.4}
+FOOT_LOGO_BOTTOM = {"internal": 44.7, "external": 44.7}
+REFERENCE_FOOT_LOGO_BOTTOM = 15.4
 # Page number: Lexend at the reference's rendered size (a 14pt superscript, drawn at 8.4pt), its right edge as far from
 # the page's right edge as the logo is from the left one, its digits centred on the logo's middle.
 PAGE_NUMBER_PT = 8.4
@@ -206,8 +207,8 @@ def footer(xml: str, name: str) -> str:
 # Margins (format.docx): top 0.4in, left / right / bottom 0.6in, header 0, footer 0.5in.
 MARGINS = {"top": 576, "right": 864, "bottom": 864, "left": 864, "header": 0, "footer": 720, "gutter": 0}
 # The body ends this far above the footer logo's top (the reference: bottom margin 43.2 - logo 15.4 - 15.0 = 12.8pt), so
-# the bottom margin moves with the logo (internal: 44.7 + 15.0 + 12.8 = 72.5pt; external stays 43.2pt).
-FOOTER_CLEARANCE = MARGINS["bottom"] / 20 - FOOT_LOGO_BOTTOM["external"] - FOOT_LOGO["h"]
+# the bottom margin moves with the logo (44.7 + 15.0 + 12.8 = 72.5pt).
+FOOTER_CLEARANCE = MARGINS["bottom"] / 20 - REFERENCE_FOOT_LOGO_BOTTOM - FOOT_LOGO["h"]
 PAGE_TOP = MARGINS["top"] / 20
 MARGIN_LEFT = MARGINS["left"] / 20
 TEXT_RIGHT = PAGE_W - MARGINS["right"] / 20

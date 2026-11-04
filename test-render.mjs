@@ -32,7 +32,7 @@ const REF = {
   page: { w: 612, h: 792 },
   // footer: external as in the reference; internal with the logo's bottom 44.7pt up, like its left edge (the page number
   // centred on the logo in both)
-  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: { internal: 44.7, external: 15.4 } },
+  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: { internal: 44.7, external: 44.7 } },
   pageNumber: { size: 8.4 },
   label: { font: "Lexend-Regular", size: 8, top: 38.4, x: { internal: 411.7, external: TEXT_RIGHT - 130.5 - 0.5 } },
   logo: { w: 130.5, h: 42.0, top: 59.25, x: { internal: 412.2, external: TEXT_RIGHT - 130.5 } },
