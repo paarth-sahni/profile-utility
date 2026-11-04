@@ -109,3 +109,25 @@ test("external: per-entry flags and cleaned lists", () => {
   assert.deepEqual([sparse.projects[0].hasDuration, sparse.projects[0].hasTeamSize, sparse.projects[0].hasRole, sparse.projects[0].hasDescription, sparse.projects[0].hasResponsibilities], [false, false, false, false, false]);
   assert.deepEqual([sparse.experience[0].hasPosition, sparse.experience[0].hasDuration, sparse.experience[0].hasHighlights], [false, false, false]);
 });
+
+test("internal page breaks: the first field a project has goes with its heading (firstX), the others follow (restX)", () => {
+  type Flags = { projects: Record<string, unknown>[] };
+  const flags = (p: Record<string, unknown>) => Object.fromEntries(Object.entries(p).filter(([k]) => /^(first|rest)[A-Z]/.test(k)));
+  const all = (prepareData("internal", FULL_INTERNAL) as Flags).projects[0];
+  assert.deepEqual(flags(all), { firstTech: true, restTech: false, firstTeamSize: false, restTeamSize: true, firstRole: false, restRole: true, firstProjectLink: false, restProjectLink: true });
+  const noTech = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], toolsAndTechnologies: ["N/A"], teamSize: "" }] }) as Flags).projects[0];
+  assert.deepEqual(flags(noTech), { firstTech: false, restTech: false, firstTeamSize: false, restTeamSize: false, firstRole: true, restRole: false, firstProjectLink: false, restProjectLink: true });
+  const none = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "" }] }) as Flags).projects[0];
+  assert.ok(Object.values(flags(none)).every((v) => v === false));
+  const two = (prepareData("internal", { ...FULL_INTERNAL, projects: [FULL_INTERNAL.projects[0], FULL_INTERNAL.projects[0]] }) as Flags).projects;
+  assert.deepEqual(two.map((p) => p.isFirst), [true, false]);
+});
+
+test("internal page breaks: each sidebar list is split into its first item (with the heading) and the rest", () => {
+  const d = prepareData("internal", { ...FULL_INTERNAL, certifications: ["N/A", "C1", "C2", "C3"], languages: ["L1"], domains: [] });
+  assert.deepEqual([d.certificationsHead, d.certificationsRest], [["C1"], ["C2", "C3"]]);
+  assert.deepEqual([d.languagesHead, d.languagesRest], [["L1"], []]);
+  assert.deepEqual([d.domainsHead, d.domainsRest], [[], []]);
+  assert.deepEqual(d.skillsHead, (d.skills as unknown[]).slice(0, 1));
+  assert.deepEqual(d.skillsRest, (d.skills as unknown[]).slice(1));
+});

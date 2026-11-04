@@ -17,13 +17,17 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    - sidebar items (internal): 1.15 line spacing inside an item, 23.3pt from one item to the next, 27pt from a skill's
      rating to the next skill (SIDEBAR, as in the reference);
    - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
-3. Footer (both templates): logo and page number placed as in the reference (footer()).
+3. Footer (both templates): logo and page number at fixed places on the page (footer()). External: as in the reference.
+   Internal: the logo's bottom as far above the page's bottom as the logo is from the left edge (44.7pt), the page
+   number centred on it, and the body's bottom margin raised to keep the reference's clearance above the logo.
 4. The reference format (eval/reference/format.docx and format.pdf, git-ignored; LAYOUT): margins, the internal table's
    columns, "A PROUD MEMBER OF" and the logo (130.5 x 42.0pt, cropped to the artwork), the header lines, every section
    heading (Lexend Light 10pt #EA1B3D, the same space after it), body text (Lexend Light 11pt, 17.25pt lines) and the
    project lines, each font, size and position as in the reference. The internal template matches it; the external one
    keeps its own layout (one column, logo flush right) with the same rules for the same elements.
    Internal only: the grey line under the header block (RULE) and the underlined project heading line.
+5. Page breaks (internal, UNITS): nothing that introduces content is left alone at the foot of a page and no bullet or
+   sidebar item is cut in two. Each such unit is a one-row table that cannot split, nested in its column.
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -41,19 +45,7 @@ WRAPS = {
     "internal": [
         (3, 3, "hasExperienceSummary"),  # header line under the job title
         (4, 4, "hasSpecialization"),  # header line
-        (18, 20, "hasTech"),  # project: spacer + "Tools & Technologies" heading + value
-        (26, 28, "hasRole"),  # project: spacer + "Role" heading + value
-        (34, 34, "hasDescription"),  # project: (blank line, see PRE_SPACERS) + description paragraph
-        (35, 37, "hasResponsibilities"),  # project: (blank line) + the bullet loop
-        # the blank line that ends each project separates it from the NEXT one: after the last project it was a
-        # trailing empty line in the projects cell, and when the last bullet sat at the foot of a page that line alone
-        # spilled onto an extra, near-empty page (only the footer: its logo and the page number)
-        (38, 38, "hasNext"),
-        (46, 50, "hasCertifications"),  # sidebar: heading + items + spacer
-        (51, 53, "hasTools"),  # sidebar: heading + value + spacer
-        (60, 64, "hasDomains"),  # sidebar: heading + items + spacer
-        (65, 68, "hasLanguages"),  # sidebar: heading + items
-        # Projects heading (12-14: hasProjects) and Managerial Experience (54-59: hasManagerialExperience) already exist.
+        # the projects (12-39) and the sidebar (40-68) are rebuilt from their paragraphs with their conditions: UNITS
     ],
     "external": [
         (3, 3, "hasExperienceSummary"),
@@ -78,20 +70,13 @@ INLINE = {
     "external": [("Project {number} - {duration}", "Project {number}{#hasDuration} - {duration}{/hasDuration}")],
 }
 
-# Extra blank paragraphs AFTER a paragraph: (paragraph, xml). The internal sidebar's Managerial Experience block had no
-# spacer (its items ran straight into the next heading); this one sits inside the existing {#hasManagerialExperience}
-# (paragraphs 54-59), after the last item (58 = {/managerialExperience}), so it goes with the section.
-# Same form as the Certifications spacer (plain, no list numbering), without its rsid / paraId attributes.
-SPACER = '<w:p><w:pPr><w:jc w:val="left"/><w:rPr><w:color w:val="231f20"/></w:rPr></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
-# The Skills block got its gap from a blank paragraph after EVERY skill; that one is dropped (FORMAT, 44) for the
-# item gap, so the block ends with one section spacer after the loop (45 = {/skills}), like the other sections.
-SPACERS = {"internal": [(45, SPACER), (58, SPACER)], "external": []}
-
-# Blank lines BEFORE a paragraph, inside any condition that opens there: the internal project had none between the
-# Role / Project Link line and the description, nor between the description and the bullets. Same form as the
-# project's other spacers (e.g. paragraph 26, before "Role").
+# Extra blank paragraphs AFTER a paragraph: (paragraph, xml); BEFORE a paragraph, inside any condition that opens
+# there. None left: the internal ones (a spacer after Skills and after Managerial Experience, a blank line before the
+# description and before the bullets) are part of UNITS.
+SPACERS = {"internal": [], "external": []}
+PRE_SPACERS = {"internal": [], "external": []}
+# The blank line before the internal bullets: the form of the project's other spacers (e.g. paragraph 26, before "Role").
 PROJECT_SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
-PRE_SPACERS = {"internal": [(34, PROJECT_SPACER), (35, PROJECT_SPACER)], "external": []}
 
 # ---------------------------------------------------------------------------------------------------- 2. formatting
 # 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside an item (w:line 276), and
@@ -140,8 +125,10 @@ NO_EXPAND_SHIFT_RETURN = "<w:doNotExpandShiftReturn/>"
 # eval/reference/format.docx / format.pdf (git-ignored). Positions are PDF points from the page's top left, measured on
 # format.pdf; where the reference uses Avenir (the page number) we use Lexend at the same size.
 PAGE_W, PAGE_H = 612.0, 792.0
-# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge, its bottom 15.4pt above the page's bottom.
-FOOT_LOGO = {"w": 24.7, "h": 15.0, "left": 44.7, "bottom": 15.4}
+# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge. Its bottom: external 15.4pt above the
+# page's bottom (the reference); internal 44.7pt, the same as its left edge.
+FOOT_LOGO = {"w": 24.7, "h": 15.0, "left": 44.7}
+FOOT_LOGO_BOTTOM = {"internal": 44.7, "external": 15.4}
 # Page number: Lexend at the reference's rendered size (a 14pt superscript, drawn at 8.4pt), its right edge as far from
 # the page's right edge as the logo is from the left one, its digits centred on the logo's middle.
 PAGE_NUMBER_PT = 8.4
@@ -173,12 +160,12 @@ def tw(pt: float) -> int:
     return round(pt * 20)
 
 
-def footer(xml: str) -> str:
+def footer(xml: str, name: str) -> str:
     """The footer: the logo and the page number at fixed places on the page (both anchored to the page, so neither the
     footer distance nor the body text moves them), plus one 1pt empty line so the footer takes no room from the body."""
     root = re.search(r"<w:ftr\b[^>]*>", xml).group(0)
     lw, lh = FOOT_LOGO["w"], FOOT_LOGO["h"]
-    logo_top = PAGE_H - FOOT_LOGO["bottom"] - lh
+    logo_top = PAGE_H - FOOT_LOGO_BOTTOM[name] - lh
     drawing = (
         '<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="1" layoutInCell="1" allowOverlap="1">'
         '<wp:simplePos x="0" y="0"/>'
@@ -218,6 +205,9 @@ def footer(xml: str) -> str:
 # reference position it produces, so changing a target changes the layout.
 # Margins (format.docx): top 0.4in, left / right / bottom 0.6in, header 0, footer 0.5in.
 MARGINS = {"top": 576, "right": 864, "bottom": 864, "left": 864, "header": 0, "footer": 720, "gutter": 0}
+# The body ends this far above the footer logo's top (the reference: bottom margin 43.2 - logo 15.4 - 15.0 = 12.8pt), so
+# the bottom margin moves with the logo (internal: 44.7 + 15.0 + 12.8 = 72.5pt; external stays 43.2pt).
+FOOTER_CLEARANCE = MARGINS["bottom"] / 20 - FOOT_LOGO_BOTTOM["external"] - FOOT_LOGO["h"]
 PAGE_TOP = MARGINS["top"] / 20
 MARGIN_LEFT = MARGINS["left"] / 20
 TEXT_RIGHT = PAGE_W - MARGINS["right"] / 20
@@ -394,14 +384,14 @@ def internal_layout() -> dict:
         26: blank(LABEL_GAP), 27: LABEL_LINE, 28: VALUE_LINE,  # Role
         30: blank(LABEL_GAP), 31: LABEL_LINE, 32: VALUE_LINE,  # Project Link
         34: BODY,  # description (its blank line before it: DESCRIPTION_SPACER)
-        38: blank(NEXT_PROJECT_GAP),  # (hasNext) between projects
+        38: blank(NEXT_PROJECT_GAP),  # between projects (hasNext)
         40: heading(first_heading_before, "auto"),  # Skills
         42: {"spacing": TIGHT_ITEM, "run": run("Lexend", 11, DARK)},  # skill name
         43: {"spacing": RATING_ITEM, "run": run("Lexend Light", 11, TEXT)},  # rating (with the name, one item)
-        46: heading(side_section, "auto"), 50: blank(SPACER_LINE),  # Certifications
-        51: heading(side_section, "auto"), 53: blank(SPACER_LINE),  # Tools
-        55: heading(side_section, "auto"),  # Managerial Experience (its spacer: SPACERS)
-        60: heading(side_section, "auto"), 64: blank(SPACER_LINE),  # Domain
+        46: heading(side_section, "auto"),  # Certifications (the spacers after each block: UNITS)
+        51: heading(side_section, "auto"),  # Tools
+        55: heading(side_section, "auto"),  # Managerial Experience
+        60: heading(side_section, "auto"),  # Domain
         65: heading(side_section, "auto"),  # Languages
     })
     for i in (48, 52, 57, 62, 67):  # sidebar items: certification, tools, managerial experience, domain, language
@@ -439,10 +429,6 @@ def external_layout() -> dict:
 
 
 LAYOUT = {"internal": internal_layout(), "external": external_layout()}
-# The internal description's blank line before it (PRE_SPACERS) sized like the other project gaps, and the two sidebar
-# spacers (SPACERS) like the other sidebar spacers.
-PRE_SPACERS["internal"][0] = (34, blank_xml(DESCRIPTION_GAP))
-SPACERS["internal"] = [(at, blank_xml(SKILLS_SPACER if at == 45 else SPACER_LINE)) for at, _ in SPACERS["internal"]]
 # External: the Experience heading follows either the last project (its bullets) or another section's spacer. After the
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
@@ -451,6 +437,71 @@ AFTER_CLOSE = {
     "internal": [],
     "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))],
 }
+
+
+# ------------------------------------------------------------------------------------- 5. page breaks (internal): UNITS
+# LibreOffice (7.3) ignores keep with next, keep lines together and widow control on paragraphs inside a table row that
+# runs across pages, and the internal body is one such row (two cells: the main column and the sidebar). It does keep a
+# table row marked "can't split" (w:cantSplit) on one page. So each unit that must not be cut is a one-row table of its
+# own inside its column: borderless, no cell margins, as wide as the column's text, so its text sits exactly where the
+# paragraphs did. The units:
+#   - a project's start: ("Projects" before the first one,) "Project N - <dates>", the name and the project's first
+#     field (firstX, set in lib/docxData.ts); each further field (restX) on its own;
+#   - each bullet (a description is not a unit: it may run across a page break);
+#   - in the sidebar: a section heading with its first item, then each further item (a skill: its name and rating);
+#     the tool line with its heading.
+# Each condition / loop tag stays outside the unit tables, so a cell never ends up empty, and so a loop repeats whole
+# tables (docxtemplater's paragraph loop). A cell that ends with a table gets a 1pt paragraph after it (Word needs one).
+UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144}  # column minus the cell margins
+END_OF_CELL = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>'
+PROJECT_FIELDS = [("Tech", 19, 20), ("TeamSize", 23, 24), ("Role", 27, 28), ("ProjectLink", 31, 32)]  # label, value
+
+
+def unit(paras: str, col: str) -> str:
+    """A one-row table that cannot split across pages, holding the paragraphs."""
+    w = UNIT_W[col]
+    nil = "".join(f'<w:{side} w:val="nil"/>' for side in ("top", "left", "bottom", "right"))
+    zero = "".join(f'<w:{side} w:w="0" w:type="dxa"/>' for side in ("top", "left", "bottom", "right"))
+    return (
+        f'<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/><w:tblBorders>{nil}<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>'
+        f'<w:tblLayout w:type="fixed"/><w:tblCellMar>{zero}</w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr>'
+        f'<w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>'
+        f'<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/><w:tcBorders>{nil}</w:tcBorders></w:tcPr>{paras}</w:tc></w:tr></w:tbl>'
+    )
+
+
+def cond(flag: str, xml: str) -> str:
+    return marker("{#" + flag + "}") + xml + marker("{/" + flag + "}")
+
+
+def internal_units(p: dict) -> dict:
+    """The projects (replacing paragraphs 12-39) and the sidebar (40-68) as units; p: paragraph -> formatted xml."""
+    first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in PROJECT_FIELDS)
+    rest_fields = "".join(cond(f"rest{k}", unit(blank_xml(LABEL_GAP) + p[label] + p[value], "main")) for k, label, value in PROJECT_FIELDS)
+    projects = cond(
+        "projects",
+        unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field, "main")
+        + rest_fields
+        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + p[34])
+        + cond("hasResponsibilities", PROJECT_SPACER + cond("responsibilities", unit(p[36], "main")))
+        # the blank line between projects separates their tables too; none after the last (no extra empty page)
+        + cond("hasNext", p[38]),
+    ) + END_OF_CELL
+
+    def listed(key: str, heading: str, item: str) -> str:
+        return cond(f"{key}Head", unit(heading + item, "side")) + cond(f"{key}Rest", unit(item, "side"))
+
+    # every block but the last ends with a spacer; the Skills one is shorter (a rating has more space after it)
+    sidebar = (
+        listed("skills", p[40], p[42] + p[43]) + blank_xml(SKILLS_SPACER)
+        + cond("hasCertifications", listed("certifications", p[46], p[48]) + blank_xml(SPACER_LINE))
+        + cond("hasTools", unit(p[51] + p[52], "side") + blank_xml(SPACER_LINE))
+        + cond("hasManagerialExperience", listed("managerial", p[55], p[57]) + blank_xml(SPACER_LINE))
+        + cond("hasDomains", listed("domains", p[60], p[62]) + blank_xml(SPACER_LINE))
+        + cond("hasLanguages", listed("languages", p[65], p[67]))
+        + END_OF_CELL
+    )
+    return {12: projects, **{i: "" for i in range(13, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
 
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
@@ -543,9 +594,10 @@ def table_grid(xml: str, name: str) -> str:
     return re.sub(r'<w:gridCol w:w="\d+"/><w:gridCol w:w="\d+"/>', f'<w:gridCol w:w="{main}"/><w:gridCol w:w="{side}"/>', xml)
 
 
-def page_margins(xml: str) -> str:
-    """The section's page margins as in format.docx (both templates)."""
-    return re.sub(r"<w:pgMar [^>]*/>", f"<w:pgMar {attrs(MARGINS)}/>", xml)
+def page_margins(xml: str, name: str) -> str:
+    """The section's page margins as in format.docx, the bottom one clearing the footer logo (FOOTER_CLEARANCE)."""
+    bottom = tw(FOOT_LOGO_BOTTOM[name] + FOOT_LOGO["h"] + FOOTER_CLEARANCE)
+    return re.sub(r"<w:pgMar [^>]*/>", f"<w:pgMar {attrs({**MARGINS, 'bottom': bottom})}/>", xml)
 
 
 def label(para: str, name: str) -> str:
@@ -610,6 +662,7 @@ def patch(name: str) -> bytes:
             before.setdefault(first, []).append((last - first, marker("{#" + flag + "}")))
             after.setdefault(last, []).append((last - first, marker("{/" + flag + "}")))
         count = 0
+        formatted: dict[int, str] = {}  # paragraph -> its formatted xml (for UNITS)
 
         def rebuild(match: re.Match) -> str:
             nonlocal count
@@ -635,6 +688,7 @@ def patch(name: str) -> bytes:
                 text = set_ppr(text, change)
             if i == 0 and name == "internal":
                 text = text.replace("</w:p>", rule_run() + "</w:p>")  # the grey line under the header (outside the table)
+            formatted[i] = text
             opens = "".join(m for _, m in sorted(before.get(i, []), key=lambda t: -t[0]))  # outermost first
             closes = "".join(m for _, m in sorted(after.get(i, []), key=lambda t: t[0]))  # innermost first
             pre = "".join(xml_ for at, xml_ in PRE_SPACERS[name] if at == i)  # inside any condition that opens here
@@ -642,7 +696,10 @@ def patch(name: str) -> bytes:
             post = "".join(xml_ for at, xml_ in AFTER_CLOSE[name] if at == i)  # outside every condition that closes here
             return opens + pre + text + extra + closes + post
 
-        new_xml = page_margins(table_grid(PARA.sub(rebuild, xml), name))
+        wrapped = [rebuild(m) for m in PARA.finditer(xml)]
+        units = internal_units(formatted) if name == "internal" else {}
+        parts = iter(units.get(i, w) for i, w in enumerate(wrapped))
+        new_xml = page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name)
         out = OUT / f"{name}.docx"
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
@@ -654,7 +711,7 @@ def patch(name: str) -> bytes:
                 elif item.filename == "word/settings.xml":
                     data = settings(data.decode("utf8")).encode("utf8")
                 elif item.filename == "word/footer1.xml":
-                    data = footer(data.decode("utf8")).encode("utf8")
+                    data = footer(data.decode("utf8"), name).encode("utf8")
                 zout.writestr(item, data)
     return out.read_bytes()
 

@@ -115,10 +115,27 @@ style for all responsibilities, a blank line before the project description and 
 (1.15 inside an item; 23.3pt between items, 27pt from a skill's rating to the next skill; ratings and item text in #231F20) and no stretched last line in justified paragraphs. The external template
 keeps its one-column layout with the same rules. Change the script and run it again.
 
+Internal only:
+- **Footer:** the logo sits 44.7pt from the left edge and 44.7pt above the bottom edge. The page number is 44.7pt from
+  the right edge, centred on the logo. The bottom margin is 72.5pt so the body ends 12.8pt above the logo.
+- **Page breaks:** LibreOffice ignores keep-with-next and keep-lines-together inside the two-column table (7.3, and
+  26.8 as well). So each unit that must stay on one page is a borderless, one-row nested table whose row can't split:
+  - a project's heading, its name and its first field ("Projects" goes with the first project);
+  - each further field;
+  - each bullet;
+  - each sidebar section heading with its first item;
+  - each further sidebar item (a skill name with its rating).
+
+  A description can still run across a page break.
+
 `npm run test:render` checks the generated templates; `npm run test:render -- --pdf` also converts full / empty /
 sparse / mixed / long renders exactly as Download PDF does into `/tmp/render-check/` and measures them against the
 reference format (positions within 1pt, fonts and sizes exact, only Lexend embedded, numbers included), plus bullets,
 blank lines and sidebar spacing. Open those PDFs to look at them (`internal-sample.pdf`, `external-sample.pdf`).
+It also checks the internal page breaks (`scripts/pdf-pages.mjs`): no heading, project name or field label as the last
+line of a page; no bullet or sidebar item split across pages; no page but the last mostly empty. These checks run on
+a fictional 9-project profile and a long sidebar, each in shifted variants. `--only=<regex>` renders only the matching
+cases, for example `npm run test:render -- --pdf --only='nine|sidebar'`.
 
 ## Key files
 

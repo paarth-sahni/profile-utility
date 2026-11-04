@@ -58,6 +58,15 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
 
 ## 4. Recent changes (newest first)
 
+- **2026-11-04** Internal PDF page breaks and footer:
+  - **Footer:** the logo and page number are 44.7pt from the bottom edge, and the bottom margin is 72.5pt (about 2
+    body lines fewer per page).
+  - **Page breaks:** nothing that introduces content is left at the foot of a page, and no bullet or sidebar item is
+    split. LibreOffice ignores keep-with-next inside the table cells, so each such unit is a one-row nested table
+    whose row can't split (`scripts/patch-templates.py` section 5, flags `firstX` / `restX` / `xHead` / `xRest` in
+    `lib/docxData.ts`).
+  - **Checks:** `test:render --pdf` checks the page breaks with `scripts/pdf-pages.mjs`.
+
 - **2026-10-26** Open in Google Docs: the doc is private to the Google account that grants the token, which could differ
   from the browser's default account ("You need access"). The popup now gets the signed-in email as a hint, the link opens
   through Google's account chooser for the file's owner, and the message names that account (no automatic sharing: a policy

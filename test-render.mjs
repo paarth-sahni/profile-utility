@@ -15,6 +15,7 @@ import Docxtemplater from "docxtemplater";
 import { prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 import { measurePdf } from "./scripts/pdf-measure.mjs";
+import { pageBreakProblems } from "./scripts/pdf-pages.mjs";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -29,7 +30,9 @@ const assert = (cond, msg) => {
 const TEXT_RIGHT = 612 - 43.2;
 const REF = {
   page: { w: 612, h: 792 },
-  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: 15.4 },
+  // footer: external as in the reference; internal with the logo's bottom 44.7pt up, like its left edge (the page number
+  // centred on the logo in both)
+  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: { internal: 44.7, external: 15.4 } },
   pageNumber: { size: 8.4 },
   label: { font: "Lexend-Regular", size: 8, top: 38.4, x: { internal: 411.7, external: TEXT_RIGHT - 130.5 - 0.5 } },
   logo: { w: 130.5, h: 42.0, top: 59.25, x: { internal: 412.2, external: TEXT_RIGHT - 130.5 } },
@@ -187,6 +190,77 @@ const externalSample = {
     { company: "Brightwave Systems", position: "Senior QA Engineer", duration: "Apr 2020 – Present", highlights: ["Leads a team of four testers across two product lines.", "Set up nightly automated runs in Jenkins."] },
     { company: "Contoso Software", position: "QA Engineer", duration: "Jul 2015 – Mar 2020", highlights: ["Tested insurance claims portals for web and mobile."] },
   ],
+};
+
+// A long internal profile (fictional): nine projects with descriptions and bullets of different lengths, so project
+// headings, names, field labels and bullets land at the foot of pages, and a sidebar long enough to run onto page 2.
+// The page-break checks (scripts/pdf-pages.mjs) run on it and on the variants built from it with --pdf.
+const NINE = [
+  ["Jan 2024 – Present", "Fleet Telematics Portal", ["TypeScript", "React", "Node.js", "PostgreSQL", "AWS IoT Core"], "9", "Technical Lead", "NDA",
+    "Portal for a fictional logistics firm that collects location and engine data from 4,000 delivery vans, shows live positions on a map and raises maintenance alerts before a van breaks down, with weekly reports for depot managers.",
+    ["Led a team of nine engineers across the device gateway, the alert rules and the web portal, and ran sprint planning and reviews.", "Designed the alert rules engine that turns raw engine readings into maintenance tickets.", "Cut map load times from eight seconds to under two by tiling positions on the server.", "Set up blue-green deployments for the gateway so firmware updates no longer caused data gaps."]],
+  ["Mar 2023 – Dec 2023", "Clinic Appointment Booking", ["Java", "Spring Boot", "Angular", "MySQL"], "6", "Senior Developer", "https://example.com/clinic",
+    "Online booking for a chain of fictional dental clinics: patients choose a clinic, a dentist and a slot, receive reminders by text message, and staff manage cancellations and waiting lists from one screen.",
+    ["Built the slot search and the waiting-list logic that offers freed slots to the next patient.", "Integrated the text message provider with retries and delivery reports.", "Wrote the reporting queries for no-show rates per clinic."]],
+  ["Jun 2022 – Feb 2023", "Warehouse Returns Tracker", ["Python", "Django", "PostgreSQL", "Celery"], "4", "Backend Developer", "NDA",
+    "Tracks returned parcels from the moment a customer books a return until the item is restocked, refunded or scrapped, giving warehouse staff a scan-based workflow and finance a daily reconciliation file.",
+    ["Modelled the return states and the scan events that move a parcel between them.", "Built the nightly reconciliation export used by the finance team.", "Added barcode label printing for the returns desk."]],
+  ["Oct 2021 – May 2022", "Insurance Claims Intake", ["C#", ".NET 6", "Azure Functions", "Cosmos DB"], "7", "Developer", "NDA",
+    "Digital intake for home insurance claims in a fictional insurer, where customers upload photos and receipts, answer guided questions and track their claim, replacing a paper form and a call-centre queue.",
+    ["Built the guided question flow with branching per claim type.", "Implemented photo upload with virus scanning and automatic resizing.", "Created the claim status timeline shown to customers.", "Wrote load tests for storm-season peaks of ten times the usual volume.", "Documented the intake API for the partner repair network."]],
+  ["Jan 2021 – Sep 2021", "School Timetable Planner", ["Kotlin", "Spring", "Vue.js", "PostgreSQL"], "5", "Full Stack Developer", "https://example.com/timetable",
+    "Planner that builds weekly timetables for fictional secondary schools from teacher availability, room sizes and subject hours, and lets deputy heads adjust the result by dragging lessons between periods.",
+    ["Implemented the constraint solver that places lessons and reports clashes in plain language.", "Built the drag-and-drop timetable grid in Vue.js."]],
+  ["Apr 2020 – Dec 2020", "Energy Meter Analytics", ["Scala", "Apache Spark", "Kafka", "Cassandra"], "8", "Data Engineer", "NDA",
+    "Streaming analytics for smart electricity meters at a fictional utility, aggregating half-hourly readings from two million homes into daily usage profiles, tariff comparisons and outage detection for the network team.",
+    ["Built the Kafka to Spark streaming jobs that aggregate half-hourly readings.", "Designed the Cassandra tables for per-home usage profiles.", "Added outage detection that flags streets where many meters stop reporting at once.", "Reduced cluster cost by a third by tuning partition sizes."]],
+  ["Jul 2019 – Mar 2020", "Library Lending App", ["Swift", "Kotlin", "Firebase"], "3", "Mobile Developer", "https://example.com/library",
+    "Mobile app for a fictional city library service that lets members search the catalogue, reserve and renew books, and borrow e-books, with push notifications for due dates and reservations ready to collect.",
+    ["Built the iOS app in Swift and shared the design system with the Android team.", "Implemented offline reading for borrowed e-books."]],
+  ["Nov 2018 – Jun 2019", "Retail Price Monitor", ["Go", "Redis", "Elasticsearch", "React"], "4", "Developer", "NDA",
+    "Monitor that collects competitor prices for a fictional electronics retailer, matches products across sites and suggests price changes to category managers within limits set by the pricing team.",
+    ["Wrote the product matching rules that link listings across sites by model number and specification.", "Built the price change suggestion screen for category managers.", "Added alerts when a competitor undercuts by more than an agreed margin."]],
+  ["Jan 2018 – Oct 2018", "Event Ticketing Back Office", ["PHP", "Laravel", "MySQL", "Vue.js"], "5", "Junior Developer", "NDA",
+    "Back office for a fictional concert ticketing company where promoters set up events, seating plans and price bands, and the support team handles refunds and transfers between customers.",
+    ["Built the seating plan editor for promoters.", "Implemented refunds and ticket transfers with an audit trail for the support team.", "Wrote end-to-end tests for the checkout flow."]],
+].map(([duration, title, toolsAndTechnologies, teamSize, role, projectLink, description, responsibilities]) => ({ duration, title, toolsAndTechnologies, teamSize, role, projectLink, description, responsibilities }));
+
+const internalNine = {
+  name: "Arjun Mehta",
+  jobTitle: "Principal Software Engineer",
+  experienceSummary: "12+ Years of Industry Experience",
+  specialization: "Distributed Systems and Web Platforms",
+  overview:
+    "Designs and builds web platforms and data services for logistics, healthcare, insurance and retail businesses, from the first architecture sketch through to production support. Leads teams of up to ten engineers, sets coding and review standards, and works with product owners on scope and delivery plans. Comfortable across the stack, with most recent work in TypeScript, Java and cloud data services.",
+  education: [{ year: "2012", qualification: "Bachelor of Technology (Information Technology), Riverside Institute of Engineering" }],
+  projects: NINE,
+  skills: [
+    { name: "TypeScript", rating: "4.5" }, { name: "Java / Spring Boot", rating: "4.3" }, { name: "React", rating: "4.2" }, { name: "Node.js", rating: "4" },
+    { name: "PostgreSQL", rating: "4" }, { name: "AWS", rating: "3.8" }, { name: "Python", rating: "3.5" }, { name: "Kafka", rating: "3.2" },
+  ],
+  certifications: ["AWS Certified Solutions Architect – Professional", "Certified Kubernetes Application Developer"],
+  tools: ["JIRA", "Git", "Confluence", "Docker", "Terraform"],
+  managerialExperience: ["Team Leadership", "Sprint Planning", "Time Management"],
+  domains: ["Logistics", "Healthcare", "Insurance"],
+  languages: ["English", "Hindi"],
+};
+
+// A sidebar that runs well onto page 2: many skills (some names wrap), long certifications and managerial items, a tool
+// line of three lines. internal-sidebar-<n> drops the first n skills so a different item lands at the foot of page 1.
+const longSidebar = {
+  ...internalNine,
+  projects: NINE.slice(0, 3),
+  skills: [
+    { name: "TypeScript", rating: "4.5" }, { name: "Java / Spring Boot", rating: "4.3" }, { name: "React and React Native", rating: "4.2" },
+    { name: "Node.js", rating: "4" }, { name: "PostgreSQL", rating: "4" }, { name: "Amazon Web Services (EC2, S3, Lambda, RDS)", rating: "3.8" },
+    { name: "Python", rating: "3.5" }, { name: "Apache Kafka", rating: "3.2" }, { name: "Kubernetes", rating: "3.2" }, { name: "Terraform", rating: "3" },
+    { name: "GraphQL", rating: "3" }, { name: "Elasticsearch", rating: "2.8" },
+  ],
+  certifications: ["AWS Certified Solutions Architect – Professional", "Certified Kubernetes Application Developer", "Professional Scrum Master I", "HashiCorp Certified Terraform Associate"],
+  tools: ["JIRA", "Git", "Confluence", "Docker", "Terraform", "Jenkins", "Grafana", "Postman", "SonarQube", "Figma"],
+  managerialExperience: ["Team Leadership", "Time Management", "Stakeholder Management across Regions", "Hiring and Onboarding", "Sprint Planning"],
+  domains: ["Logistics and Supply Chain", "Healthcare", "Insurance", "Retail and E-commerce"],
+  languages: ["English", "Hindi", "Gujarati"],
 };
 
 // ------------------------------------------------------------------------------------------------- rendering
@@ -405,13 +479,16 @@ console.log("templates: logo crop and size, one bullet style, no stretched manua
 
 // internal: the projects column ends with the last project's content. A trailing blank line there spilled onto an
 // extra, near-empty last page (footer only) whenever the last bullet sat at the foot of a page; see the PDF sweep below.
+// The column ends with a table (the last bullet's unit), so the only paragraph after it is the 1pt one Word needs there.
 {
   const xml = render("internal", internal).zip.file("word/document.xml").asText();
-  const cell = (xml.match(/<w:tc>.*?<\/w:tc>/gs) ?? []).find((c) => c.includes("RESP-MARK three"));
-  const paras = (cell.match(/<w:p[ >].*?<\/w:p>/gs) ?? []).map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(""));
-  assert(paras.at(-1).includes("RESP-MARK three"), `internal: the projects column must end with the last bullet, not a blank line (ends with ${JSON.stringify(paras.slice(-2))})`);
-  const second = paras.findIndex((t) => t.startsWith("Project 2"));
-  assert(second > 0 && paras[second - 1] === "", "internal: a blank line still separates one project from the next");
+  const paras = (xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? []).map((p) => ({ xml: p, text: [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join("") }));
+  const last = paras.findIndex((p) => p.text.includes("RESP-MARK three"));
+  const skills = paras.findIndex((p) => p.text === "Skills");
+  const after = paras.slice(last + 1, skills);
+  assert(after.length === 1 && after[0].text === "" && /w:line="20" w:lineRule="exact"/.test(after[0].xml), `internal: the projects column must end with the last bullet and one 1pt paragraph (found ${after.length} paragraphs after it)`);
+  const second = paras.findIndex((p) => p.text.startsWith("Project 2"));
+  assert(second > 0 && paras[second - 1].text === "" && /w:line="\d+" w:lineRule="exact"/.test(paras[second - 1].xml), "internal: a blank line still separates one project from the next");
 }
 console.log("internal: no trailing blank line after the last project");
 
@@ -499,16 +576,19 @@ const colourDistance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2
 const LINE = 13.75; // one line of 11pt Lexend
 
 
-/** Footer on every page: the logo's size and place, the page number's font, size, right edge (mirroring the logo) and height. */
-function checkFooter(file, pdf, pages) {
+/**
+ * Footer on every page: the logo's size and place, the page number's font, size, right edge (mirroring the logo) and
+ * height; no body text reaches down to the logo's top.
+ */
+function checkFooter(file, id, pdf, pages) {
   const { footLogo, page } = REF;
   pages.forEach((p, n) => {
-    const logo = p.images.find((im) => im.y > page.h - 60);
+    const logo = p.images.find((im) => im.y > page.h / 2);
     assert(logo, `${file} p${n + 1}: no footer logo`);
     assert(near(logo.w, footLogo.w, 0.3) && near(logo.h, footLogo.h, 0.3), `${file} p${n + 1}: footer logo ${fixed(logo.w)} x ${fixed(logo.h)}, want ${footLogo.w} x ${footLogo.h}`);
     assert(near(logo.x, footLogo.x, POS), `${file} p${n + 1}: footer logo left edge ${fixed(logo.x)}, want ${footLogo.x}`);
-    assert(near(page.h - logo.y - logo.h, footLogo.bottom, POS), `${file} p${n + 1}: footer logo bottom ${fixed(page.h - logo.y - logo.h)} above the page edge, want ${footLogo.bottom}`);
-    const number = p.runs.filter((r) => r.baseline > page.h - 60 && /^\d+$/.test(r.text.trim()));
+    assert(near(page.h - logo.y - logo.h, footLogo.bottom[id], POS), `${file} p${n + 1}: footer logo bottom ${fixed(page.h - logo.y - logo.h)} above the page edge, want ${footLogo.bottom[id]}`);
+    const number = p.runs.filter((r) => r.baseline > logo.y - 1 && /^\d+$/.test(r.text.trim()));
     assert(number.length === 1 && number[0].text.trim() === String(n + 1), `${file} p${n + 1}: page number missing or wrong (${number.map((r) => r.text)})`);
     const [r] = number;
     assert(/^Lexend-/.test(r.font) && near(r.size, REF.pageNumber.size, 0.05), `${file} p${n + 1}: page number in ${r.font} ${r.size}pt, want Lexend ${REF.pageNumber.size}pt`);
@@ -516,6 +596,9 @@ function checkFooter(file, pdf, pages) {
     const ink = inkBox(pdf, { x0: page.w - 120, y0: logo.y - 3, x1: page.w, y1: page.h }, n + 1);
     assert(near(page.w - ink.x1, logo.x, POS), `${file} p${n + 1}: page number ends ${fixed(page.w - ink.x1)}pt from the right edge, the logo starts ${fixed(logo.x)}pt from the left`);
     assert(near((ink.y0 + ink.y1) / 2, logo.y + logo.h / 2, POS), `${file} p${n + 1}: page number centre ${fixed((ink.y0 + ink.y1) / 2)}, logo centre ${fixed(logo.y + logo.h / 2)}`);
+    // the body ends above the logo: no line's descender (0.25 em below the baseline) reaches the logo's top
+    const lowest = Math.max(...p.runs.filter((r) => !number.includes(r)).map((r) => r.baseline + 0.25 * r.size));
+    assert(lowest < logo.y, `${file} p${n + 1}: body text reaches down to ${fixed(lowest)}, the footer logo starts at ${fixed(logo.y)}`);
   });
 }
 
@@ -840,19 +923,33 @@ if (process.argv.includes("--pdf")) {
   const footProject = (n) => ({ ...internal.projects[0], description: "DESC-MARK a payments platform for a retail bank with a focus on reliability.", responsibilities: Array.from({ length: n }, (_, k) => `RESP-MARK ${k + 1} for the project.`) });
   const foot = Array.from({ length: 8 }, (_, k) => [`internal-foot-${k + 1}`, "internal", { ...internal, certifications: [], tools: [], managerialExperience: [], domains: [], languages: [], projects: [footProject(k + 1)] }]);
   cases.push(...foot);
+  // long profiles for the page-break rules: nine projects, shifted up by 0..5 lines (the first project's first k
+  // bullets dropped) so headings, names, labels and bullets each land at the foot of some page; and the long sidebar,
+  // shortened skill by skill so each kind of item lands at the foot of page 1
+  const nine = Array.from({ length: 6 }, (_, k) => [`internal-nine-${k}`, "internal", { ...internalNine, projects: [{ ...NINE[0], responsibilities: NINE[0].responsibilities.slice(k % 4) }, ...NINE.slice(1).map((p, n) => (k >= 4 && n === 0 ? { ...p, responsibilities: p.responsibilities.slice(1) } : p))] }]);
+  const sidebar = Array.from({ length: 6 }, (_, k) => [`internal-sidebar-${k}`, "internal", { ...longSidebar, skills: longSidebar.skills.slice(k) }]);
+  cases.push(...nine, ...sidebar);
+  const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
   const pageCounts = [];
-  for (const [file, id, data] of cases) {
+  const selected = only ? cases.filter(([f]) => new RegExp(only).test(f)) : cases;
+  for (const [file, id, data] of selected) {
     const { out, zip } = render(id, data);
     fs.writeFileSync(`${dir}/${file}.docx`, out);
     // exactly what Download PDF does (lib/pdfRender.ts): embedded fonts dropped, LibreOffice with the brand fonts
     fs.writeFileSync(`${dir}/${file}.pdf`, await convertDocxToPdf(withoutEmbeddedFonts(zip).generate({ type: "uint8array", compression: "DEFLATE" })));
-    console.log(`pdf: ${dir}/${file}.pdf`);
+    const measured = await measurePdf(`${dir}/${file}.pdf`);
+    console.log(`pdf: ${dir}/${file}.pdf (${measured.length} page${measured.length > 1 ? "s" : ""})`);
+    // page breaks (internal): no heading or label left at the foot of a page, no bullet or sidebar item cut in two
+    if (id === "internal") {
+      const problems = pageBreakProblems(measured, data);
+      for (const p of problems) console.error(`  ${file}: ${p}`);
+      assert(problems.length === 0, `${file}: ${problems.length} page-break problem(s), listed above`);
+    }
     // automatic layout checks on what LibreOffice actually laid out
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
     assert(!lines.some((l) => /^\s*[●•▪◦]\s*$/.test(l)), `${file}: an empty bullet was laid out`);
     checkGeometry(file, id, `${dir}/${file}.pdf`, data);
-    const measured = await measurePdf(`${dir}/${file}.pdf`);
-    checkFooter(file, `${dir}/${file}.pdf`, measured);
+    checkFooter(file, id, `${dir}/${file}.pdf`, measured);
     checkReference(file, id, measured, data, `${dir}/${file}.pdf`);
     // no extra near-empty last page: the last page carries more than its page number (and the footer's logo)
     const pages = execFileSync("pdftotext", [`${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\f").filter((p, n, all) => n < all.length - 1 || p.trim());
@@ -867,8 +964,8 @@ if (process.argv.includes("--pdf")) {
       });
     }
   }
-  assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
+  if (!only) assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
   console.log("pdf: no near-empty last page (internal, last bullet at the foot of a page)");
-  console.log(`pdf: reference format, footer and fonts checked on ${cases.length} PDFs (${referenceChecks} measurements)`);
+  console.log(`pdf: reference format, footer and fonts checked on ${selected.length} PDFs (${referenceChecks} measurements)`);
 }
 console.log("done");

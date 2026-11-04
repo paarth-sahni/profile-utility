@@ -10,6 +10,9 @@
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
  *             hasRole, hasProjectLink, hasDescription, hasResponsibilities, hasNext
+ *   internal page breaks (units that never split, see section 5 of the patcher): per project isFirst and
+ *             firstX / restX for X = Tech, TeamSize, Role, ProjectLink; skillsHead / skillsRest and the same for
+ *             certifications, managerial, domains, languages
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities, hasNext; per employer: hasPosition, hasDuration, hasHighlights
  * Required content (name, job title, overview, education, skills) has no flag.
@@ -87,10 +90,25 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
   };
 }
 
+/** Internal page breaks: a list's first item goes with its section heading (one unit), the rest one unit each. */
+function headRest<T>(key: string, list: T[]): Record<string, T[]> {
+  return { [`${key}Head`]: list.slice(0, 1), [`${key}Rest`]: list.slice(1) };
+}
+
+const PROJECT_FIELDS = ["Tech", "TeamSize", "Role", "ProjectLink"] as const;
+
+/** Internal page breaks: the first field a project has goes with its heading and name (firstX), the others follow (restX). */
+function fieldFlags(has: Record<(typeof PROJECT_FIELDS)[number], boolean>): Record<string, boolean> {
+  const first = PROJECT_FIELDS.find((f) => has[f]);
+  return Object.fromEntries(PROJECT_FIELDS.flatMap((f) => [[`first${f}`, f === first], [`rest${f}`, has[f] && f !== first]]));
+}
+
 function prepareInternal(d: InternalResume): Record<string, unknown> {
   const projects = d.projects
     .filter((p) => anyReal(p.duration, p.title, p.toolsAndTechnologies, p.teamSize, p.role, p.projectLink, p.description, p.responsibilities))
     .map((p, i, all) => ({
+      isFirst: i === 0, // the "Projects" heading goes with the first project's heading
+      ...fieldFlags({ Tech: clean(p.toolsAndTechnologies).length > 0, TeamSize: real(p.teamSize), Role: real(p.role), ProjectLink: real(p.projectLink) }),
       number: i + 1,
       title: p.title,
       duration: text(p.duration),
@@ -127,15 +145,20 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
     projects,
     hasProjects: projects.length > 0,
     skills: d.skills.filter((s) => real(s.name)),
+    ...headRest("skills", d.skills.filter((s) => real(s.name))),
     certifications,
+    ...headRest("certifications", certifications),
     hasCertifications: certifications.length > 0,
     tools: tools.join(", "),
     hasTools: tools.length > 0,
     managerialExperience: managerial,
+    ...headRest("managerial", managerial),
     hasManagerialExperience: managerial.length > 0,
     domains,
+    ...headRest("domains", domains),
     hasDomains: domains.length > 0,
     languages,
+    ...headRest("languages", languages),
     hasLanguages: languages.length > 0,
   };
 }
