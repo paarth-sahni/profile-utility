@@ -18,6 +18,7 @@
  * Required content (name, job title, overview, education, skills) has no flag.
  */
 import { isNAValue, type ExternalResume, type InternalResume, type ResumeData, type TemplateId } from "./schemas";
+import { splitDescription } from "./textMetrics";
 
 /** True for a value with real content: not blank and not an "N/A"-style placeholder. */
 const real = (value: string | undefined | null): boolean => !!value && value.trim() !== "" && !isNAValue(value);
@@ -90,6 +91,26 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
   };
 }
 
+/**
+ * Page breaks: the width (pt) of the column a project description is printed in (scripts/patch-templates.py: internal, the
+ * main column's units, 7170 - 2 x 144 twips; external, the page between its 0.6in margins) and its size (Lexend Light 11pt).
+ */
+const DESCRIPTION_COLUMN_PT: Record<TemplateId, number> = { internal: 344.1, external: 525.6 };
+const DESCRIPTION_SIZE_PT = 11;
+
+/**
+ * Page breaks: a description of up to 6 lines is one unit that never splits (descriptionWhole); a longer one is printed as
+ * its first 2 lines, the middle and its last 2 lines (descriptionHead / Body / Tail: the first and last are units), so a
+ * page break inside it leaves at least 2 lines on each side. LibreOffice ignores widow / orphan control in table cells.
+ */
+function descriptionUnits(template: TemplateId, description: string | undefined): Record<string, unknown> {
+  const value = text(description);
+  const split = value ? splitDescription(value, DESCRIPTION_COLUMN_PT[template], DESCRIPTION_SIZE_PT) : { whole: true as const };
+  return split.whole
+    ? { descriptionWhole: real(value), descriptionLong: false }
+    : { descriptionWhole: false, descriptionLong: true, descriptionHead: split.head, descriptionBody: split.body, descriptionTail: split.tail };
+}
+
 /** Internal page breaks: a list's first item goes with its section heading (one unit), the rest one unit each. */
 function headRest<T>(key: string, list: T[]): Record<string, T[]> {
   return { [`${key}Head`]: list.slice(0, 1), [`${key}Rest`]: list.slice(1) };
@@ -123,6 +144,7 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
       hasProjectLink: real(p.projectLink),
       description: text(p.description),
       hasDescription: real(p.description),
+      ...descriptionUnits("internal", p.description),
       responsibilities: clean(p.responsibilities),
       hasResponsibilities: clean(p.responsibilities).length > 0,
       // the blank line after a project only separates it from the next one (none after the last: no extra empty page)

@@ -263,6 +263,59 @@ const longSidebar = {
   languages: ["English", "Hindi", "Gujarati"],
 };
 
+// Descriptions of every length (fictional): built from these sentences, so a description of about n lines is easy to make.
+// With --pdf, *-desc-<k> shift everything down by k overview lines, so each description meets the foot of a page at
+// every line: a description of up to 6 lines must never split, a longer one keeps at least 2 lines on each side.
+const SENTENCES = [
+  "The platform collects orders from a fictional chain of garden centres and plans next-day deliveries by van.",
+  "Store staff see stock levels per aisle and can reserve plants for customers who order by phone.",
+  "Managers get a weekly report of waste, late deliveries and the products that sold out early.",
+  "The system replaced three spreadsheets and a paper rota that were updated by hand every evening.",
+  "Deliveries are grouped by postcode so each van makes fewer trips and arrives within the promised hour.",
+  "Payments, refunds and loyalty points are handled by an existing service that the team integrated with.",
+];
+const sentences = (n) => Array.from({ length: n }, (_, i) => SENTENCES[i % SENTENCES.length]).join(" ");
+const OVERVIEW_LINE = "Enjoys tidy data models."; // one line in either template
+const descriptionCase = (k) => ({
+  ...internalSample,
+  name: "Ravi Kulkarni",
+  overview: [internalSample.overview, ...Array.from({ length: k }, () => OVERVIEW_LINE)].join("\n"),
+  projects: [2, 3, 5, 7, 9, 12].map((n, i) => ({
+    duration: `Jan ${2012 + i} – Dec ${2012 + i}`,
+    title: `Garden Centre Platform ${i + 1}`,
+    toolsAndTechnologies: ["Java", "PostgreSQL"],
+    teamSize: "5",
+    role: "Developer",
+    projectLink: "NDA",
+    description: sentences(n),
+    responsibilities: ["Built the delivery planner.", "Wrote the stock reports."],
+  })),
+});
+
+// A long external profile (fictional): projects with descriptions and bullets, and employers with highlights, so section
+// headings, project starts, bullets, descriptions and employers meet the foot of a page (*-long-<k>: k overview lines more).
+const externalLong = (k) => ({
+  ...externalSample,
+  name: "Leena Fernandes",
+  overview: [externalSample.overview, ...Array.from({ length: k }, () => OVERVIEW_LINE)].join("\n"),
+  skills: ["Test Automation", "API Testing", "Regression Testing", "Performance Testing", "Accessibility Testing", "Agile", "Mobile Testing", "Security Testing"],
+  tools: ["Selenium", "Postman", "JMeter", "Jenkins", "JIRA", "Appium", "Cypress", "Playwright", "TestRail"],
+  certifications: ["ISTQB Certified Tester – Foundation Level", "ISTQB Agile Tester", "Certified Scrum Master"],
+  projects: [3, 8, 2, 5, 11, 4].map((n, i) => ({
+    duration: `Mar ${2014 + i} – Feb ${2015 + i}`,
+    client: `Garden Centre Platform ${i + 1}`,
+    teamSize: String(4 + i),
+    role: i % 2 ? "QA Lead" : "Senior QA Engineer",
+    description: sentences(n),
+    responsibilities: ["Planned the regression suite for each release and kept it under two hours.", "Automated the checkout and delivery-slot journeys.", "Reported weekly on defects found before release."].slice(0, 1 + (i % 3)),
+  })),
+  experience: [
+    { company: "Brightwave Systems", position: "Senior QA Engineer", duration: "Apr 2020 – Present", highlights: ["Leads a team of four testers across two product lines.", "Set up nightly automated runs in Jenkins."] },
+    { company: "Contoso Software", position: "QA Engineer", duration: "Jul 2015 – Mar 2020", highlights: ["Tested insurance claims portals for web and mobile."] },
+    { company: "Northwind Traders", position: "Junior Tester", duration: "Jun 2013 – Jun 2015", highlights: ["Wrote manual test cases for the order desk.", "Kept the defect log tidy."] },
+  ],
+});
+
 // ------------------------------------------------------------------------------------------------- rendering
 const templateXml = {};
 function render(id, data) {
@@ -928,7 +981,9 @@ if (process.argv.includes("--pdf")) {
   // shortened skill by skill so each kind of item lands at the foot of page 1
   const nine = Array.from({ length: 6 }, (_, k) => [`internal-nine-${k}`, "internal", { ...internalNine, projects: [{ ...NINE[0], responsibilities: NINE[0].responsibilities.slice(k % 4) }, ...NINE.slice(1).map((p, n) => (k >= 4 && n === 0 ? { ...p, responsibilities: p.responsibilities.slice(1) } : p))] }]);
   const sidebar = Array.from({ length: 6 }, (_, k) => [`internal-sidebar-${k}`, "internal", { ...longSidebar, skills: longSidebar.skills.slice(k) }]);
-  cases.push(...nine, ...sidebar);
+  const desc = Array.from({ length: 8 }, (_, k) => [`internal-desc-${k}`, "internal", descriptionCase(k)]);
+  const extLong = Array.from({ length: 8 }, (_, k) => [`external-long-${k}`, "external", externalLong(k)]);
+  cases.push(...nine, ...sidebar, ...desc);
   const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
   const pageCounts = [];
   const selected = only ? cases.filter(([f]) => new RegExp(only).test(f)) : cases;
@@ -939,9 +994,9 @@ if (process.argv.includes("--pdf")) {
     fs.writeFileSync(`${dir}/${file}.pdf`, await convertDocxToPdf(withoutEmbeddedFonts(zip).generate({ type: "uint8array", compression: "DEFLATE" })));
     const measured = await measurePdf(`${dir}/${file}.pdf`);
     console.log(`pdf: ${dir}/${file}.pdf (${measured.length} page${measured.length > 1 ? "s" : ""})`);
-    // page breaks (internal): no heading or label left at the foot of a page, no bullet or sidebar item cut in two
+    // page breaks: no heading, label or employer line left at the foot of a page, no bullet, description or sidebar item cut badly
     if (id === "internal") {
-      const problems = pageBreakProblems(measured, data);
+      const problems = pageBreakProblems(measured, data, id);
       for (const p of problems) console.error(`  ${file}: ${p}`);
       assert(problems.length === 0, `${file}: ${problems.length} page-break problem(s), listed above`);
     }

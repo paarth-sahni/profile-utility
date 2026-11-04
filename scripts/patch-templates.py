@@ -447,7 +447,10 @@ AFTER_CLOSE = {
 # paragraphs did. The units:
 #   - a project's start: ("Projects" before the first one,) "Project N - <dates>", the name and the project's first
 #     field (firstX, set in lib/docxData.ts); each further field (restX) on its own;
-#   - each bullet (a description is not a unit: it may run across a page break);
+#   - each bullet;
+#   - a description of up to 6 lines (descriptionWhole); a longer one as its first 2 lines (a unit), the middle (free to run
+#     across a page break) and its last 2 lines (a unit), so a break leaves at least 2 lines on each side: lib/docxData.ts
+#     estimates the lines from Lexend Light's widths (lib/textMetrics.ts), as LibreOffice ignores widow control in cells;
 #   - in the sidebar: a section heading with its first item, then each further item (a skill: its name and rating);
 #     the tool line with its heading.
 # Each condition / loop tag stays outside the unit tables, so a cell never ends up empty, and so a loop repeats whole
@@ -474,6 +477,14 @@ def cond(flag: str, xml: str) -> str:
     return marker("{#" + flag + "}") + xml + marker("{/" + flag + "}")
 
 
+def description_units(para: str, col: str) -> str:
+    """A project description (the paragraph holding {description}) for the page-break rule (see UNITS)."""
+    piece = lambda tag: para.replace("{description}", "{" + tag + "}")
+    return cond("descriptionWhole", unit(para, col)) + cond(
+        "descriptionLong", unit(piece("descriptionHead"), col) + piece("descriptionBody") + unit(piece("descriptionTail"), col)
+    )
+
+
 def internal_units(p: dict) -> dict:
     """The projects (replacing paragraphs 12-39) and the sidebar (40-68) as units; p: paragraph -> formatted xml."""
     first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in PROJECT_FIELDS)
@@ -482,7 +493,7 @@ def internal_units(p: dict) -> dict:
         "projects",
         unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field, "main")
         + rest_fields
-        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + p[34])
+        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + description_units(p[34], "main"))
         + cond("hasResponsibilities", PROJECT_SPACER + cond("responsibilities", unit(p[36], "main")))
         # the blank line between projects separates their tables too; none after the last (no extra empty page)
         + cond("hasNext", p[38]),
