@@ -233,7 +233,7 @@ export async function startHarness(title) {
     },
     async submitViaPreview() {
       await h.click("Preview & Submit →");
-      await h.waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview ready");
+      await h.waitFor("!!document.querySelector('[data-preview-editor]')", "preview ready");
       if (!(await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
       await h.click("Submit", "[data-preview-step] button");
       await h.waitFor("!!document.querySelector('[data-submitted]')", "submitted message");
@@ -261,8 +261,9 @@ export async function startHarness(title) {
     },
     /** Pretends the sign-in is `interval` old (e.g. "1 hour 56 minutes") by editing last_sign_in_at. */
     ageSession: (who, interval) => sql(`update auth.users set last_sign_in_at = now() - interval '${interval}' where email='${who}@example.test'`),
-    /** Runs one scenario; an exception counts as a failure and does not stop the others. */
+    /** Runs one scenario; an exception counts as a failure and does not stop the others. E2E_ONLY=<regex> runs only matching ones. */
     async scenario(name, fn) {
+      if (process.env.E2E_ONLY && !new RegExp(process.env.E2E_ONLY, "i").test(name)) return;
       console.log(`\n# ${name}`);
       try {
         await fn();

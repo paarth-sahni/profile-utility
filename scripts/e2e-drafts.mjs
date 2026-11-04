@@ -26,27 +26,27 @@ await t.scenario("draft is written while there is unsaved work (and only in sess
   await fresh();
   await openBlankForm();
   check("a blank form nobody typed into has no draft", (await draftOf()) === null);
-  await setName("E2E Draft Test");
+  await setName("E2E Draft Person");
   await sleep(700);
   const d = JSON.parse((await draftOf()) ?? "null");
-  check("typing creates a sessionStorage draft", d?.data?.name === "E2E Draft Test" && d?.template === "internal" && d?.source === "scratch");
+  check("typing creates a sessionStorage draft", d?.data?.name === "E2E Draft Person" && d?.template === "internal" && d?.source === "scratch");
   check("nothing is written to localStorage", (await ev("Object.keys(localStorage).filter(k=>k.includes('draft')).length")) === 0);
 });
 
 await t.scenario("session ends: 401 on save, restore after re-login, save clears the draft, expiry banner", async () => {
   await fresh();
   await openBlankForm();
-  await fillRequired("E2E Draft Test"); // saving needs the required fields
+  await fillRequired("E2E Draft Person"); // saving needs the required fields
   await sleep(700);
   // Preview while signed in, then the session ends: recording the consent for Submit answers 401
   await click("Preview & Submit →");
-  await waitFor("!!document.querySelector('[data-pdf-preview=ready]')", "preview");
+  await waitFor("!!document.querySelector('[data-preview-editor]')", "preview");
   ageSession("member", "2 hours 1 minute");
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
   await waitFor("location.pathname.startsWith('/login')", "redirect to /login after 401");
   check("a 401 on Submit sends the user to /login", true);
-  check("the draft survives the redirect (same tab)", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Test");
+  check("the draft survives the redirect (same tab)", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Person");
 
   await signIn("member");
   await goto("/internal");
@@ -55,15 +55,16 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   check("the prompt says the draft never leaves the browser", (await bodyText()).includes("never sent anywhere"));
   await click("Restore");
   await waitFor("!!document.querySelector('label input')", "restored form");
-  check("Restore brings the form back", (await getName()) === "E2E Draft Test");
+  check("Restore brings the form back", (await getName()) === "E2E Draft Person");
 
-  // The session has already ended when Preview builds the PDF (POST /api/pdf answers 401): same redirect, same draft
+  // The session has already ended when Preview & Submit is pressed (the client-name check before Preview answers 401):
+  // same redirect, same draft
   await sleep(700);
   ageSession("member", "2 hours 1 minute");
   await click("Preview & Submit →");
-  await waitFor("location.pathname.startsWith('/login')", "redirect to /login after a 401 from /api/pdf");
-  check("a 401 while building the Preview PDF sends the user to /login", true);
-  check("the draft survives that redirect too", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Test");
+  await waitFor("location.pathname.startsWith('/login')", "redirect to /login after a 401 on the way to Preview");
+  check("a 401 on the way to Preview sends the user to /login", true);
+  check("the draft survives that redirect too", JSON.parse((await draftOf()) ?? "null")?.data?.name === "E2E Draft Person");
   await signIn("member");
   await goto("/internal");
   await waitFor("document.body.innerText.includes('Restore your unsaved changes?')", "restore prompt (2)");
@@ -77,7 +78,7 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await sleep(500);
   check("submitting clears the draft", (await draftOf()) === null);
 
-  const profile = sql("select p.id from profiles p where p.candidate_name='E2E Draft Test' limit 1");
+  const profile = sql("select p.id from profiles p where p.candidate_name='E2E Draft Person' limit 1");
   const version = sql(`select current_version_id from profiles where id='${profile}'`);
   ageSession("member", "1 hour 56 minutes");
   await goto(`/internal?version=${version}`);
@@ -85,11 +86,11 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   await waitFor("document.body.innerText.includes('Your session ends in')", "banner (saved)");
   const saved = await bodyText();
   check("banner with nothing unsaved only reassures", /Your session ends in [45] minutes?\. Your latest changes are saved\./.test(saved) && !saved.includes("Save now"));
-  await setName("E2E Draft Test 2");
+  await setName("E2E Draft Person 2");
   await waitFor("document.body.innerText.includes('go to Preview & Submit')", "banner (unsaved)");
   const unsaved = await bodyText();
   check("banner with unsaved work says to go to Preview & Submit (or download), with no Save button", /Your session ends in [45] minutes? — go to Preview & Submit to save your profile \(or download your PDF\)\./.test(unsaved) && !unsaved.includes("Save now") && !(await ev("[...document.querySelectorAll('[role=status] button, [role=alert] button')].length")));
-  check("the draft still protects the edit", JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2" || (await sleep(700), JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Test 2"));
+  check("the draft still protects the edit", JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Person 2" || (await sleep(700), JSON.parse((await ev("sessionStorage.getItem('profile-draft:v1:internal')")) ?? "null")?.data?.name === "E2E Draft Person 2"));
 });
 
 await t.scenario("Discard, and leaving immediately still keeps a draft", async () => {
