@@ -153,7 +153,6 @@ export function setAt<T>(data: T, path: string, value: string): T {
 }
 
 // C0 controls except tab and line breaks, DEL, C1 controls; zero-width spaces, joiners, word joiner, byte-order mark
-// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F​-‍⁠﻿]/g;
 
 /** Plain text for a Preview field: no control or zero-width characters; line breaks only where `multiline` allows them. */

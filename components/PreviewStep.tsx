@@ -1,23 +1,33 @@
 "use client";
 
 /**
- * Purpose: the Preview (& Submit) step. Shows the exact PDF that is generated (see PdfPreview) and offers the ways to
- * finish: "← Back to edit", "Download PDF" (saves the previewed PDF) and "Submit" (only when `onSubmit` is given, i.e.
- * internal profiles). "Open in Google Docs" is not offered here: it is only on the /manage profile pages. A required consent checkbox must be ticked first. Download records
- * the consent (POST /api/consent) before it runs and is cancelled if that fails; Submit sends the tick with the save request and the server
- * records it only after the client-name check passes, so a refused Submit leaves no consent record.
- * The validated profile comes from the workflow; nothing here edits it.
+ * Purpose: the Preview (& Submit) step and the ways to finish: "← Back to edit", "Download PDF" and "Submit" (only when
+ * `onSubmit` is given, i.e. internal profiles). "Open in Google Docs" is not offered here: it is only on the /manage profile
+ * pages. A required consent checkbox must be ticked first.
+ *   - External profiles: the exact PDF is shown (PdfPreview) and Download saves that file; the consent is recorded
+ *     (POST /api/consent) before it runs and the download is cancelled if that fails.
+ *   - Internal profiles (`edit`): the text under the headings can be edited in a view laid out like the PDF
+ *     (InternalPreviewEditor); "View PDF" shows the exact PDF in a dialog, built again whenever the text changed since the
+ *     last one. Download always builds the PDF of the current text with the server, which records the consent only after its
+ *     checks pass (so the file always matches the text), and that file becomes the one View PDF shows. A problem (required,
+ *     "N/A", an emptied item, a registered client name) blocks Download and Submit: it is listed and the first field gets
+ *     focus; a refusal by the server is shown the same way. Changing the text after ticking the box clears the tick.
+ * Submit sends the tick with the save request and the server records it only after its checks pass, so a refused Submit
+ * leaves no consent record.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import ConsentCheckbox, { CONSENT_REQUIRED } from "@/components/ConsentCheckbox";
+import type { Range } from "@/components/fields";
+import InternalPreviewEditor from "@/components/InternalPreviewEditor";
 import { PRIMARY_EXPLANATION } from "@/components/MarkPrimaryButton";
 import PdfPreview from "@/components/PdfPreview";
-import { usePreviewPdf } from "@/components/usePreviewPdf";
-import type { PdfComplianceMatch } from "@/lib/pdfClient";
+import { usePreviewPdf, type PreviewPdf } from "@/components/usePreviewPdf";
+import type { PdfComplianceMatch, PdfFieldIssue } from "@/lib/pdfClient";
+import type { PreviewLayout } from "@/lib/previewEdit";
 import type { ConsentAction } from "@/lib/consent";
 import { ConsentError, recordConsent } from "@/lib/consentClient";
 import { savePdf } from "@/lib/pdfClient";
-import type { ResumeData, TemplateId } from "@/lib/schemas";
+import type { InternalResume, ResumeData, TemplateId } from "@/lib/schemas";
 
 /** The version Submit saved (or reused). */
 export interface SubmittedVersion {
@@ -32,6 +42,36 @@ export interface SubmittedVersion {
  * already primary; "first" = the user has no primary yet, so this first submitted profile becomes primary anyway.
  */
 export type PrimaryChoice = "choose" | "already" | "first";
+
+/** Something that blocks Download / Submit: the field, its accessible name and what to do. */
+export interface PreviewProblem {
+  path: string;
+  label: string;
+  message: string;
+}
+
+/** What the server refused: incomplete fields (INCOMPLETE) or registered client names (COMPLIANCE). */
+export interface PreviewRefusal {
+  fields?: PdfFieldIssue[];
+  matches?: PdfComplianceMatch[];
+}
+
+/** Internal profiles: editing the text on Preview (all of it owned by the workflow). */
+export interface PreviewEditing {
+  layout: PreviewLayout;
+  /** The profile as Preview opened it (the read-only header). */
+  header: InternalResume;
+  onEdit: (path: string, value: string) => void;
+  /** Field path -> problem shown on the field (updated a moment after typing stops). */
+  errors: Record<string, string>;
+  highlights: Record<string, Range[]>;
+  /** Everything that blocks Download / Submit right now, in the order of the page. */
+  problems: () => PreviewProblem[];
+  /** The server refused: the workflow marks the fields and returns the field to focus, or null when it went back to Edit. */
+  onRefused: (refusal: PreviewRefusal) => string | null;
+  /** A field the workflow wants focused (e.g. after a refused Submit); `tick` changes on every request. */
+  focus: { path: string; tick: number } | null;
+}
 
 export interface PreviewStepProps {
   template: TemplateId;
@@ -53,8 +93,19 @@ export interface PreviewStepProps {
   onSessionEnded: () => void;
   /** Called when the server refuses the profile because it names a registered client (the workflow goes back to editing). */
   onComplianceBlocked?: (matches: PdfComplianceMatch[]) => void;
-  /** The checker currently flags this profile: Download and Submit stay disabled whatever else is true. */
+  /** The checker currently flags this profile: Download and Submit stay disabled whatever else is true (external view). */
   blocked?: boolean;
+  /** Internal profiles: the text can be edited here. */
+  edit?: PreviewEditing;
+}
+
+/** Moves focus to the Preview field for `path` (and scrolls it into view). */
+function focusField(path: string) {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>(`[data-edit-path="${CSS.escape(path)}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.focus({ preventScroll: true });
+  });
 }
 
 export default function PreviewStep({
@@ -70,8 +121,14 @@ export default function PreviewStep({
   onSessionEnded,
   onComplianceBlocked,
   blocked = false,
+  edit,
 }: PreviewStepProps) {
-  const { pdf, retry } = usePreviewPdf(template, data);
+  const { pdf, retry, build } = usePreviewPdf(template, data, { auto: !edit });
+  const [viewing, setViewing] = useState(false);
+  const viewer = useRef<HTMLDialogElement>(null);
+  const viewerTitle = useId();
+  const [showProblems, setShowProblems] = useState(false);
+  const [consentNotice, setConsentNotice] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [busy, setBusy] = useState<ConsentAction | null>(null);
@@ -84,8 +141,30 @@ export default function PreviewStep({
   const primaryIds = useId();
   const checkbox = useRef<HTMLInputElement>(null);
 
-  const ready = pdf.status === "ready";
+  const ready = edit ? true : pdf.status === "ready"; // editable: Download / Submit build or save what they need themselves
+  const outOfDate = pdf.status === "ready" && pdf.forData !== data;
   const sessionEnded = pdf.status === "error" && pdf.httpStatus === 401;
+  const problems = edit && showProblems ? edit.problems() : [];
+
+  // the text changed after the box was ticked: the confirmation was for the old text
+  const confirmedFor = useRef(data);
+  useEffect(() => {
+    if (!edit || confirmedFor.current === data) return;
+    confirmedFor.current = data;
+    if (consent) {
+      setConsent(false);
+      setConsentNotice("You changed the text, so please tick the box again to confirm it.");
+    }
+  }, [edit, data, consent]);
+
+  // the workflow asks for a field (after a refused Submit)
+  const focusTick = edit?.focus?.tick;
+  const focusPath = edit?.focus?.path;
+  useEffect(() => {
+    if (!focusPath) return; // only a new request (a new tick) moves focus
+    setShowProblems(true);
+    focusField(focusPath);
+  }, [focusTick, focusPath]);
 
   const endedReported = useRef(false);
   useEffect(() => {
@@ -95,8 +174,8 @@ export default function PreviewStep({
     }
   }, [sessionEnded, onSessionEnded]);
 
-  // the server refused the profile (it names a registered client): hand the places to the workflow, which returns to editing
-  const blockedMatches = pdf.status === "error" && pdf.code === "COMPLIANCE" ? pdf.matches : undefined;
+  // external: the server refused the profile (it names a registered client): hand the places to the workflow, which returns to editing
+  const blockedMatches = !edit && pdf.status === "error" && pdf.code === "COMPLIANCE" ? pdf.matches : undefined;
   const blockedReported = useRef(false);
   useEffect(() => {
     if (blockedMatches && !blockedReported.current) {
@@ -113,6 +192,41 @@ export default function PreviewStep({
     return false;
   };
 
+  /** Editable: true when nothing blocks Download / Submit; otherwise lists the problems and focuses the first field. */
+  const requireNoProblems = (): boolean => {
+    if (!edit) return true;
+    const list = edit.problems();
+    setShowProblems(list.length > 0);
+    if (list.length === 0) return true;
+    focusField(list[0].path);
+    return false;
+  };
+
+  /** Editable: what to do with a PDF that could not be built (refusal, ended session, rate limit...). */
+  const reportFailure = (failed: Extract<PreviewPdf, { status: "error" }>) => {
+    if (failed.httpStatus === 401) {
+      onSessionEnded();
+      return;
+    }
+    if (edit && (failed.code === "COMPLIANCE" || failed.code === "INCOMPLETE") && (failed.matches || failed.fields)) {
+      viewer.current?.close();
+      const path = edit.onRefused({ matches: failed.matches, fields: failed.fields });
+      setShowProblems(true);
+      if (path) focusField(path);
+    }
+    setMessage({ kind: "error", text: failed.message });
+  };
+
+  /** Editable: opens the PDF dialog, building the PDF first when there is none or the text changed since. */
+  const viewPdf = async () => {
+    setMessage(null);
+    setViewing(true);
+    viewer.current?.showModal();
+    if (pdf.status === "ready" && !outOfDate) return;
+    const out = await build(data);
+    if (out.status === "error") reportFailure(out);
+  };
+
   /** Writes the consent to the audit log. Throws (after reporting an ended session) if that did not work. */
   const record = async (action: ConsentAction): Promise<void> => {
     try {
@@ -124,6 +238,25 @@ export default function PreviewStep({
   };
 
   const download = async () => {
+    if (edit) {
+      if (busy || !requireConsent() || !requireNoProblems()) return;
+      setMessage(null);
+      setBusy("download");
+      try {
+        // always the PDF of the current text, made and checked by the server, which then records the consent
+        const out = await build(data, { consent: "download" });
+        if (out.status !== "ready") {
+          if (out.status === "error") reportFailure(out);
+          return;
+        }
+        savePdf(out.blob, fileName);
+        onDownloaded();
+        setMessage({ kind: "ok", text: "PDF downloaded — check your downloads." });
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
     if (pdf.status !== "ready" || busy || blocked || !requireConsent()) return;
     setMessage(null);
     setBusy("download");
@@ -140,7 +273,7 @@ export default function PreviewStep({
   };
 
   const submit = async () => {
-    if (!onSubmit || !ready || busy || blocked || !requireConsent()) return;
+    if (!onSubmit || !ready || busy || (!edit && blocked) || !requireConsent() || !requireNoProblems()) return;
     setMessage(null);
     setSubmitted(null);
     setBusy("submit");
@@ -163,15 +296,75 @@ export default function PreviewStep({
     <div className="space-y-5" data-preview-step>
       <div>
         <h2 className="text-lg font-medium text-ink-dark">{onSubmit ? "Preview & Submit" : "Preview"}</h2>
-        <p className="mt-1 text-sm text-ink-light">This is the exact PDF that will be downloaded. Check it, then confirm below.</p>
+        <p className="mt-1 text-sm text-ink-light">
+          {edit
+            ? "Check your profile and correct the text if needed. View PDF shows the exact file, with its page breaks; then confirm below."
+            : "This is the exact PDF that will be downloaded. Check it, then confirm below."}
+        </p>
       </div>
 
-      {pdf.status === "loading" && (
+      {edit && (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => void viewPdf()} disabled={busy !== null} className={outline} data-view-pdf>
+              View PDF
+            </button>
+            {outOfDate && (
+              <span className="text-xs text-ink-light" data-pdf-out-of-date>
+                You changed the text since the last PDF: View PDF builds it again.
+              </span>
+            )}
+          </div>
+          <InternalPreviewEditor
+            header={edit.header}
+            layout={edit.layout}
+            data={data as InternalResume}
+            onEdit={edit.onEdit}
+            errors={edit.errors}
+            highlights={edit.highlights}
+          />
+          <dialog
+            ref={viewer}
+            aria-labelledby={viewerTitle}
+            onClose={() => setViewing(false)}
+            className="m-auto h-[92vh] w-[min(56rem,96vw)] max-w-none bg-white p-0 backdrop:bg-black/50"
+            data-pdf-dialog
+          >
+            {viewing && (
+              <div className="flex h-full flex-col">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                  <h3 id={viewerTitle} className="text-sm font-medium text-ink-dark">
+                    PDF preview: the exact file, with its page breaks
+                  </h3>
+                  <button type="button" onClick={() => viewer.current?.close()} className={outline} autoFocus>
+                    Close
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-4">
+                  {pdf.status === "loading" && (
+                    <p role="status" className="py-10 text-center text-sm text-ink-light">
+                      Building the PDF…
+                    </p>
+                  )}
+                  {pdf.status === "error" && (
+                    <p role="alert" className="whitespace-pre-wrap border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700">
+                      {pdf.message}
+                    </p>
+                  )}
+                  {pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
+                </div>
+              </div>
+            )}
+          </dialog>
+        </>
+      )}
+
+      {!edit && pdf.status === "loading" && (
         <div role="status" className="border border-gray-200 bg-white px-4 py-10 text-center text-sm text-ink-light">
           Building your preview…
         </div>
       )}
-      {pdf.status === "error" && (
+      {!edit && pdf.status === "error" && (
         <div role="alert" className="space-y-3 border border-brand-200 bg-brand-50 p-4">
           <p className="whitespace-pre-wrap text-sm text-brand-700">{pdf.message}</p>
           <button type="button" onClick={retry} className={outline}>
@@ -179,7 +372,25 @@ export default function PreviewStep({
           </button>
         </div>
       )}
-      {pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
+      {!edit && pdf.status === "ready" && <PdfPreview blob={pdf.blob} />}
+
+      {problems.length > 0 && (
+        <div role="alert" className="border border-brand-200 bg-brand-50 p-3" data-preview-problems>
+          <p className="mb-2 text-sm font-semibold text-brand-700">
+            Please fix {problems.length} {problems.length === 1 ? "issue" : "issues"} before downloading or submitting:
+          </p>
+          <ul className="space-y-1 text-sm text-brand-700">
+            {problems.map((p) => (
+              <li key={p.path}>
+                <button type="button" onClick={() => focusField(p.path)} className="text-left underline underline-offset-2 hover:text-brand-800">
+                  {p.label}
+                </button>{" "}
+                — {p.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="border border-gray-200 bg-cream p-4">
         <ConsentCheckbox
@@ -188,9 +399,17 @@ export default function PreviewStep({
           error={consentError}
           onChange={(checked) => {
             setConsent(checked);
-            if (checked) setConsentError(null);
+            if (checked) {
+              setConsentError(null);
+              setConsentNotice(null);
+            }
           }}
         />
+        {consentNotice && !consent && (
+          <p className="mt-2 text-xs text-amber-700" role="status">
+            {consentNotice}
+          </p>
+        )}
       </div>
 
       {submitted && (

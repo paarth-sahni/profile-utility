@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Stepper from "@/components/Stepper";
 import UploadProgress from "@/components/UploadProgress";
 import ExtractionSummary from "@/components/ExtractionSummary";
@@ -9,7 +9,8 @@ import { useComplianceCheck } from "@/components/useComplianceCheck";
 import { describeMatch, messagesByPath, rangesByPath, type ComplianceMatch } from "@/lib/complianceClient";
 import ExternalForm from "@/components/ExternalForm";
 import InternalForm from "@/components/InternalForm";
-import PreviewStep, { type PrimaryChoice, type SubmittedVersion } from "@/components/PreviewStep";
+import PreviewStep, { type PreviewEditing, type PreviewProblem, type PreviewRefusal, type PrimaryChoice, type SubmittedVersion } from "@/components/PreviewStep";
+import { editableOnPreview, emptyItemIssues, previewFields, previewLayout, setAt } from "@/lib/previewEdit";
 import { pdfFileName } from "@/lib/docxReady";
 import { ConsentError, recordConsent } from "@/lib/consentClient";
 import { resubmitSaved } from "@/lib/resubmit";
@@ -146,10 +147,21 @@ export default function ProfileWorkflow({
   const [errors, setErrors] = useState<FieldError[] | null>(null);
   const [checkingNames, setCheckingNames] = useState(false);
   // the client-name rule: the server tells which typed text names a registered client (marks on the Edit step)
-  const { live, setFromServer, checkNow } = useComplianceCheck(templateId, data, step === STEP_REVIEW);
+  // (on Preview too for internal profiles, whose text can be edited there)
+  const { live, setFromServer, checkNow } = useComplianceCheck(templateId, data, step === STEP_REVIEW || (step === STEP_PREVIEW && templateId === "internal"));
   const [scrollTick, setScrollTick] = useState(0);
-  // the validated profile shown on the Preview step (set when entering it)
+  // the validated profile shown on the Preview step (set when entering it); for internal profiles the editable view is laid
+  // out from it, and edits made there go to `data` like any other edit
   const [previewData, setPreviewData] = useState<ResumeData | null>(null);
+  // Preview (internal): fields the server refused as incomplete, and the field to focus after a refused Submit
+  const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
+  const [previewFocus, setPreviewFocus] = useState<{ path: string; tick: number } | null>(null);
+  // Preview marks follow the text a moment after typing stops
+  const [markedData, setMarkedData] = useState<ResumeData | null>(data);
+  useEffect(() => {
+    const t = setTimeout(() => setMarkedData(data), 400);
+    return () => clearTimeout(t);
+  }, [data]);
 
   // upload screen
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
@@ -438,6 +450,81 @@ export default function ProfileWorkflow({
     setScrollTick((t) => t + 1);
   };
 
+  /** "projects.0.title" -> ["projects", 0, "title"], for describeFieldPath. */
+  const toPath = (key: string) => key.split(".").map((p) => (/^\d+$/.test(p) ? Number(p) : p));
+
+  // ---- Preview (internal): editing the text there ----
+  // the profile as it is printed and saved (the blank form's bare number of years expanded); the header is not editable on
+  // Preview, so edits by path go to `data` itself
+  const printed = useMemo(
+    () => (data && fromScratch && templateId === "internal" ? { ...(data as InternalResume), experienceSummary: formatYearsExperience((data as InternalResume).experienceSummary) } : data),
+    [data, fromScratch, templateId],
+  );
+  const layout = useMemo(() => (templateId === "internal" && previewData ? previewLayout(previewData as InternalResume) : null), [templateId, previewData]);
+
+  /** Field path -> problem: client names (only when checked for this text), refusals by the server, required / "N/A", emptied items. */
+  const previewProblemsByPath = (d: ResumeData | null, matches: readonly ComplianceMatch[]): Record<string, string> =>
+    layout && d
+      ? {
+          ...messagesByPath(matches),
+          ...serverFieldErrors,
+          ...checkProfile(d).byPath,
+          ...Object.fromEntries(emptyItemIssues(layout, d).map((i) => [i.key, i.message])),
+        }
+      : {};
+
+  /** Everything that blocks Download / Submit now, in the order of the page (fields Preview cannot show come last). */
+  const previewProblems = (): PreviewProblem[] => {
+    if (!layout) return [];
+    const byPath = previewProblemsByPath(data, live.forData === data ? live.matches : []);
+    const fields = previewFields(layout);
+    const shown = fields.filter((f) => f.path in byPath).map((f) => ({ path: f.path, label: f.label, message: byPath[f.path] }));
+    const others = Object.keys(byPath)
+      .filter((p) => !fields.some((f) => f.path === p))
+      .map((p) => ({ path: p, label: p ? describeFieldPath(toPath(p)) : "Profile", message: byPath[p] }));
+    return [...shown, ...others];
+  };
+
+  /**
+   * The server refused (a PDF or Submit): when every field it names can be fixed on Preview, mark them there and return the
+   * first one to focus; otherwise go back to Edit with them marked, as before, and return null.
+   */
+  const handlePreviewRefusal = (r: PreviewRefusal): string | null => {
+    const paths = [...(r.matches ?? []).map((m) => m.path), ...(r.fields ?? []).map((f) => f.path)];
+    if (!layout || paths.length === 0 || !paths.every((p) => editableOnPreview(layout, p))) {
+      if (r.matches?.length) showComplianceMatches(r.matches, data);
+      else if (r.fields?.length) {
+        setErrors(r.fields.map((f) => ({ path: f.path ? describeFieldPath(toPath(f.path)) : "Profile", message: f.message })));
+        setStep(STEP_REVIEW);
+        setScrollTick((t) => t + 1);
+      }
+      return null;
+    }
+    if (r.matches?.length) setFromServer(r.matches, data);
+    if (r.fields?.length) setServerFieldErrors(Object.fromEntries(r.fields.map((f) => [f.path, f.message])));
+    return previewFields(layout).find((f) => paths.includes(f.path))?.path ?? null;
+  };
+
+  /** A Submit refused for these reasons: marked on Preview (focus moves to the first field) or shown on Edit. */
+  const refuseSubmit = (r: PreviewRefusal) => {
+    const path = handlePreviewRefusal(r);
+    if (path) setPreviewFocus((f) => ({ path, tick: (f?.tick ?? 0) + 1 }));
+  };
+
+  const previewEditing: PreviewEditing | undefined =
+    layout && previewData && step === STEP_PREVIEW
+      ? {
+          layout,
+          header: previewData as InternalResume,
+          onEdit: (path, value) => data && handleFormChange(setAt(data, path, value)),
+          errors: previewProblemsByPath(markedData, live.matches),
+          highlights: live.forData === data ? rangesByPath(live.matches) : {},
+          problems: previewProblems,
+          onRefused: handlePreviewRefusal,
+          focus: previewFocus,
+        }
+      : undefined;
+
   // Every step opens at the top of the page, not where the previous step was scrolled to.
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -457,6 +544,7 @@ export default function ProfileWorkflow({
     setEdited(true);
     setDirty(true);
     setDownloaded(false);
+    setServerFieldErrors({}); // the next check judges the new text
     if (errors) {
       const r = checkProfile(d);
       setErrors(r.data ? null : r.list);
@@ -508,7 +596,8 @@ export default function ProfileWorkflow({
         return fail("Your session has ended. Please sign in again; your work is kept in this tab.");
       }
       const json = await res.json();
-      if (!res.ok && json?.error?.code === "COMPLIANCE" && Array.isArray(json.error.matches)) showComplianceMatches(json.error.matches, data);
+      if (!res.ok && json?.error?.code === "COMPLIANCE" && Array.isArray(json.error.matches)) refuseSubmit({ matches: json.error.matches });
+      if (!res.ok && json?.error?.code === "INCOMPLETE" && Array.isArray(json.error.fields)) refuseSubmit({ fields: json.error.fields });
       if (!res.ok) throw new Error(json?.error?.message ?? "We could not save your profile. Please try again.");
       setSavedProfileId(json.profileId);
       setLastVersionId(json.versionId);
@@ -563,7 +652,7 @@ export default function ProfileWorkflow({
       }
       if (outcome.kind === "unavailable") throw new Error("The client-name check is not available right now, so this cannot be submitted. Please try again shortly or contact support.");
       if (outcome.kind === "blocked") {
-        showComplianceMatches(outcome.matches, data);
+        refuseSubmit({ matches: outcome.matches });
         throw new Error("This profile names a registered client. Remove or rephrase the marked text, then submit again.");
       }
       return { profileId: savedProfileId, versionNo: savedInfo.no, isPrimary: (makePrimary || primaryId === savedProfileId) };
@@ -878,8 +967,8 @@ export default function ProfileWorkflow({
           <div className="animate-fade-up">
             <PreviewStep
               template={templateId}
-              data={previewData}
-              fileName={pdfFileName(previewData)}
+              data={previewEditing && printed ? printed : previewData}
+              fileName={pdfFileName(previewEditing && printed ? printed : previewData)}
               onBack={() => goTo(STEP_REVIEW)}
               onDownloaded={() => setDownloaded(true)}
               onSubmit={templateId === "internal" ? submitProfile : undefined}
@@ -888,6 +977,7 @@ export default function ProfileWorkflow({
               onSessionEnded={endSession}
               onComplianceBlocked={(matches) => showComplianceMatches(matches, data)}
               blocked={live.matches.length > 0}
+              edit={previewEditing}
             />
           </div>
         )}

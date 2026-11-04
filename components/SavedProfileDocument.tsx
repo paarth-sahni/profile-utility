@@ -20,9 +20,9 @@ function explain(httpStatus: number, message: string): string {
 }
 
 export default function SavedProfileDocument({ template, data }: { template: TemplateId; data: ResumeData }) {
-  const { pdf, retry } = usePreviewPdf(template, data);
+  const { pdf, retry } = usePreviewPdf(template, data, { auto: true });
 
-  if (pdf.status === "loading") {
+  if (pdf.status === "loading" || pdf.status === "idle") {
     return (
       <div className="border border-gray-200 bg-white shadow-sm" data-saved-document="loading">
         <p role="status" className="px-4 py-10 text-center text-sm text-ink-light">

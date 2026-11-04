@@ -85,6 +85,6 @@ test("ProfileWorkflow: consent and 'make primary' only run inside resubmitSaved,
     assert.ok(at > callEnd && at < success, `${kind} handled before the success return`);
     assert.match(block.slice(at, success), /throw new Error/, `${kind} ends in a throw`);
   }
-  // a blocked outcome returns the person to editing with the places marked
-  assert.match(block.slice(block.indexOf('outcome.kind === "blocked"'), success), /showComplianceMatches\(/);
+  // a blocked outcome marks the places: on Preview when they can be fixed there, otherwise back on Edit (refuseSubmit)
+  assert.match(block.slice(block.indexOf('outcome.kind === "blocked"'), success), /refuseSubmit\(\{ matches: outcome\.matches \}\)/);
 });
