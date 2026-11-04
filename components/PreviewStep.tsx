@@ -146,16 +146,15 @@ export default function PreviewStep({
   const sessionEnded = pdf.status === "error" && pdf.httpStatus === 401;
   const problems = edit && showProblems ? edit.problems() : [];
 
-  // the text changed after the box was ticked: the confirmation was for the old text
-  const confirmedFor = useRef(data);
-  useEffect(() => {
-    if (!edit || confirmedFor.current === data) return;
-    confirmedFor.current = data;
+  /** An edit on Preview: a tick given before it confirmed the old text, and a "Submitted" message is about the old text. */
+  const onEdit = (path: string, value: string) => {
+    edit?.onEdit(path, value);
+    setSubmitted(null);
     if (consent) {
       setConsent(false);
       setConsentNotice("You changed the text, so please tick the box again to confirm it.");
     }
-  }, [edit, data, consent]);
+  };
 
   // the workflow asks for a field (after a refused Submit)
   const focusTick = edit?.focus?.tick;
@@ -319,7 +318,7 @@ export default function PreviewStep({
             header={edit.header}
             layout={edit.layout}
             data={data as InternalResume}
-            onEdit={edit.onEdit}
+            onEdit={onEdit}
             errors={edit.errors}
             highlights={edit.highlights}
           />

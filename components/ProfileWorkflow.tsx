@@ -423,6 +423,10 @@ export default function ProfileWorkflow({
     setCheckingNames(true);
     const result = await checkNow(valid);
     setCheckingNames(false);
+    if (result.status === "unauthenticated") {
+      endSession(); // the sign-in ended: keep the work as a draft and go to /login, as every other 401 does
+      return;
+    }
     if (result.status === "unavailable") {
       setErrors([{ path: "Client-name check", message: "The check is not available right now, so Preview is blocked. Please try again shortly or contact support." }]);
       setStep(STEP_REVIEW);
