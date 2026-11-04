@@ -20,21 +20,51 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
    control here**: an internal profile is saved only by **Submit** on Preview & Submit (below).
 4. **Preview & Submit** (internal; **Preview** for external, which has no Submit) — pressing *Preview & Submit →*
    (*Preview →* for external) first validates the profile; if anything is missing you stay on (or return to)
-   Edit details with the fields marked. Otherwise the server makes the **PDF** (`POST /api/pdf`, see [PDF](#pdf)) and
-   the page draws that PDF (pdf.js): the same `Blob` is what *Download PDF* saves. Buttons:
+   Edit details with the fields marked.
+   - **External:** the server makes the **PDF** (`POST /api/pdf`, see [PDF](#pdf)) and the page draws that PDF
+     (pdf.js). The same `Blob` is what *Download PDF* saves.
+   - **Internal:** the profile is shown as an **editable view laid out like the PDF**. The text under each heading can be
+     corrected there: the overview, education, each project's dates, name, tools, team size, role, link, description
+     and bullets, and each skill and rating, certification, tool, managerial item, domain and language. Each value is
+     its own plain-text field. Headings, field labels, the name/title header and the layout stay fixed. Nothing can be
+     added, removed or moved there; *← Back to edit* is for that.
+     - **Plain text:** control and zero-width characters are removed. Line breaks are kept only in the overview and the
+       description.
+     - **Ratings and dates:** ratings follow the Edit page's rules, and dates are tidied to "MMM YYYY – MMM YYYY" when
+       the field is left.
+     - **Same data as Edit:** edits go into the same profile data as Edit details, so drafts and the unsaved-changes
+       warning cover them.
+     - **Page breaks:** the view is one continuous page. **View PDF** shows the exact PDF, with its page breaks, in a
+       dialog, and builds it again after any change to the text.
+     - **Problems:** a missing required field, an "N/A", an **emptied list item** ("This item is empty: fill it in, or
+       remove it on Edit") or a registered client name blocks Download and Submit. The problem is listed and the first
+       field gets focus. Marks follow typing after a short pause. When the server refuses, the field is marked and
+       focused on Preview; it goes back to Edit only when the field cannot be edited on Preview.
+     - **Consent:** changing the text after ticking the consent box clears the tick.
+
+   Buttons:
    - **← Back to edit** — keeps every edit.
    - **Download PDF** — all users. File name `<Name>-<Job_title>-InfoBeans.pdf`, e.g.
      `Abdul-Technology_Delivery_Manager-InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed).
+     For an internal profile it always builds the PDF of the current text with the server, so the file matches the
+     text and has passed the checks. That file is then what View PDF shows.
    - **Submit** — internal profiles only (see below).
 
    A **required consent checkbox** — "I confirm the information in this profile is accurate and may be shared" — must
-   be ticked before Submit or Download. Each use is written to `audit_log` (`consent_submit`,
-   `consent_download`, `consent_google_docs`; who, when, which template and which wording version, never profile
-   content) through `POST /api/consent` *before* the action runs; if that fails the action does not happen.
-   *Download PDF* on My Profiles and Manage asks for the same tick in a dialog and records `consent_download` the same way.
+   be ticked before Submit or Download. Each use is written to `audit_log` (`consent_submit`, `consent_download`,
+   `consent_google_docs`; who, when, which template and which wording version, never profile content), and only after
+   the checks pass:
+   - **Internal Download:** `/api/pdf` records it after its checks and the PDF are done.
+   - **Submit:** `/api/profiles` records it after the strict check and the client-name check.
+   - **External Download** (and Download on My Profiles and Manage, through their dialog): `POST /api/consent`
+     records it before the file is saved; if that fails, nothing is saved.
 
-**Submit** (internal only, on Preview & Submit) validates, records the consent and saves the profile as a new version in
-My Profiles (if nothing changed since the last save, that version is reused). Preview stays on screen and shows
+**Submit** (internal only, on Preview & Submit) saves the profile as a new version in My Profiles, if nothing changed since
+the last save, that version is reused. The server runs, in order:
+1. the strict check (required fields and "N/A"; a refusal is 422 `INCOMPLETE` with the field paths);
+2. the client-name check;
+3. the consent record;
+4. the save. Preview stays on screen and shows
 "Submitted · saved to My Profiles · v3" with a *View in My Profiles* link; *Download PDF* remains available. There is
 no further step and no external form link.
 
@@ -228,12 +258,22 @@ npm run db:start && npm run db:reset     # local stack + seed (once)
 npm run dev                              # in another terminal; development mode only:
                                          # the seeded @example.test users cannot sign in to a production build
 npm run test:e2e
+E2E_ONLY='preview' npm run test:e2e      # only the scenarios whose title matches (case-insensitive regex)
 ```
 
-`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above, incl. a 401 from `/api/pdf` on Preview) and
-`scripts/e2e-ui.mjs`: the Preview step (the PDF itself drawn in the page, the downloaded PDF byte-identical to the
-previewed one (SHA-256) and named `<Name>-<Job_title>-InfoBeans.pdf`, no DOCX anywhere, `/api/pdf` refusing incomplete
-data, validation gate, consent before Download / Submit and its `audit_log` rows, Back keeps edits),
+`npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above, incl. a 401 on the way to Preview) and
+`scripts/e2e-ui.mjs`. Its Preview & Submit checks cover:
+- **Editing:** the editable view (fields and their names, read-only header and headings, plain text, ratings, dates).
+- **View PDF:** shows the edited text, and afterwards shows the downloaded file itself (same SHA-256).
+- **Download:** named `<Name>-<Job_title>-InfoBeans.pdf`, with the edited text; no DOCX anywhere.
+- **Blocking:** an emptied required field or list item blocks Download and Submit, with focus on it.
+- **Consent:** required before Download / Submit, recorded in `audit_log`; cleared when the text changes.
+- **Refusals with no consent row:** `/api/pdf` and `/api/profiles` refuse incomplete data with field paths, and a
+  fictional registered name is refused on Download and Submit while staying on Preview. That name is added to the
+  local registry for the test and deactivated afterwards. An external profile with the same name is not checked.
+- **Edits are kept:** Back keeps edits; Preview edits are saved by Submit.
+
+It also covers:
 Download PDF on My Profiles, Manage and for external profiles, Submit saving a version and showing the success message on Preview (and reusing the version when unchanged), no Submit step or "Submit Profile" nav link,
 external profiles never saved (no save UI, API 400, not listed in My Profiles / Manage), Open in Google Docs only on
 /manage/[id] for managers and admins (never on Preview or My Profiles), previews hiding empty sections, automatic version labels (Base, v2, v3), saving only through Submit, the
