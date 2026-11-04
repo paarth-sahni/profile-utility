@@ -457,11 +457,11 @@ export default function PreviewStep({
           ← Back to edit
         </button>
         <div className="flex flex-wrap items-start gap-3">
-          <button type="button" onClick={download} disabled={!ready || busy !== null || blocked} className={onSubmit ? outline : primary}>
+          <button type="button" onClick={download} disabled={!ready || busy !== null || (!edit && blocked)} className={onSubmit ? outline : primary}>
             {busy === "download" ? "Preparing…" : "Download PDF"}
           </button>
           {onSubmit && (
-            <button type="button" onClick={submit} disabled={!ready || busy !== null || blocked} className={primary}>
+            <button type="button" onClick={submit} disabled={!ready || busy !== null || (!edit && blocked)} className={primary}>
               {busy === "submit" ? "Submitting…" : "Submit"}
             </button>
           )}
