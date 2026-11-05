@@ -61,16 +61,17 @@ test("an incomplete draft is not ready and the message points to Review", () => 
 });
 
 
-test("pdfFileName is <Name>-<Job title>-InfoBeans.pdf with underscores and no unsafe characters", () => {
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Abdul", jobTitle: "Technology Delivery Manager" }), "Abdul-Technology_Delivery_Manager-InfoBeans.pdf");
-  assert.equal(pdfFileName(COMPLETE), "Testy_McSample-Senior_Engineer-InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: " José  O'Brien ", jobTitle: "QA / Test Lead: Cloud*" }), "José_OBrien-QA_Test_Lead_Cloud-InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "../../etc/passwd", jobTitle: "a\\b" }), "etcpasswd-ab-InfoBeans.pdf");
+test("pdfFileName is FullName_Role_InfoBeans.pdf with underscores everywhere and no unsafe characters", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }), "Asha_Rao_AI_Intern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Abdul", jobTitle: "Technology Delivery Manager" }), "Abdul_Technology_Delivery_Manager_InfoBeans.pdf");
+  assert.equal(pdfFileName(COMPLETE), "Testy_McSample_Senior_Engineer_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: " José  O'Brien ", jobTitle: "QA / Test Lead: Cloud*" }), "José_OBrien_QA_Test_Lead_Cloud_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "../../etc/passwd", jobTitle: "a\\b" }), "etcpasswd_ab_InfoBeans.pdf");
 });
 
 test("pdfFileName falls back to Profile and drops an empty job title", () => {
-  assert.equal(pdfFileName({ ...COMPLETE, name: "  ", jobTitle: "" }), "Profile-InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "???", jobTitle: "Lead" }), "Profile-Lead-InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "  ", jobTitle: "" }), "Profile_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "???", jobTitle: "Lead" }), "Profile_Lead_InfoBeans.pdf");
 });
 
 test("profileDisplayName is the PDF name without .pdf (My Profiles and Manage)", () => {

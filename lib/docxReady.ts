@@ -39,13 +39,17 @@ const fileNamePart = (value: string | undefined): string =>
     .replace(/_{2,}/g, "_")
     .replace(/^[_-]+|[_-]+$/g, "");
 
-/** The PDF download name: "<Name>-<Job_title>-InfoBeans.pdf", e.g. "Abdul-Technology_Delivery_Manager-InfoBeans.pdf". */
+/**
+ * The file name of every PDF download (Preview, My Profiles, Manage; both templates): "FullName_Role_InfoBeans.pdf" with
+ * underscores between all parts and inside them, e.g. "Asha_Rao_AI_Intern_InfoBeans.pdf". The one place the format is
+ * decided: the IB employee code can be added to `parts` here once it syncs from the Team app.
+ */
 export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }): string {
-  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean);
-  return `${parts.join("-")}-InfoBeans.pdf`;
+  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle), "InfoBeans"].filter(Boolean);
+  return `${parts.join("_")}.pdf`;
 }
 
-/** How a saved profile is named in My Profiles and Manage: the PDF name without ".pdf", e.g. "Abdul-Technology_Delivery_Manager-InfoBeans". */
+/** How a saved profile is named in the My Profiles and Manage lists, e.g. "Abdul-Technology_Delivery_Manager-InfoBeans". */
 export function profileDisplayName(name: string, jobTitle: string): string {
-  return pdfFileName({ name, jobTitle }).replace(/\.pdf$/, "");
+  return `${[fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean).join("-")}-InfoBeans`;
 }

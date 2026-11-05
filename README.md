@@ -44,8 +44,9 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 
    Buttons:
    - **← Back to edit** — keeps every edit.
-   - **Download PDF** — all users. File name `<Name>-<Job_title>-InfoBeans.pdf`, e.g.
-     `Abdul-Technology_Delivery_Manager-InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed).
+   - **Download PDF** — all users. File name `FullName_Role_InfoBeans.pdf`, e.g.
+     `Abdul_Technology_Delivery_Manager_InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed; the
+     format is `pdfFileName` in `lib/docxReady.ts`, the same for every download and both templates).
      For an internal profile it always builds the PDF of the current text with the server, so the file matches the
      text and has passed the checks. That file is then what View PDF shows.
    - **Submit** — internal profiles only (see below).
@@ -265,7 +266,7 @@ E2E_ONLY='preview' npm run test:e2e      # only the scenarios whose title matche
 `scripts/e2e-ui.mjs`. Its Preview & Submit checks cover:
 - **Editing:** the editable view (fields and their names, read-only header and headings, plain text, ratings, dates).
 - **View PDF:** shows the edited text, and afterwards shows the downloaded file itself (same SHA-256).
-- **Download:** named `<Name>-<Job_title>-InfoBeans.pdf`, with the edited text; no DOCX anywhere.
+- **Download:** named `FullName_Role_InfoBeans.pdf`, with the edited text; no DOCX anywhere.
 - **Blocking:** an emptied required field or list item blocks Download and Submit, with focus on it.
 - **Consent:** required before Download / Submit, recorded in `audit_log`; cleared when the text changes.
 - **Refusals with no consent row:** `/api/pdf` and `/api/profiles` refuse incomplete data with field paths, and a

@@ -40,7 +40,7 @@ test("a download: checks, then the PDF, then the consent row (for the signed-in 
   const res = await handlePdfPost(request({ template: "internal", data: INTERNAL, consent: DOWNLOAD }), deps);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/pdf");
-  assert.match(res.headers.get("content-disposition") ?? "", /Asha_Rao-Engineer-InfoBeans\.pdf/);
+  assert.match(res.headers.get("content-disposition") ?? "", /Asha_Rao_Engineer_InfoBeans\.pdf/);
   assert.deepEqual(calls, ["gate", "render", "consent:user-1:internal"]);
 });
 

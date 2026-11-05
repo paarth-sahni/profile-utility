@@ -185,7 +185,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   await waitFor(`window.__blobs.length > ${blobsBefore}`, "manager PDF download");
   check("the manager's consent was recorded before the download", managerConsents() === consentsBefore + 1);
   const managerPdf = await t.lastPdf();
-  check("Download PDF on /manage/[id] saves a PDF named <Name>-<Job title>-InfoBeans.pdf", managerPdf.isPdf && managerPdf.name === "E2E_Docs_Person-Senior_Engineer-InfoBeans.pdf" && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
+  check("Download PDF on /manage/[id] saves a PDF named FullName_Role_InfoBeans.pdf", managerPdf.isPdf && managerPdf.name === "E2E_Docs_Person_Senior_Engineer_InfoBeans.pdf" && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
   check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in editor"));
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
@@ -219,7 +219,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   await t.downloadWithConsent();
   await waitFor(`window.__blobs.length > ${memberBlobs}`, "member PDF download");
   const memberPdf = await t.lastPdf();
-  check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === "E2E_Member_Docs_Person-Senior_Engineer-InfoBeans.pdf" && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);
+  check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === "E2E_Member_Docs_Person_Senior_Engineer_InfoBeans.pdf" && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);
   await goto("/internal");
   await ev("sessionStorage.clear()");
   await goto("/internal");
@@ -618,7 +618,7 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   check("the consent was recorded in audit_log (metadata only) with the download", consents("download") === 1 && sql(`select detail::text from audit_log where action='consent_download' and at >= '${since}' order by id desc limit 1`).includes('"template": "internal"'));
   check("exactly one PDF was handed to the browser", (await ev("window.__blobs.length")) === 1);
   const dl = await t.lastPdf();
-  check("the download is a PDF named <Name>-<Job title>-InfoBeans.pdf", dl.isPdf && dl.name === "E2E_Preview_Person-Engineer-InfoBeans.pdf", JSON.stringify({ name: dl.name, isPdf: dl.isPdf }));
+  check("the download is a PDF named FullName_Role_InfoBeans.pdf", dl.isPdf && dl.name === "E2E_Preview_Person_Engineer_InfoBeans.pdf", JSON.stringify({ name: dl.name, isPdf: dl.isPdf }));
   check("the downloaded file has the text as edited on Preview", ["E2E Preview Person", "Edited on Preview, final.", "Java Script", "4.5/5"].every((x) => dl.text.includes(x)), dl.text.slice(0, 160));
   const after = await viewPdf();
   check("View PDF afterwards shows the downloaded file itself (same SHA-256)", !!after.sha && after.sha === dl.sha256, `${after.sha} vs ${dl.sha256}`);
@@ -828,7 +828,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await waitFor("document.body.innerText.includes('PDF downloaded')", "external downloaded");
   check("the external consent is recorded (metadata only) and a PDF was handed to the browser", Number(sql(`select count(*) from audit_log where action='consent_download' and at >= '${since}' and detail->>'template'='external'`)) === 1 && (await ev("window.__blobs.length")) === 1);
   const externalPdf = await t.lastPdf();
-  check("the external PDF is named after the candidate and is the previewed file", externalPdf.isPdf && externalPdf.name === "E2E_External_Person-Engineer-InfoBeans.pdf" && externalPdf.sha256 === externalSha && externalPdf.text.includes("E2E External Person"), externalPdf.name);
+  check("the external PDF is named after the candidate and is the previewed file", externalPdf.isPdf && externalPdf.name === "E2E_External_Person_Engineer_InfoBeans.pdf" && externalPdf.sha256 === externalSha && externalPdf.text.includes("E2E External Person"), externalPdf.name);
   check("nothing was written to the database for the external profile", Number(sql("select count(*) from profiles where candidate_name='E2E External Person'")) === 0);
 
   // the API refuses external saves, signed in, with a clear 400; an internal save still works

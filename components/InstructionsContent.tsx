@@ -233,7 +233,7 @@ export default function InstructionsContent({ audience }: { audience: Audience }
           </li>
           <li>
             <strong>PDF download</strong> – The downloaded PDF is exactly the document shown on Preview, so it looks
-            the same on every device. File name: <em>Name-Job_title-InfoBeans.pdf</em>.
+            the same on every device. File name: <em>FullName_Role_InfoBeans.pdf</em>.
           </li>
           <li>
             <strong>Formatting adjustments</strong> – To change the content, go back to Edit details and preview
