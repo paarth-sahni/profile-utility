@@ -574,12 +574,21 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   await setPreviewField("skills.0.rating", "4.5");
   check("a valid rating is taken", (await previewValue("skills.0.rating")) === "4.5");
 
+  // Download and Submit are blocked until the PDF of the current text has been opened (the hint is read with them)
+  const gate = () => ev(`JSON.stringify([...document.querySelectorAll('[data-preview-step] button')].filter(b=>['Download PDF','Submit'].includes(b.textContent.trim())).map(b=>[b.disabled, document.getElementById(b.getAttribute('aria-describedby'))?.textContent ?? '']))`);
+  const before = JSON.parse(await gate());
+  check("before View PDF, Download PDF and Submit are disabled, with the hint read with them", before.length === 2 && before.every(([d, hint]) => d && hint.startsWith("View the PDF first")), JSON.stringify(before));
+  check("View PDF is the main action at the bottom, just above the consent box", await ev("(()=>{const v=document.querySelector('[data-view-pdf]'); const c=document.querySelector('[data-preview-step] input[type=checkbox]'); return !!v && v.textContent.trim()==='View PDF before you submit' && v.className.includes('bg-brand-500') && !!(v.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(document.querySelector('[data-preview-editor]').compareDocumentPosition(v) & Node.DOCUMENT_POSITION_FOLLOWING) && document.querySelectorAll('[data-view-pdf]').length===1})()"));
+
   // View PDF: the exact PDF of the edited text, in a dialog that keeps the focus
   const first = await viewPdf();
   check("View PDF shows the PDF of the edited text, focus inside the dialog", first.text.includes("Edited on Preview.") && first.text.includes("Java Script") && first.text.includes("4.5/5") && first.focusInside, first.text.slice(0, 120));
+  check("after View PDF, Download PDF and Submit are enabled", JSON.parse(await gate()).every(([d]) => !d));
   await setPreviewField("overview", "Edited again on Preview.");
   await sleep(200);
-  check("after another edit the PDF is marked out of date", await ev("!!document.querySelector('[data-pdf-out-of-date]')"));
+  const again = JSON.parse(await gate());
+  check("an edit blocks them again: 'View the PDF of your latest changes first'", again.every(([d, hint]) => d && hint === "View the PDF of your latest changes first"), JSON.stringify(again));
+  await viewPdf();
 
   // consent is required, and recorded, before each action
   await click("Download PDF");
@@ -597,19 +606,18 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   await sleep(300);
   check("changing the text after ticking clears the tick and says why", (await ev(`${consentBox}.checked`)) === false && (await bodyText()).includes("please tick the box again"));
 
-  // an emptied required field blocks Download and Submit (listed, focused); nothing is recorded or saved
+  // an emptied required field: its PDF is refused (listed, the field focused) and Download / Submit stay blocked
   await setPreviewField("overview", "");
-  await tickConsent();
-  await click("Download PDF");
-  await sleep(500);
-  check("an emptied required field blocks Download: listed, and the field gets focus", (await ev("document.querySelector('[data-preview-problems]')?.innerText ?? ''")).includes("Overview — Required") && (await ev("document.activeElement?.dataset.editPath")) === "overview");
+  await click("View PDF", "[data-preview-step] button");
+  await waitFor("!!document.querySelector('[data-preview-problems]')", "the refusal listed on Preview", 30000);
+  await sleep(300);
+  check("an emptied required field: View PDF is refused, the field listed and focused", (await ev("document.querySelector('[data-preview-problems]')?.innerText ?? ''")).includes("Overview — Required") && (await ev("document.activeElement?.dataset.editPath")) === "overview");
   check("the emptied field is marked invalid and its message is read with it", (await ev(`${previewField("overview")}.getAttribute('aria-invalid')`)) === "true" && (await ev(`document.getElementById(${previewField("overview")}.getAttribute('aria-describedby'))?.textContent`)) === "Required");
-  await click("Submit", "[data-preview-step] button");
-  await sleep(500);
-  check("…and Submit: no consent row, nothing downloaded or saved", consents("download") === 0 && consents("submit") === 0 && (await ev("window.__blobs.length")) === 0 && !(await ev("!!document.querySelector('[data-submitted]')")));
+  check("…Download and Submit stay disabled; no consent row, nothing downloaded or saved", JSON.parse(await gate()).every(([d]) => d) && consents("download") === 0 && consents("submit") === 0 && (await ev("window.__blobs.length")) === 0);
   await setPreviewField("overview", "Edited on Preview, final.");
   await sleep(500);
   check("the problem list goes away once the field is filled", !(await ev("!!document.querySelector('[data-preview-problems]')")));
+  await viewPdf();
 
   // Download: the server builds the PDF of the current text, checks it, then records the consent
   await tickConsent();
@@ -641,6 +649,8 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-preview-editor]')", "preview again");
   check("the consent box is ticked fresh each time Preview is entered", (await ev(`${consentBox}.checked`)) === false);
+  check("re-entering Preview needs the PDF opened again", JSON.parse(await gate()).every(([d]) => d));
+  await viewPdf();
   await tickConsent();
   await click("Submit", "[data-preview-step] button");
   await waitFor("!!document.querySelector('[data-submitted]')", "success message");
@@ -661,6 +671,7 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   await setPreviewField("education.0.qualification", "B.E. (Computer Science)");
   await sleep(300);
   check("after an edit on Preview the note says Submit will save a new version", (await bodyText()).includes("Submit saves this profile to My Profiles"));
+  await viewPdf();
   await tickConsent();
   await click("Submit", "[data-preview-step] button");
   await waitFor("document.querySelector('[data-submitted]')?.innerText.includes('v2')", "success message (v2)");
@@ -725,9 +736,11 @@ await t.scenario("Preview editing: dates, every list item, an emptied item, and 
     check("an unreadable date stays as typed, with a hint", (await previewValue("projects.0.duration")) === "Q3 2020" && (await bodyText()).includes("We could not read this date"));
     await setPreviewField("projects.0.duration", "Jan 2020 – Mar 2021");
 
-    // an optional single field can be cleared; an emptied list item blocks with the agreed message
+    // an optional single field can be cleared; an emptied list item blocks with the agreed message (its PDF can be made:
+    // the template leaves empty items out, so the rule is the Preview's own)
     await setPreviewField("projects.0.projectLink", "");
     await setPreviewField("tools.1", " ");
+    await viewPdf();
     await tickConsent();
     await click("Download PDF");
     await sleep(600);
@@ -741,39 +754,36 @@ await t.scenario("Preview editing: dates, every list item, an emptied item, and 
     await setPreviewField("tools.1", "Jira Cloud");
 
     if (enforced) {
-      // the server refuses a registered name it learns about only on Download (typed and sent before the live check answers):
-      // the field is marked and focused on Preview, and no consent row is written
+      const versions = () => Number(sql(`select count(*) from profile_versions where profile_id='${saved.profileId}'`));
+      // a registered name typed on Preview: the PDF is refused by the server (before the live check answers), the field is
+      // marked and focused on Preview, and Download / Submit stay disabled (the PDF of this text cannot be opened)
       await setPreviewField("projects.0.responsibilities.1", `Wrote the reports for ${FICTIONAL}`);
-      await tickConsent(); // after the edit (an edit clears the tick)
-      await click("Download PDF");
+      await click("View PDF", "[data-preview-step] button");
       await waitFor("!!document.querySelector('[data-preview-problems]')", "refusal shown on Preview", 30000);
       await sleep(300);
-      const refused = JSON.parse(await ev("JSON.stringify({editor:!!document.querySelector('[data-preview-editor]'), problems:document.querySelector('[data-preview-problems]')?.innerText??'', focus:document.activeElement?.dataset.editPath??document.activeElement?.tagName})"));
-      check("Download refused by the server: still on Preview, the bullet listed and focused", refused.editor && refused.problems.includes("Project 1, bullet 2") && refused.focus === "projects.0.responsibilities.1", JSON.stringify(refused));
+      const refused = JSON.parse(await ev("JSON.stringify({editor:!!document.querySelector('[data-preview-editor]'), problems:document.querySelector('[data-preview-problems]')?.innerText??'', focus:document.activeElement?.dataset.editPath??document.activeElement?.tagName, blocked:[...document.querySelectorAll('[data-preview-step] button')].filter(b=>['Download PDF','Submit'].includes(b.textContent.trim())).every(b=>b.disabled)})"));
+      check("the PDF is refused by the server: still on Preview, the bullet listed and focused, Download and Submit disabled", refused.editor && refused.problems.includes("Project 1, bullet 2") && refused.focus === "projects.0.responsibilities.1" && refused.blocked, JSON.stringify(refused));
       await waitFor("!!document.querySelector('[data-compliance-marks]')", "the registered name marked in the text");
       check("the registered name is marked in the text; no consent row and no download", consents("download") === 0 && (await ev("window.__blobs.length")) === 0);
-      // the same for Submit
-      const versions = () => Number(sql(`select count(*) from profile_versions where profile_id='${saved.profileId}'`));
-      await setPreviewField("projects.0.responsibilities.1", "Wrote the reports"); // only the new name below is left
-      await setPreviewField("projects.0.description", `Built it for ${FICTIONAL}.`);
-      await tickConsent();
-      await click("Submit", "[data-preview-step] button");
-      // the server's answer moves focus to the refused field (the problem list may already show it from the live check)
-      await waitFor("document.activeElement?.dataset.editPath === 'projects.0.description'", "focus on the refused description", 30000);
-      await sleep(300);
-      const submitRefused = JSON.parse(await ev("JSON.stringify({focus:document.activeElement?.dataset.editPath??document.activeElement?.tagName, message:document.querySelector('[data-preview-step] [aria-live]')?.innerText??''})"));
-      check("Submit with a registered name: refused by the server, the description focused on Preview, no consent row, no new version", consents("submit") === 0 && versions() === 1 && submitRefused.focus === "projects.0.description" && /registered client/i.test(submitRefused.message), JSON.stringify(submitRefused));
-      // the server's strict check: a direct Submit of an incomplete profile is refused with field paths and no consent row
-      const direct = JSON.parse(await ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:'',source:'scratch',profileId:${JSON.stringify(saved.profileId)},data:${JSON.stringify({ ...COMPLETE, name: "E2E Preview Items", overview: "" })},reviewFlags:[],promptPlan:[],submit:true,consent:{accepted:true}})}).then(async r=>JSON.stringify({status:r.status, body:await r.json()}))`));
+      // the server's own Submit checks (the UI cannot reach them with this text): a registered name and an incomplete
+      // profile are refused with where to fix them, and leave no consent row and no new version
+      const submitApi = (data) => ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:'',source:'scratch',profileId:${JSON.stringify(saved.profileId)},data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[],submit:true,consent:{accepted:true}})}).then(async r=>JSON.stringify({status:r.status, body:await r.json()}))`);
+      const named = JSON.parse(await submitApi({ ...COMPLETE, name: "E2E Preview Items", overview: `Built it for ${FICTIONAL}.` }));
+      check("POST /api/profiles Submit naming a registered client: 422 COMPLIANCE with the field, no consent row, no new version", named.status === 422 && named.body.error?.code === "COMPLIANCE" && named.body.error.matches?.[0]?.path === "overview" && consents("submit") === 0 && versions() === 1, JSON.stringify(named));
+      const direct = JSON.parse(await submitApi({ ...COMPLETE, name: "E2E Preview Items", overview: "" }));
       check("POST /api/profiles Submit of an incomplete profile: 422 INCOMPLETE naming the field, no consent row", direct.status === 422 && direct.body.error?.code === "INCOMPLETE" && direct.body.error.fields.some((f) => f.path === "overview") && consents("submit") === 0, JSON.stringify(direct));
-      // fixed: Download and Submit go through
+      // fixed: View PDF, then Download and Submit go through
       await setPreviewField("projects.0.responsibilities.1", "Wrote the reports");
-      await setPreviewField("projects.0.description", "Built it.");
       await sleep(1200);
+      await viewPdf();
       await tickConsent();
       await click("Download PDF");
       await waitFor("document.body.innerText.includes('PDF downloaded')", "downloaded after the fix", 40000);
       check("after the fix Download works and records one consent", consents("download") === 1 && (await t.lastPdf()).text.includes("Jira Cloud"));
+      await tickConsent();
+      await click("Submit", "[data-preview-step] button");
+      await waitFor("!!document.querySelector('[data-submitted]')", "submitted after the fix", 30000);
+      check("…and Submit saves a new version with one consent row", consents("submit") === 1 && versions() === 2);
 
       // the same fictional name on an EXTERNAL profile is not checked (internal profiles only)
       await goto("/external");
@@ -876,6 +886,7 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
     await waitFor("!!document.querySelector('[data-preview-editor]')", "preview ready");
   };
   const tickConsentAndSubmit = async () => {
+    if (await ev("!!document.querySelector('[data-pdf-needed]')")) await t.viewPdfOnPreview();
     if (!(await ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
     await click("Submit", "[data-preview-step] button");
     await waitFor("!!document.querySelector('[data-submitted]')", "submitted message");

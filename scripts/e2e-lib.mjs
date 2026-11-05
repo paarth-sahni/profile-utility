@@ -234,10 +234,18 @@ export async function startHarness(title) {
     async submitViaPreview() {
       await h.click("Preview & Submit →");
       await h.waitFor("!!document.querySelector('[data-preview-editor]')", "preview ready");
+      await h.viewPdfOnPreview(); // Download and Submit need the PDF of the current text to have been opened
       if (!(await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').checked"))) await h.ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
       await h.click("Submit", "[data-preview-step] button");
       await h.waitFor("!!document.querySelector('[data-submitted]')", "submitted message");
       return h.ev("document.querySelector('[data-submitted]').innerText.replace(/\\s+/g,' ').trim()");
+    },
+    /** Internal Preview: View PDF before you submit, wait for the PDF in the dialog, close it. */
+    async viewPdfOnPreview() {
+      await h.click("View PDF", "[data-preview-step] button");
+      await h.waitFor("!!document.querySelector('dialog[open] [data-pdf-preview=ready]')", "PDF in the View PDF dialog", 40000);
+      await h.click("Close", "dialog[open] button");
+      await h.waitFor("!document.querySelector('dialog[open]')", "PDF dialog closed");
     },
     getName: () => ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim().startsWith('Name')); return l?.querySelector('input')?.value ?? null})()`),
     draftOf: (template = "internal") => ev(`sessionStorage.getItem('profile-draft:v1:${template}')`),

@@ -41,6 +41,7 @@ await t.scenario("session ends: 401 on save, restore after re-login, save clears
   // Preview while signed in, then the session ends: recording the consent for Submit answers 401
   await click("Preview & Submit →");
   await waitFor("!!document.querySelector('[data-preview-editor]')", "preview");
+  await t.viewPdfOnPreview(); // Submit is available once the PDF has been opened
   ageSession("member", "2 hours 1 minute");
   await ev("document.querySelector('[data-preview-step] input[type=checkbox]').click()");
   await click("Submit", "[data-preview-step] button");
