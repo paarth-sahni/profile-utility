@@ -21,6 +21,8 @@ test("wrapLines breaks where LibreOffice does (measured on the PDF)", () => {
   ]);
   assert.equal(lines.length, 4);
   assert.equal(wrapLines("one\ntwo", 344.1, 11).length, 2, "a hard line break starts a new line");
+  const hyphen = "plans next-day deliveries";
+  assert.deepEqual(wrapLines(hyphen, textWidthPt("plans next-", 11) + 1, 11).map((l) => hyphen.slice(l.start, l.end)), ["plans next-", "day", "deliveries"], "a line may end after a hyphen");
   assert.equal(wrapLines("Supercalifragilisticexpialidocious", 50, 11).length, 1, "a word wider than the column stays on one line");
 });
 

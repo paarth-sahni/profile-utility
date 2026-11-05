@@ -79,6 +79,15 @@ function descriptionLines(lines, text) {
   return null;
 }
 
+/** How many lines each project description takes in the PDF ({ text, lines }), for the ones found in it. */
+export function descriptionLineCounts(pages, data, template = "internal") {
+  const main = columnLines(pages, template).flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
+  return (data?.projects ?? []).filter((p) => real(p.description)).flatMap((p) => {
+    const lines = descriptionLines(main, p.description);
+    return lines ? [{ text: p.description, lines: lines.length }] : [];
+  });
+}
+
 /**
  * Problems with the page breaks of a PDF (pages from measurePdf; data: the profile, for the descriptions, sidebar items and
  * employers; template: "internal" (two columns) or "external" (one column)).

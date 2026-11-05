@@ -12,9 +12,12 @@
  *             hasRole, hasProjectLink, hasDescription, hasResponsibilities, hasNext
  *   internal page breaks (units that never split, see section 5 of the patcher): per project isFirst and
  *             firstX / restX for X = Tech, TeamSize, Role, ProjectLink; skillsHead / skillsRest and the same for
- *             certifications, managerial, domains, languages
+ *             certifications, managerial, domains, languages; per project descriptionWhole / descriptionLong with
+ *             descriptionHead / Body / Tail (a description of more than 6 lines)
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities, hasNext; per employer: hasPosition, hasDuration, hasHighlights
+ *   external page breaks: per project isFirst, firstX / restX for X = TeamSize, Role and the description pieces (as
+ *             internal); per employer isFirst, highlightsHead / highlightsRest
  * Required content (name, job title, overview, education, skills) has no flag.
  */
 import { isNAValue, type ExternalResume, type InternalResume, type ResumeData, type TemplateId } from "./schemas";
@@ -43,6 +46,8 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
     .filter((p) => anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities))
     .map((p, i, all) => ({
       number: i + 1,
+      isFirst: i === 0, // page breaks: the "Projects/Experience" heading goes with the first project's heading
+      ...fieldFlags({ TeamSize: real(p.teamSize), Role: real(p.role) }),
       client: p.client,
       duration: text(p.duration),
       hasDuration: real(p.duration),
@@ -52,6 +57,7 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
       hasRole: real(p.role),
       description: text(p.description),
       hasDescription: real(p.description),
+      ...descriptionUnits("external", p.description),
       responsibilities: clean(p.responsibilities),
       hasResponsibilities: clean(p.responsibilities).length > 0,
       // as internal: the gap after a project only separates it from the next one (none before the Experience heading)
@@ -59,7 +65,8 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
     }));
   const experience = d.experience
     .filter((x) => anyReal(x.company, x.position, x.duration, x.highlights))
-    .map((x) => ({
+    .map((x, i) => ({
+      isFirst: i === 0, // page breaks: the "Experience" heading goes with the first employer
       company: x.company,
       position: text(x.position),
       hasPosition: real(x.position),
@@ -67,6 +74,7 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
       hasDuration: real(x.duration),
       highlights: clean(x.highlights),
       hasHighlights: clean(x.highlights).length > 0,
+      ...headRest("highlights", clean(x.highlights)), // page breaks: the first highlight stays with company, position and dates
     }));
   const tools = clean(d.tools);
   const certifications = clean(d.certifications);
@@ -116,12 +124,15 @@ function headRest<T>(key: string, list: T[]): Record<string, T[]> {
   return { [`${key}Head`]: list.slice(0, 1), [`${key}Rest`]: list.slice(1) };
 }
 
-const PROJECT_FIELDS = ["Tech", "TeamSize", "Role", "ProjectLink"] as const;
 
-/** Internal page breaks: the first field a project has goes with its heading and name (firstX), the others follow (restX). */
-function fieldFlags(has: Record<(typeof PROJECT_FIELDS)[number], boolean>): Record<string, boolean> {
-  const first = PROJECT_FIELDS.find((f) => has[f]);
-  return Object.fromEntries(PROJECT_FIELDS.flatMap((f) => [[`first${f}`, f === first], [`rest${f}`, has[f] && f !== first]]));
+/**
+ * Page breaks: the first field a project has goes with its heading and name (firstX), the others follow (restX). `has` lists
+ * the template's fields in their order (internal: Tech, TeamSize, Role, ProjectLink; external: TeamSize, Role).
+ */
+function fieldFlags(has: Record<string, boolean>): Record<string, boolean> {
+  const fields = Object.keys(has);
+  const first = fields.find((f) => has[f]);
+  return Object.fromEntries(fields.flatMap((f) => [[`first${f}`, f === first], [`rest${f}`, has[f] && f !== first]]));
 }
 
 function prepareInternal(d: InternalResume): Record<string, unknown> {

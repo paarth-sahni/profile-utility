@@ -26,8 +26,9 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    project lines, each font, size and position as in the reference. The internal template matches it; the external one
    keeps its own layout (one column, logo flush right) with the same rules for the same elements.
    Internal only: the grey line under the header block (RULE) and the underlined project heading line.
-5. Page breaks (internal, UNITS): nothing that introduces content is left alone at the foot of a page and no bullet or
-   sidebar item is cut in two. Each such unit is a one-row table that cannot split, nested in its column.
+5. Page breaks (both templates, UNITS): nothing that introduces content is left alone at the foot of a page, no bullet,
+   sidebar item or short description is cut in two, and a long description keeps 2+ lines on each side of a break. Each
+   such unit is a one-row table that cannot split (internal: nested in its column; external: in the body).
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -50,17 +51,7 @@ WRAPS = {
     "external": [
         (3, 3, "hasExperienceSummary"),
         (4, 4, "hasSpecialization"),
-        (19, 21, "hasTools"),  # heading + value + spacer
-        (22, 24, "hasCertifications"),  # heading + value + spacer
-        (25, 25, "hasProjects"),  # the shared "Projects/Experience" heading: only when there ARE projects (with employers only, the "Experience" heading below stands alone)
-        (34, 36, "hasRole"),  # project: spacer + "Role" heading + value
-        (37, 38, "hasDescription"),  # project: spacer + description
-        (39, 42, "hasResponsibilities"),  # project: spacer + bullets
-        (46, 56, "hasExperience"),  # spacer + "Experience" heading + the whole employer loop
-        (50, 50, "hasPosition"),  # employer: position line
-        (51, 51, "hasDuration"),  # employer: duration line
-        (52, 55, "hasHighlights"),  # employer: spacer + bullets
-        (43, 44, "hasNext"),  # the blank lines that separate a project from the next one (as internal)
+        # Education to the end (10-56) is rebuilt from its paragraphs with its conditions: UNITS (external_units)
     ],
 }
 
@@ -434,10 +425,7 @@ LAYOUT = {"internal": internal_layout(), "external": external_layout()}
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
 END_OF_PROJECTS = blank_xml(below(BODY_LINE) + SPACER_LINE - BULLET_BELOW)
-AFTER_CLOSE = {
-    "internal": [],
-    "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))],
-}
+AFTER_CLOSE = {"internal": [], "external": []}  # (the external one, END_OF_PROJECTS, is part of UNITS now)
 
 
 # ------------------------------------------------------------------------------------- 5. page breaks (internal): UNITS
@@ -456,7 +444,8 @@ AFTER_CLOSE = {
 #     the tool line with its heading.
 # Each condition / loop tag stays outside the unit tables, so a cell never ends up empty, and so a loop repeats whole
 # tables (docxtemplater's paragraph loop). A cell that ends with a table gets a 1pt paragraph after it (Word needs one).
-UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144}  # column minus the cell margins
+# internal: a column minus the cell margins; external: the page between the margins
+UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144, "body": round(PAGE_W * 20) - MARGINS["left"] - MARGINS["right"]}
 END_OF_CELL = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>'
 PROJECT_FIELDS = [("Tech", 19, 20), ("TeamSize", 23, 24), ("Role", 27, 28), ("ProjectLink", 31, 32)]  # label, value
 
@@ -514,6 +503,42 @@ def internal_units(p: dict) -> dict:
         + END_OF_CELL
     )
     return {12: projects, **{i: "" for i in range(13, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
+
+
+EXTERNAL_FIELDS = [("TeamSize", 31, 32), ("Role", 35, 36)]  # label, value
+
+
+def external_units(p: dict) -> dict:
+    """External, from Education to the end (replacing paragraphs 10-56) as units; p: paragraph -> formatted xml. The spacers
+    between sections stay where they were, so every distance is as before; only the grouping into units is new."""
+    body = lambda xml: unit(xml, "body")
+    sections = (
+        body(p[10] + p[11] + p[12] + p[13] + p[14]) + p[15]  # Education & Training: heading, {#education} year, qualification
+        + body(p[16] + p[17]) + p[18]  # Skills
+        + cond("hasTools", body(p[19] + p[20]) + p[21])
+        + cond("hasCertifications", body(p[22] + p[23]) + p[24])
+    )
+    first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in EXTERNAL_FIELDS)
+    rest_fields = "".join(cond(f"rest{k}", body(blank_xml(LABEL_GAP) + p[label] + p[value])) for k, label, value in EXTERNAL_FIELDS)
+    projects = cond(
+        "projects",
+        body(cond("isFirst", p[25]) + p[27] + p[28] + first_field)  # ("Projects/Experience",) heading, name, first field
+        + rest_fields
+        + cond("hasDescription", p[37] + description_units(p[38], "body"))
+        + cond("hasResponsibilities", p[39] + cond("responsibilities", body(p[41])))
+        # the blank line between projects; after the last one the gap before the Experience heading (END_OF_PROJECTS)
+        + cond("hasNext", p[43]) + marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"),
+    )
+    employers = cond(
+        "hasExperience",
+        cond(
+            "experience",
+            # ("Experience",) company, position, dates and the first highlight; then each further highlight
+            body(cond("isFirst", p[47]) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51]) + cond("hasHighlights", p[52] + cond("highlightsHead", p[54])))
+            + cond("highlightsRest", body(p[54])),
+        ),
+    )
+    return {10: sections + projects + employers + END_OF_CELL, **{i: "" for i in range(11, 57)}}
 
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
@@ -709,7 +734,7 @@ def patch(name: str) -> bytes:
             return opens + pre + text + extra + closes + post
 
         wrapped = [rebuild(m) for m in PARA.finditer(xml)]
-        units = internal_units(formatted) if name == "internal" else {}
+        units = internal_units(formatted) if name == "internal" else external_units(formatted)
         parts = iter(units.get(i, w) for i, w in enumerate(wrapped))
         new_xml = page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name)
         out = OUT / f"{name}.docx"

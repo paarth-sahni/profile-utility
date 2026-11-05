@@ -15,7 +15,8 @@ import Docxtemplater from "docxtemplater";
 import { prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 import { measurePdf } from "./scripts/pdf-measure.mjs";
-import { pageBreakProblems } from "./scripts/pdf-pages.mjs";
+import { descriptionLineCounts, pageBreakProblems } from "./scripts/pdf-pages.mjs";
+import { wrapLines } from "./lib/textMetrics.ts";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -517,8 +518,9 @@ for (const id of ["internal", "external"]) {
   assert(/>A PROUD MEMBER OF</.test(labelPara) && !labelPara.includes("<w:tab/>") && /<w:ind w:left="\d+"/.test(labelPara), `${id}: "A PROUD MEMBER OF" has no tabs or padding spaces and a fixed indent`);
   // bullets: one numbering definition, one indent, one bullet, one spacing
   const paras = xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? [];
-  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlights)\}/.test(paras[n - 1]));
-  assert(bullets.length === (id === "internal" ? 1 : 2), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
+  // (external highlights: the first one goes with its employer, the others follow: highlightsHead / highlightsRest)
+  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlightsHead|highlightsRest)\}/.test(paras[n - 1]));
+  assert(bullets.length === (id === "internal" ? 1 : 3), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
   for (const b of bullets) {
     assert(/<w:numId w:val="1"\/>/.test(b) && /<w:ind w:left="720" w:hanging="360"\/>/.test(b) && /<w:spacing w:before="0" w:after="96" w:line="276" w:lineRule="auto"\/>/.test(b), `${id}: every bullet uses numbering 1, indent 720/360 and the item spacing`);
   }
@@ -983,9 +985,10 @@ if (process.argv.includes("--pdf")) {
   const sidebar = Array.from({ length: 6 }, (_, k) => [`internal-sidebar-${k}`, "internal", { ...longSidebar, skills: longSidebar.skills.slice(k) }]);
   const desc = Array.from({ length: 8 }, (_, k) => [`internal-desc-${k}`, "internal", descriptionCase(k)]);
   const extLong = Array.from({ length: 8 }, (_, k) => [`external-long-${k}`, "external", externalLong(k)]);
-  cases.push(...nine, ...sidebar, ...desc);
+  cases.push(...nine, ...sidebar, ...desc, ...extLong);
   const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
   const pageCounts = [];
+  const estimates = { same: 0, all: 0, off: [] }; // the description line estimate (lib/textMetrics.ts) vs the PDF
   const selected = only ? cases.filter(([f]) => new RegExp(only).test(f)) : cases;
   for (const [file, id, data] of selected) {
     const { out, zip } = render(id, data);
@@ -995,10 +998,16 @@ if (process.argv.includes("--pdf")) {
     const measured = await measurePdf(`${dir}/${file}.pdf`);
     console.log(`pdf: ${dir}/${file}.pdf (${measured.length} page${measured.length > 1 ? "s" : ""})`);
     // page breaks: no heading, label or employer line left at the foot of a page, no bullet, description or sidebar item cut badly
-    if (id === "internal") {
+    {
       const problems = pageBreakProblems(measured, data, id);
       for (const p of problems) console.error(`  ${file}: ${p}`);
       assert(problems.length === 0, `${file}: ${problems.length} page-break problem(s), listed above`);
+      for (const d of descriptionLineCounts(measured, data, id)) {
+        const estimate = wrapLines(d.text, id === "internal" ? 344.1 : 525.6, 11).length;
+        estimates.all++;
+        if (estimate === d.lines) estimates.same++;
+        else estimates.off.push(`${file}: ${d.lines} lines, estimated ${estimate}`);
+      }
     }
     // automatic layout checks on what LibreOffice actually laid out
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
@@ -1022,5 +1031,7 @@ if (process.argv.includes("--pdf")) {
   if (!only) assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
   console.log("pdf: no near-empty last page (internal, last bullet at the foot of a page)");
   console.log(`pdf: reference format, footer and fonts checked on ${selected.length} PDFs (${referenceChecks} measurements)`);
+  // information, not a rule (the page-break checks above are the rule): how well the line estimate matches LibreOffice
+  console.log(`pdf: description line estimate matched the PDF for ${estimates.same} of ${estimates.all} descriptions${estimates.off.length ? ` (off: ${[...new Set(estimates.off)].slice(0, 5).join("; ")})` : ""}`);
 }
 console.log("done");
