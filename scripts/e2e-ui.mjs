@@ -323,6 +323,8 @@ await t.scenario("saving only through Submit on Preview; versions are labelled B
   await ev("sessionStorage.clear()");
   await goto(`/internal?version=${v1}`);
   await waitFor("!!document.querySelector('label input')", "saved version open");
+  // wait until React has hydrated the form, or the typed change is lost and Submit reuses the unchanged version (v1)
+  await waitFor("[...document.querySelectorAll('label input')].some(i=>Object.keys(i).some(k=>k.startsWith('__reactProps')))", "hydrated edit form");
   check("an opened version loads into Edit details", (await t.getName()) === "E2E Label Person" && !(await bodyText()).includes("Version label"));
   await t.fill("Job title", "Principal Engineer");
   await sleep(200);
