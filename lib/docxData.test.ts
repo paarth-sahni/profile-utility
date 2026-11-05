@@ -112,7 +112,7 @@ test("external: per-entry flags and cleaned lists", () => {
 
 test("internal page breaks: the first field a project has goes with its heading (firstX), the others follow (restX)", () => {
   type Flags = { projects: Record<string, unknown>[] };
-  const flags = (p: Record<string, unknown>) => Object.fromEntries(Object.entries(p).filter(([k]) => /^(first|rest)[A-Z]/.test(k)));
+  const flags = (p: Record<string, unknown>) => Object.fromEntries(Object.entries(p).filter(([k]) => /^(first|rest)(Tech|TeamSize|Role|ProjectLink)$/.test(k)));
   const all = (prepareData("internal", FULL_INTERNAL) as Flags).projects[0];
   assert.deepEqual(flags(all), { firstTech: true, restTech: false, firstTeamSize: false, restTeamSize: true, firstRole: false, restRole: true, firstProjectLink: false, restProjectLink: true });
   const noTech = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], toolsAndTechnologies: ["N/A"], teamSize: "" }] }) as Flags).projects[0];
@@ -125,11 +125,33 @@ test("internal page breaks: the first field a project has goes with its heading 
 
 test("internal page breaks: each sidebar list is split into its first item (with the heading) and the rest", () => {
   const d = prepareData("internal", { ...FULL_INTERNAL, certifications: ["N/A", "C1", "C2", "C3"], languages: ["L1"], domains: [] });
-  assert.deepEqual([d.certificationsHead, d.certificationsRest], [["C1"], ["C2", "C3"]]);
-  assert.deepEqual([d.languagesHead, d.languagesRest], [["L1"], []]);
+  // each item knows whether it is the last (the section's closing gap goes after it)
+  assert.deepEqual([d.certificationsHead, d.certificationsRest], [[{ text: "C1", last: false }], [{ text: "C2", last: false }, { text: "C3", last: true }]]);
+  assert.deepEqual([d.languagesHead, d.languagesRest], [[{ text: "L1", last: true }], []]);
   assert.deepEqual([d.domainsHead, d.domainsRest], [[], []]);
-  assert.deepEqual(d.skillsHead, (d.skills as unknown[]).slice(0, 1));
-  assert.deepEqual(d.skillsRest, (d.skills as unknown[]).slice(1));
+  assert.deepEqual(d.skillsHead, [{ name: "Go", rating: "4", last: true }]);
+  assert.deepEqual(d.skillsRest, []);
+});
+
+test("page breaks: every unit ends with the gap to what is printed after it (never a gap at the top of a page)", () => {
+  type P = { projects: Record<string, unknown>[] };
+  const on = (p: Record<string, unknown>) => Object.keys(p).filter((k) => /Gap[A-Z]/.test(k) && p[k] === true).sort();
+  // first unit (Tech) -> Team Size -> Role -> Project Link -> description -> bullets; not the last project: Next
+  const [a, b] = (prepareData("internal", { ...FULL_INTERNAL, projects: [FULL_INTERNAL.projects[0], FULL_INTERNAL.projects[0]] }) as P).projects;
+  assert.deepEqual(on(a), ["bulletsGapNext", "descriptionGapBullets", "firstGapLabel", "restProjectLinkGapDescription", "restRoleGapLabel", "restTeamSizeGapLabel"]);
+  assert.deepEqual(on(b), ["descriptionGapBullets", "firstGapLabel", "restProjectLinkGapDescription", "restRoleGapLabel", "restTeamSizeGapLabel"], "the last project ends with no gap");
+  assert.deepEqual(a.bulletUnits, [{ text: "r1", last: false }, { text: "r2", last: true }]);
+  // only the name: the first unit goes straight to the next project
+  const bare = { ...FULL_INTERNAL.projects[0], toolsAndTechnologies: [], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [] };
+  assert.deepEqual(on((prepareData("internal", { ...FULL_INTERNAL, projects: [bare, bare] }) as P).projects[0]), ["firstGapNext"]);
+  // external: the last project ends with the gap before Experience
+  const ext = (prepareData("external", { ...FULL_EXTERNAL, projects: [{ ...FULL_EXTERNAL.projects[0], responsibilities: [] }] }) as P).projects[0];
+  assert.deepEqual(on(ext), ["descriptionGapEnd", "firstGapLabel", "restRoleGapDescription"]);
+  // sections: a closing gap only when another section follows
+  const side = prepareData("internal", { ...FULL_INTERNAL, managerialExperience: [], domains: [], languages: [] });
+  assert.deepEqual([side.skillsGapAfter, side.certificationsGapAfter, side.toolsGapAfter, side.managerialGapAfter], [true, true, false, false]);
+  const extSections = prepareData("external", { ...FULL_EXTERNAL, tools: [], certifications: [], projects: [], experience: [] });
+  assert.deepEqual([extSections.educationGapAfter, extSections.skillsGapAfter], [true, false]);
 });
 
 test("page breaks: a description of up to 6 lines is one unit; a longer one comes in head / body / tail pieces", () => {

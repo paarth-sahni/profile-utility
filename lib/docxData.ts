@@ -18,6 +18,9 @@
  *             hasResponsibilities, hasNext; per employer: hasPosition, hasDuration, hasHighlights
  *   external page breaks: per project isFirst, firstX / restX for X = TeamSize, Role and the description pieces (as
  *             internal); per employer isFirst, highlightsHead / highlightsRest
+ *   gaps (both): each unit ends with the gap to what follows it, so no gap is printed at the top of a page: per project
+ *             <part>Gap<Kind> (trailingGaps) and bulletUnits ({ text, last }); <section>GapAfter (laterSections); sidebar
+ *             list items as { text, last } (skills { name, rating, last })
  * Required content (name, job title, overview, education, skills) has no flag.
  */
 import { isNAValue, type ExternalResume, type InternalResume, type ResumeData, type TemplateId } from "./schemas";
@@ -44,25 +47,34 @@ export function prepareData(id: TemplateId, data: ResumeData): Record<string, un
 function prepareExternal(d: ExternalResume): Record<string, unknown> {
   const projects = d.projects
     .filter((p) => anyReal(p.duration, p.client, p.teamSize, p.role, p.description, p.responsibilities))
-    .map((p, i, all) => ({
-      number: i + 1,
-      isFirst: i === 0, // page breaks: the "Projects/Experience" heading goes with the first project's heading
-      ...fieldFlags({ TeamSize: real(p.teamSize), Role: real(p.role) }),
-      client: p.client,
-      duration: text(p.duration),
-      hasDuration: real(p.duration),
-      teamSize: text(p.teamSize),
-      hasTeamSize: real(p.teamSize),
-      role: text(p.role),
-      hasRole: real(p.role),
-      description: text(p.description),
-      hasDescription: real(p.description),
-      ...descriptionUnits("external", p.description),
-      responsibilities: clean(p.responsibilities),
-      hasResponsibilities: clean(p.responsibilities).length > 0,
-      // as internal: the gap after a project only separates it from the next one (none before the Experience heading)
-      hasNext: i < all.length - 1,
-    }));
+    .map((p, i, all) => {
+      const fields = fieldFlags({ TeamSize: real(p.teamSize), Role: real(p.role) });
+      const bullets = clean(p.responsibilities);
+      return {
+        number: i + 1,
+        isFirst: i === 0, // page breaks: the "Projects/Experience" heading goes with the first project's heading
+        ...fields,
+        ...trailingGaps(
+          [["first", true, null], ["restTeamSize", fields.restTeamSize, "Label"], ["restRole", fields.restRole, "Label"], ["description", real(p.description), "Description"], ["bullets", bullets.length > 0, "Bullets"]],
+          i < all.length - 1 ? "Next" : "End",
+        ),
+        bulletUnits: bulletUnits(bullets),
+        client: p.client,
+        duration: text(p.duration),
+        hasDuration: real(p.duration),
+        teamSize: text(p.teamSize),
+        hasTeamSize: real(p.teamSize),
+        role: text(p.role),
+        hasRole: real(p.role),
+        description: text(p.description),
+        hasDescription: real(p.description),
+        ...descriptionUnits("external", p.description),
+        responsibilities: clean(p.responsibilities),
+        hasResponsibilities: clean(p.responsibilities).length > 0,
+        // as internal: the gap after a project only separates it from the next one (none before the Experience heading)
+        hasNext: i < all.length - 1,
+      };
+    });
   const experience = d.experience
     .filter((x) => anyReal(x.company, x.position, x.duration, x.highlights))
     .map((x, i) => ({
@@ -79,6 +91,8 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
   const tools = clean(d.tools);
   const certifications = clean(d.certifications);
   return {
+    // page breaks: the gap before a section heading goes after the section before it, when one follows
+    ...laterSections([["education", true], ["skills", true], ["tools", tools.length > 0], ["certifications", certifications.length > 0], ["after", projects.length > 0 || experience.length > 0]]),
     name: d.name,
     jobTitle: d.jobTitle,
     experienceSummary: text(d.experienceSummary),
@@ -124,6 +138,39 @@ function headRest<T>(key: string, list: T[]): Record<string, T[]> {
   return { [`${key}Head`]: list.slice(0, 1), [`${key}Rest`]: list.slice(1) };
 }
 
+/** As headRest, each item an object that knows whether it is the list's last (the section's gap goes after that one). */
+function headRestItems<T>(key: string, list: T[], toItem: (item: T) => object): Record<string, object[]> {
+  return headRest(key, list.map((item, i) => ({ ...toItem(item), last: i === list.length - 1 })));
+}
+
+/**
+ * Page breaks: every gap belongs to the unit BEFORE it (its last lines), so a gap is only ever printed between two things on
+ * the same page and never at the top of a page (LibreOffice keeps a blank line or space before at the top of a page in a
+ * table cell). What a unit ends with depends on what follows it, so this decides, for each part of a project in order
+ * ([key, printed, the gap that goes before it]), which gap that part ends with: `${key}Gap${Kind}` (Label: before a field;
+ * Description; Bullets; Next: before the next project; End: after the last external project, before Experience).
+ */
+const GAP_KINDS = ["Label", "Description", "Bullets", "Next", "End"] as const;
+type GapKind = (typeof GAP_KINDS)[number];
+function trailingGaps(parts: [string, boolean, GapKind | null][], end: GapKind | null): Record<string, boolean> {
+  const flags: Record<string, boolean> = {};
+  for (const [key] of parts) for (const kind of GAP_KINDS) flags[`${key}Gap${kind}`] = false;
+  const printed = parts.filter(([, on]) => on);
+  printed.forEach(([key], i) => {
+    const after = i + 1 < printed.length ? printed[i + 1][2] : end;
+    if (after) flags[`${key}Gap${after}`] = true;
+  });
+  return flags;
+}
+
+/** Page breaks: the bullets as objects, the last one marked (the project's closing gap goes after it). */
+const bulletUnits = (items: string[]) => items.map((text, i) => ({ text, last: i === items.length - 1 }));
+
+/** Page breaks: for each section in order ([key, printed]), whether another one is printed after it (its gap is then needed). */
+function laterSections(sections: [string, boolean][]): Record<string, boolean> {
+  return Object.fromEntries(sections.map(([key], i) => [`${key}GapAfter`, sections.slice(i + 1).some(([, on]) => on)]));
+}
+
 
 /**
  * Page breaks: the first field a project has goes with its heading and name (firstX), the others follow (restX). `has` lists
@@ -138,35 +185,51 @@ function fieldFlags(has: Record<string, boolean>): Record<string, boolean> {
 function prepareInternal(d: InternalResume): Record<string, unknown> {
   const projects = d.projects
     .filter((p) => anyReal(p.duration, p.title, p.toolsAndTechnologies, p.teamSize, p.role, p.projectLink, p.description, p.responsibilities))
-    .map((p, i, all) => ({
-      isFirst: i === 0, // the "Projects" heading goes with the first project's heading
-      ...fieldFlags({ Tech: clean(p.toolsAndTechnologies).length > 0, TeamSize: real(p.teamSize), Role: real(p.role), ProjectLink: real(p.projectLink) }),
-      number: i + 1,
-      title: p.title,
-      duration: text(p.duration),
-      hasDuration: real(p.duration),
-      toolsAndTechnologies: clean(p.toolsAndTechnologies).join(", "),
-      hasTech: clean(p.toolsAndTechnologies).length > 0,
-      teamSize: text(p.teamSize),
-      hasTeamSize: real(p.teamSize),
-      role: text(p.role),
-      hasRole: real(p.role),
-      projectLink: text(p.projectLink),
-      hasProjectLink: real(p.projectLink),
-      description: text(p.description),
-      hasDescription: real(p.description),
-      ...descriptionUnits("internal", p.description),
-      responsibilities: clean(p.responsibilities),
-      hasResponsibilities: clean(p.responsibilities).length > 0,
-      // the blank line after a project only separates it from the next one (none after the last: no extra empty page)
-      hasNext: i < all.length - 1,
-    }));
+    .map((p, i, all) => {
+      const fields = fieldFlags({ Tech: clean(p.toolsAndTechnologies).length > 0, TeamSize: real(p.teamSize), Role: real(p.role), ProjectLink: real(p.projectLink) });
+      const bullets = clean(p.responsibilities);
+      return {
+        isFirst: i === 0, // the "Projects" heading goes with the first project's heading
+        ...fields,
+        ...trailingGaps(
+          [
+            ["first", true, null],
+            ...(["Tech", "TeamSize", "Role", "ProjectLink"].map((f) => [`rest${f}`, fields[`rest${f}`], "Label"]) as [string, boolean, GapKind][]),
+            ["description", real(p.description), "Description"],
+            ["bullets", bullets.length > 0, "Bullets"],
+          ],
+          i < all.length - 1 ? "Next" : null,
+        ),
+        bulletUnits: bulletUnits(bullets),
+        number: i + 1,
+        title: p.title,
+        duration: text(p.duration),
+        hasDuration: real(p.duration),
+        toolsAndTechnologies: clean(p.toolsAndTechnologies).join(", "),
+        hasTech: clean(p.toolsAndTechnologies).length > 0,
+        teamSize: text(p.teamSize),
+        hasTeamSize: real(p.teamSize),
+        role: text(p.role),
+        hasRole: real(p.role),
+        projectLink: text(p.projectLink),
+        hasProjectLink: real(p.projectLink),
+        description: text(p.description),
+        hasDescription: real(p.description),
+        ...descriptionUnits("internal", p.description),
+        responsibilities: clean(p.responsibilities),
+        hasResponsibilities: clean(p.responsibilities).length > 0,
+        // the blank line after a project only separates it from the next one (none after the last: no extra empty page)
+        hasNext: i < all.length - 1,
+      };
+    });
   const certifications = clean(d.certifications);
   const tools = clean(d.tools);
   const managerial = clean(d.managerialExperience);
   const domains = clean(d.domains);
   const languages = clean(d.languages);
   return {
+    // page breaks: a sidebar section's closing gap (its spacer and the next heading's space) only when another follows
+    ...laterSections([["skills", true], ["certifications", certifications.length > 0], ["tools", tools.length > 0], ["managerial", managerial.length > 0], ["domains", domains.length > 0], ["languages", languages.length > 0]]),
     name: d.name,
     jobTitle: d.jobTitle,
     experienceSummary: text(d.experienceSummary),
@@ -178,20 +241,20 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
     projects,
     hasProjects: projects.length > 0,
     skills: d.skills.filter((s) => real(s.name)),
-    ...headRest("skills", d.skills.filter((s) => real(s.name))),
+    ...headRestItems("skills", d.skills.filter((s) => real(s.name)), (s) => s),
     certifications,
-    ...headRest("certifications", certifications),
+    ...headRestItems("certifications", certifications, (text) => ({ text })),
     hasCertifications: certifications.length > 0,
     tools: tools.join(", "),
     hasTools: tools.length > 0,
     managerialExperience: managerial,
-    ...headRest("managerial", managerial),
+    ...headRestItems("managerial", managerial, (text) => ({ text })),
     hasManagerialExperience: managerial.length > 0,
     domains,
-    ...headRest("domains", domains),
+    ...headRestItems("domains", domains, (text) => ({ text })),
     hasDomains: domains.length > 0,
     languages,
-    ...headRest("languages", languages),
+    ...headRestItems("languages", languages, (text) => ({ text })),
     hasLanguages: languages.length > 0,
   };
 }

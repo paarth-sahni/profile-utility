@@ -467,39 +467,59 @@ def cond(flag: str, xml: str) -> str:
     return marker("{#" + flag + "}") + xml + marker("{/" + flag + "}")
 
 
-def description_units(para: str, col: str) -> str:
-    """A project description (the paragraph holding {description}) for the page-break rule (see UNITS)."""
+def no_before(para: str) -> str:
+    """The paragraph without its space before (a heading in a unit: its gap is the end of the unit before it)."""
+    return re.sub(r'(<w:pPr>.*?<w:spacing [^>]*?w:before=")\d+(")', r"\g<1>0\g<2>", para, count=1, flags=re.S)
+
+
+# Gaps belong to the unit BEFORE them. LibreOffice keeps a blank line, or a paragraph's space before, at the top of a page
+# when it starts a table cell there, so a gap placed before a unit showed at the top of the next page whenever the unit
+# moved there (e.g. a project starting two lines lower than the sidebar). Each unit therefore ends with the gap that comes
+# after it, chosen from what is printed next (lib/docxData.ts: `<part>Gap<Kind>`, `<section>GapAfter`): a gap is only ever
+# printed between two things on one page, and the first line of a continued page starts at the normal top.
+def closing(key: str, gaps: dict) -> str:
+    """The gap a unit ends with: the one of `gaps` (kind -> xml) the data chose for `key`, if any."""
+    return "".join(cond(f"{key}Gap{kind}", xml) for kind, xml in gaps.items())
+
+
+def description_units(para: str, col: str, after: str = "") -> str:
+    """A project description (the paragraph holding {description}) for the page-break rule (see UNITS), ending with `after`."""
     piece = lambda tag: para.replace("{description}", "{" + tag + "}")
-    return cond("descriptionWhole", unit(para, col)) + cond(
-        "descriptionLong", unit(piece("descriptionHead"), col) + piece("descriptionBody") + unit(piece("descriptionTail"), col)
+    return cond("descriptionWhole", unit(para + after, col)) + cond(
+        "descriptionLong", unit(piece("descriptionHead"), col) + piece("descriptionBody") + unit(piece("descriptionTail") + after, col)
     )
 
 
 def internal_units(p: dict) -> dict:
     """The projects (replacing paragraphs 12-39) and the sidebar (40-68) as units; p: paragraph -> formatted xml."""
+    # the gaps inside a project: before a field label, the description, the bullets; between projects (none after the last:
+    # no extra empty page)
+    gaps = {"Label": blank_xml(LABEL_GAP), "Description": blank_xml(DESCRIPTION_GAP), "Bullets": PROJECT_SPACER, "Next": p[38]}
     first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in PROJECT_FIELDS)
-    rest_fields = "".join(cond(f"rest{k}", unit(blank_xml(LABEL_GAP) + p[label] + p[value], "main")) for k, label, value in PROJECT_FIELDS)
+    rest_fields = "".join(cond(f"rest{k}", unit(p[label] + p[value] + closing(f"rest{k}", gaps), "main")) for k, label, value in PROJECT_FIELDS)
     projects = cond(
         "projects",
-        unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field, "main")
+        unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field + closing("first", gaps), "main")
         + rest_fields
-        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + description_units(p[34], "main"))
-        + cond("hasResponsibilities", PROJECT_SPACER + cond("responsibilities", unit(p[36], "main")))
-        # the blank line between projects separates their tables too; none after the last (no extra empty page)
-        + cond("hasNext", p[38]),
+        + cond("hasDescription", description_units(p[34], "main", closing("description", gaps)))
+        + cond("hasResponsibilities", cond("bulletUnits", unit(p[36].replace("{.}", "{text}") + cond("last", closing("bullets", gaps)), "main"))),
     ) + END_OF_CELL
 
-    def listed(key: str, heading: str, item: str) -> str:
-        return cond(f"{key}Head", unit(heading + item, "side")) + cond(f"{key}Rest", unit(item, "side"))
+    # a section ends with its spacer and, when another section follows, the space that was before that section's heading
+    heading_gap = blank_xml(section_before(SIDEBAR_ITEM_BELOW, spacers=1))
+    end = lambda key, spacer: spacer + cond(f"{key}GapAfter", heading_gap)
+    item = lambda n: p[n].replace("{.}", "{text}")
 
-    # every block but the last ends with a spacer; the Skills one is shorter (a rating has more space after it)
+    def listed(key: str, heading: str, entry: str, last: str) -> str:
+        return cond(f"{key}Head", unit(heading + entry + cond("last", last), "side")) + cond(f"{key}Rest", unit(entry + cond("last", last), "side"))
+
     sidebar = (
-        listed("skills", p[40], p[42] + p[43]) + blank_xml(SKILLS_SPACER)
-        + cond("hasCertifications", listed("certifications", p[46], p[48]) + blank_xml(SPACER_LINE))
-        + cond("hasTools", unit(p[51] + p[52], "side") + blank_xml(SPACER_LINE))
-        + cond("hasManagerialExperience", listed("managerial", p[55], p[57]) + blank_xml(SPACER_LINE))
-        + cond("hasDomains", listed("domains", p[60], p[62]) + blank_xml(SPACER_LINE))
-        + cond("hasLanguages", listed("languages", p[65], p[67]))
+        listed("skills", p[40], p[42] + p[43], end("skills", blank_xml(SKILLS_SPACER)))  # (shorter: a rating has more space after it)
+        + cond("hasCertifications", listed("certifications", no_before(p[46]), item(48), end("certifications", blank_xml(SPACER_LINE))))
+        + cond("hasTools", unit(no_before(p[51]) + p[52] + end("tools", blank_xml(SPACER_LINE)), "side"))
+        + cond("hasManagerialExperience", listed("managerial", no_before(p[55]), item(57), end("managerial", blank_xml(SPACER_LINE))))
+        + cond("hasDomains", listed("domains", no_before(p[60]), item(62), end("domains", blank_xml(SPACER_LINE))))
+        + cond("hasLanguages", listed("languages", no_before(p[65]), item(67), ""))
         + END_OF_CELL
     )
     return {12: projects, **{i: "" for i in range(13, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
@@ -509,32 +529,35 @@ EXTERNAL_FIELDS = [("TeamSize", 31, 32), ("Role", 35, 36)]  # label, value
 
 
 def external_units(p: dict) -> dict:
-    """External, from Education to the end (replacing paragraphs 10-56) as units; p: paragraph -> formatted xml. The spacers
-    between sections stay where they were, so every distance is as before; only the grouping into units is new."""
+    """External, from Education to the end (replacing paragraphs 10-56) as units; p: paragraph -> formatted xml. Every
+    distance is as before: the spacers and the space before each heading are now the end of the unit before them."""
     body = lambda xml: unit(xml, "body")
+    heading_gap = blank_xml(section_before(below(BODY_LINE), spacers=1))
+    end = lambda key, spacer: spacer + cond(f"{key}GapAfter", heading_gap)
     sections = (
-        body(p[10] + p[11] + p[12] + p[13] + p[14]) + p[15]  # Education & Training: heading, {#education} year, qualification
-        + body(p[16] + p[17]) + p[18]  # Skills
-        + cond("hasTools", body(p[19] + p[20]) + p[21])
-        + cond("hasCertifications", body(p[22] + p[23]) + p[24])
+        body(p[10] + p[11] + p[12] + p[13] + p[14] + end("education", p[15]))  # Education & Training: heading, {#education} year, qualification
+        + body(no_before(p[16]) + p[17] + end("skills", p[18]))  # Skills
+        + cond("hasTools", body(no_before(p[19]) + p[20] + end("tools", p[21])))
+        + cond("hasCertifications", body(no_before(p[22]) + p[23] + end("certifications", p[24])))
     )
+    # the gaps inside a project as internal; after the last project, the gap before the Experience heading (END_OF_PROJECTS
+    # and, with employers, that heading's space)
+    gaps = {"Label": blank_xml(LABEL_GAP), "Description": p[37], "Bullets": p[39], "Next": p[43], "End": END_OF_PROJECTS + cond("hasExperience", heading_gap)}
     first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in EXTERNAL_FIELDS)
-    rest_fields = "".join(cond(f"rest{k}", body(blank_xml(LABEL_GAP) + p[label] + p[value])) for k, label, value in EXTERNAL_FIELDS)
+    rest_fields = "".join(cond(f"rest{k}", body(p[label] + p[value] + closing(f"rest{k}", gaps))) for k, label, value in EXTERNAL_FIELDS)
     projects = cond(
         "projects",
-        body(cond("isFirst", p[25]) + p[27] + p[28] + first_field)  # ("Projects/Experience",) heading, name, first field
+        body(cond("isFirst", no_before(p[25])) + p[27] + p[28] + first_field + closing("first", gaps))  # ("Projects/Experience",) heading, name, first field
         + rest_fields
-        + cond("hasDescription", p[37] + description_units(p[38], "body"))
-        + cond("hasResponsibilities", p[39] + cond("responsibilities", body(p[41])))
-        # the blank line between projects; after the last one the gap before the Experience heading (END_OF_PROJECTS)
-        + cond("hasNext", p[43]) + marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"),
+        + cond("hasDescription", description_units(p[38], "body", closing("description", gaps)))
+        + cond("hasResponsibilities", cond("bulletUnits", body(p[41].replace("{.}", "{text}") + cond("last", closing("bullets", gaps))))),
     )
     employers = cond(
         "hasExperience",
         cond(
             "experience",
             # ("Experience",) company, position, dates and the first highlight; then each further highlight
-            body(cond("isFirst", p[47]) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51]) + cond("hasHighlights", p[52] + cond("highlightsHead", p[54])))
+            body(cond("isFirst", no_before(p[47])) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51]) + cond("hasHighlights", p[52] + cond("highlightsHead", p[54])))
             + cond("highlightsRest", body(p[54])),
         ),
     )

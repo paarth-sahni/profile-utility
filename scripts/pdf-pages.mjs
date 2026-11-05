@@ -9,7 +9,10 @@
  *     a managerial item, a domain, a language;
  *   - external: an employer's company, position and dates are never the last line of a page (they stay with the first
  *     highlight);
- *   - no page but the last is mostly empty (its text ends in the top half).
+ *   - no page but the last is mostly empty (its text ends in the top half);
+ *   - on every page after the first, the first line of each column starts at the normal top: no gap (a blank line, a
+ *     heading's space before) carried over from the page before (within 1pt; the top of the line's box, from its baseline
+ *     and its style).
  * Returns a list of problems (empty: all good). Used by test-render.mjs (--pdf). Run on its own (no profile data, so
  * without the checks that need it): node scripts/pdf-pages.mjs file.pdf [internal|external]
  */
@@ -49,6 +52,18 @@ export function columnLines(pages, template = "internal") {
     }
     return cols;
   });
+}
+
+// Where the first line of a column starts on a continued page (pt from the page top): the top margin (0.4in), internal plus
+// the table cell's top margin (7.2pt). From a line's baseline to the top of its box, by its style (scripts/patch-templates.py):
+// a bullet or sidebar item (auto 1.15 lines: the baseline at the font's ascent, 1 em), a section heading or field label (an
+// exact 15pt line: 80%), body text, a project heading or an employer (an exact 17.25pt line: 80%).
+const CONTINUED_TOP = { internal: 36.0, external: 28.8 };
+function boxTop(l, col, labels) {
+  if (l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05) return l.baseline - 0.8 * 15;
+  if (l.text.startsWith("•") || col === "side") return l.baseline - l.size;
+  if (l.font === "Lexend-Regular" && labels.includes(l.text)) return l.baseline - 0.8 * 15;
+  return l.baseline - 0.8 * 17.25;
 }
 
 const real = (v) => typeof v === "string" && v.trim() !== "" && !/^n\/?a$/i.test(v.trim());
@@ -123,6 +138,14 @@ export function pageBreakProblems(pages, data, template = "internal") {
       const bottom = Math.max(...cols.flatMap((c) => [...c.main, ...c.side].map((l) => l.baseline)));
       const lowest = Math.max(...[...main, ...side].map((l) => l.baseline));
       if (lowest < (top + bottom) / 2) problems.push(`${page}: mostly empty (its text ends at ${lowest.toFixed(1)}pt, the page's body runs to ${bottom.toFixed(1)}pt)`);
+    }
+    // the first line of each column on a continued page starts at the normal top (no gap carried over)
+    if (n > 0) {
+      for (const [col, lines] of [["main", main], ["side", side]]) {
+        if (!lines[0]) continue;
+        const top = boxTop(lines[0], col, FIELD_LABELS[template]);
+        if (Math.abs(top - CONTINUED_TOP[template]) > 1) problems.push(`${page}: the ${col === "main" ? "main column" : "sidebar"} starts at ${top.toFixed(1)}pt, not at the top (${CONTINUED_TOP[template]}pt): "${lines[0].text.slice(0, 40)}"`);
+      }
     }
     // a bullet continued from the previous page: the first line sits at the bullet's text indent, without a bullet
     if (n > 0 && main[0] && !isBullet(main[0])) {

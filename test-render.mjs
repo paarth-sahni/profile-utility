@@ -467,15 +467,16 @@ const e = checkTemplate("external", external, EXTERNAL_SECTIONS, EXTERNAL_PROJEC
 }
 console.log("external: every optional section / field shows when filled and is completely left out when empty, blank or N/A");
 
-// internal sidebar: the Managerial Experience block ends with ONE spacer paragraph that goes away with the section
+// internal sidebar: the Managerial Experience block ends with its spacer and, as a section follows, the space before that
+// section's heading (a gap belongs to the unit before it, so it is never printed at the top of a page); both go with it
 {
   const blankLines = (t) => t.split("\n").filter((l) => l.trim() === "").length;
   const withMgr = blankLines(textOf("internal", internal));
   const withoutMgr = blankLines(textOf("internal", { ...internal, managerialExperience: [] }));
-  assert(withMgr - withoutMgr === 1, `internal: the Managerial Experience block must own exactly one blank spacer paragraph (found ${withMgr - withoutMgr})`);
+  assert(withMgr - withoutMgr === 2, `internal: the Managerial Experience block must own its spacer and the gap before the next heading (found ${withMgr - withoutMgr} blank paragraphs)`);
   const lines = textOf("internal", internal).split("\n");
   const last = lines.findIndex((l) => /MGR-MARK/.test(l));
-  assert(last >= 0 && lines[last + 1].trim() === "" && /Domain/.test(lines[last + 2]), "internal: the spacer sits between the last managerial item and the Domain heading");
+  assert(last >= 0 && lines[last + 1].trim() === "" && lines[last + 2].trim() === "" && /Domain/.test(lines[last + 3]), "internal: the spacer and the gap sit between the last managerial item and the Domain heading");
 }
 
 // internal: the other cases the old test covered
@@ -519,7 +520,7 @@ for (const id of ["internal", "external"]) {
   // bullets: one numbering definition, one indent, one bullet, one spacing
   const paras = xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? [];
   // (external highlights: the first one goes with its employer, the others follow: highlightsHead / highlightsRest)
-  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlightsHead|highlightsRest)\}/.test(paras[n - 1]));
+  const bullets = paras.filter((p, n) => n > 0 && /\{#(bulletUnits|highlightsHead|highlightsRest)\}/.test(paras[n - 1]));
   assert(bullets.length === (id === "internal" ? 1 : 3), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
   for (const b of bullets) {
     assert(/<w:numId w:val="1"\/>/.test(b) && /<w:ind w:left="720" w:hanging="360"\/>/.test(b) && /<w:spacing w:before="0" w:after="96" w:line="276" w:lineRule="auto"\/>/.test(b), `${id}: every bullet uses numbering 1, indent 720/360 and the item spacing`);
