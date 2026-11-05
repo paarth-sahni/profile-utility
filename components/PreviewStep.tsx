@@ -7,8 +7,9 @@
  *   - External profiles: the exact PDF is shown (PdfPreview) and Download saves that file; the consent is recorded
  *     (POST /api/consent) before it runs and the download is cancelled if that fails.
  *   - Internal profiles (`edit`): the text under the headings can be edited in a view laid out like the PDF
- *     (InternalPreviewEditor); "View PDF" shows the exact PDF in a dialog, built again whenever the text changed since the
- *     last one. Download always builds the PDF of the current text with the server, which records the consent only after its
+ *     (InternalPreviewEditor); "View PDF before you submit" (the main action, just above the consent box) shows the exact
+ *     PDF in a dialog, built again whenever the text changed since the last one. Download and Submit stay disabled until
+ *     the PDF of the current text has been opened; an edit makes it needed again. Download always builds the PDF of the current text with the server, which records the consent only after its
  *     checks pass (so the file always matches the text), and that file becomes the one View PDF shows. A problem (required,
  *     "N/A", an emptied item, a registered client name) blocks Download and Submit: it is listed and the first field gets
  *     focus; a refusal by the server is shown the same way. Changing the text after ticking the box clears the tick.
@@ -143,6 +144,10 @@ export default function PreviewStep({
 
   const ready = edit ? true : pdf.status === "ready"; // editable: Download / Submit build or save what they need themselves
   const outOfDate = pdf.status === "ready" && pdf.forData !== data;
+  // editable: the text the PDF was last opened for; Download / Submit need it to be the current text
+  const [seenFor, setSeenFor] = useState<ResumeData | null>(null);
+  const pdfSeen = !edit || seenFor === data;
+  const pdfHintId = useId();
   const sessionEnded = pdf.status === "error" && pdf.httpStatus === 401;
   const problems = edit && showProblems ? edit.problems() : [];
 
@@ -221,9 +226,13 @@ export default function PreviewStep({
     setMessage(null);
     setViewing(true);
     viewer.current?.showModal();
-    if (pdf.status === "ready" && !outOfDate) return;
+    if (pdf.status === "ready" && !outOfDate) {
+      setSeenFor(data);
+      return;
+    }
     const out = await build(data);
     if (out.status === "error") reportFailure(out);
+    else if (out.status === "ready") setSeenFor(out.forData);
   };
 
   /** Writes the consent to the audit log. Throws (after reporting an ended session) if that did not work. */
@@ -304,16 +313,6 @@ export default function PreviewStep({
 
       {edit && (
         <>
-          <div className="flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => void viewPdf()} disabled={busy !== null} className={outline} data-view-pdf>
-              View PDF
-            </button>
-            {outOfDate && (
-              <span className="text-xs text-ink-light" data-pdf-out-of-date>
-                You changed the text since the last PDF: View PDF builds it again.
-              </span>
-            )}
-          </div>
           <InternalPreviewEditor
             header={edit.header}
             layout={edit.layout}
@@ -391,6 +390,19 @@ export default function PreviewStep({
         </div>
       )}
 
+      {edit && (
+        <div className="flex flex-col items-start gap-2">
+          <button type="button" onClick={() => void viewPdf()} disabled={busy !== null} className={primary} data-view-pdf>
+            View PDF before you submit
+          </button>
+          {!pdfSeen && (
+            <p id={pdfHintId} className="text-sm text-ink-light" data-pdf-needed>
+              {seenFor === null ? "View the PDF first: Download PDF and Submit are available once you have seen it." : "View the PDF of your latest changes first"}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="border border-gray-200 bg-cream p-4">
         <ConsentCheckbox
           inputRef={checkbox}
@@ -457,11 +469,23 @@ export default function PreviewStep({
           ← Back to edit
         </button>
         <div className="flex flex-wrap items-start gap-3">
-          <button type="button" onClick={download} disabled={!ready || busy !== null || (!edit && blocked)} className={onSubmit ? outline : primary}>
+          <button
+            type="button"
+            onClick={download}
+            disabled={!ready || busy !== null || (!edit && blocked) || !pdfSeen}
+            aria-describedby={pdfSeen ? undefined : pdfHintId}
+            className={onSubmit ? outline : primary}
+          >
             {busy === "download" ? "Preparing…" : "Download PDF"}
           </button>
           {onSubmit && (
-            <button type="button" onClick={submit} disabled={!ready || busy !== null || (!edit && blocked)} className={primary}>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!ready || busy !== null || (!edit && blocked) || !pdfSeen}
+              aria-describedby={pdfSeen ? undefined : pdfHintId}
+              className={primary}
+            >
               {busy === "submit" ? "Submitting…" : "Submit"}
             </button>
           )}

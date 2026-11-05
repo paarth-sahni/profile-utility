@@ -34,8 +34,11 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
        the field is left.
      - **Same data as Edit:** edits go into the same profile data as Edit details, so drafts and the unsaved-changes
        warning cover them.
-     - **Page breaks:** the view is one continuous page. **View PDF** shows the exact PDF, with its page breaks, in a
-       dialog, and builds it again after any change to the text.
+     - **Page breaks:** the view is one continuous page. **View PDF before you submit** (the main action at the
+       bottom, just above the consent box) shows the exact PDF, with its page breaks, in a dialog, and builds it again
+       after any change to the text.
+     - **PDF first:** *Download PDF* and *Submit* stay disabled until the PDF of the current text has been opened; an
+       edit makes it needed again ("View the PDF of your latest changes first", read with the disabled buttons).
      - **Problems:** a missing required field, an "N/A", an **emptied list item** ("This item is empty: fill it in, or
        remove it on Edit") or a registered client name blocks Download and Submit. The problem is listed and the first
        field gets focus. Marks follow typing after a short pause. When the server refuses, the field is marked and
@@ -265,7 +268,8 @@ E2E_ONLY='preview' npm run test:e2e      # only the scenarios whose title matche
 `npm run test:e2e` runs two scripts: `scripts/e2e-drafts.mjs` (above, incl. a 401 on the way to Preview) and
 `scripts/e2e-ui.mjs`. Its Preview & Submit checks cover:
 - **Editing:** the editable view (fields and their names, read-only header and headings, plain text, ratings, dates).
-- **View PDF:** shows the edited text, and afterwards shows the downloaded file itself (same SHA-256).
+- **View PDF:** required before Download / Submit (blocked before, enabled after, blocked again after an edit); shows the
+  edited text, and afterwards the downloaded file itself (same SHA-256).
 - **Download:** named `FullName_Role_InfoBeans.pdf`, with the edited text; no DOCX anywhere.
 - **Blocking:** an emptied required field or list item blocks Download and Submit, with focus on it.
 - **Consent:** required before Download / Submit, recorded in `audit_log`; cleared when the text changes.
