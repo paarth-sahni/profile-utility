@@ -27,12 +27,12 @@ Google Docs, tests, manual checks); this file is the orientation.
 3. **Internal** profiles are saved only by Submit, as automatic versions (Base, v2, v3) under **My Profiles**
    (`/profiles`, `/profiles/[id]`). Each person has at most one **primary** profile. **External** profiles are never
    stored (`POST /api/profiles` answers 400 `EXTERNAL_NOT_SAVED`).
-4. **ProfileHub** (`/manage`, managers and admins): one row per team member (their primary profile), name search,
+4. **Profile Hub** (`/manage`, managers and admins): one row per team member (their primary profile), name search,
    read-only profile page with Download PDF and Open in Google Docs.
 5. Public pages: `/instructions` (per template), `/style-guide` (PDF embed, not linked from the header).
 
 Roles: `team_member`, `checker`, `manager`, `admin`. Everyone creates/saves/submits their **own** profiles; checkers,
-managers and admins can read everyone's (managers/admins through ProfileHub only). The role is read from
+managers and admins can read everyone's (managers/admins through Profile Hub only). The role is read from
 `public.app_users`, never from the JWT.
 
 ## 3. Map of the code
@@ -93,9 +93,9 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
 - **2026-10-22** Sign-in and sign-out redirect to the public address (`lib/publicOrigin.ts`, `SITE_URL`); production env
   template documents it.
 - **2026-10-15** Production bundles built into `../deploy/` (standalone server, LibreOffice on the host).
-- **2026-10-14** Profile hub (`/manage` titled ProfileHub, header order for managers), saved profiles shown as the real
+- **2026-10-14** Profile hub (`/manage` titled Profile Hub, header order for managers), saved profiles shown as the real
   PDF, skill rating limits, live red/yellow field marks, sharp corners and blue focus ring, Style Guide removed from
-  the header. Primary profile feature. Every role saves its own profile. Open in Google Docs only on ProfileHub pages.
+  the header. Primary profile feature. Every role saves its own profile. Open in Google Docs only on Profile Hub pages.
   Download PDF replaced Download DOCX everywhere; the hand-made PDF engine was removed. Consent tick before Download /
   Submit, recorded in `audit_log`. Step names: Upload profile, Edit details, Preview & Submit.
 - **2026-10-12/13** Required vs optional fields, optional sections vanish from the output, review flags and
@@ -119,7 +119,7 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
   rest of the database, so guard it like a root password. The production env file must not go into a bundle or git.
 - **Sub-path hosting**: `NEXT_PUBLIC_BASE_PATH` is baked in at build time and read by hand in a few files that build
   URLs (`SiteNav`, `style-guide`, `lib/generate.ts`).
-- **Known loose ends**: the database policies still let a manager read other members' non-primary rows (ProfileHub hides
+- **Known loose ends**: the database policies still let a manager read other members' non-primary rows (Profile Hub hides
   them in the data layer); `lib/templates.ts` and the starter SVGs in `public/` are unused; `public/templates/` still
   holds 12 old `.docx` files and a `.textClipping` besides `internal.docx` / `external.docx`, which ship with the
   build and are worth removing before go-live.

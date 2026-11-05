@@ -3,10 +3,10 @@
 Next.js app that turns a resume (or a blank form) into a branded InfoBeans profile **PDF**, made from one of two Word
 templates. Sign-in is with an InfoBeans Google account; the resume is read by an LLM on the server (`/api/extract`),
 and **internal** profiles can be saved per user in Supabase (My Profiles). **External** (client-facing) profiles are
-never stored. Managers and admins also get **ProfileHub** (`/manage`): each team member's primary profile, read-only.
+never stored. Managers and admins also get **Profile Hub** (`/manage`): each team member's primary profile, read-only.
 
 Header: *Generator | Instructions | My Profiles* for everyone; managers and admins see
-*ProfileHub | Generator | My Profiles | Instructions*. The avatar menu holds Sign out only.
+*Profile Hub | Generator | My Profiles | Instructions*. The avatar menu holds Sign out only.
 
 ## How it works
 
@@ -187,7 +187,7 @@ cases, for example `npm run test:render -- --pdf --only='nine|sidebar'`.
 - `lib/consent.ts`, `lib/consentClient.ts`, `app/api/consent/route.ts` — the consent wording and its audit record
 - `lib/rating.ts` — skill rating rules (above 0, at most 5, one decimal): what can be typed, the final check, cleanup of reader output
 - `lib/publicOrigin.ts` — public address for sign-in / sign-out redirects behind a proxy
-- `components/SavedProfileDocument.tsx` — the PDF shown on My Profiles and ProfileHub pages
+- `components/SavedProfileDocument.tsx` — the PDF shown on My Profiles and Profile Hub pages
 - `scripts/patch-templates.py` — generates `public/templates/*.docx` from `docs/template-backups/`
 
 ## Develop
@@ -394,7 +394,7 @@ Each team member has at most one **primary** internal profile: the one managers 
 - **Rules in the database:** `profiles.is_primary` with a unique index (one per owner). Nobody writes the column
   directly (no INSERT/UPDATE privilege); `set_primary_profile(id)` switches it atomically and only for the owner (a
   trigger refuses anyone else, admins included).
-- **/manage (ProfileHub):** managers and admins see each team member's **primary profile only**: one row per member, opening it
+- **/manage (Profile Hub):** managers and admins see each team member's **primary profile only**: one row per member, opening it
   shows that profile's current version (no version history, no other profiles; those are a later feature). Someone
   without a primary profile is not listed until they mark one or submit (there is no backfill), and another profile's
   id answers "not found". This is enforced in the data layer (`lib/db/profilesCore.ts`); the database policies

@@ -963,7 +963,7 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
   await signIn("manager"); // managers see every link, Manage included
   const notFound = async () => /could not be found|\b404\b/i.test(await bodyText());
   const LINKS = [
-    ["ProfileHub", "/manage", "header nav a"],
+    ["Profile Hub", "/manage", "header nav a"],
     ["Generator", "/internal", "header nav a"],
     ["My Profiles", "/profiles", "header nav a"],
     ["Instructions", "/internal/instructions", "header nav a"],
@@ -988,7 +988,7 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
   }
 });
 
-await t.scenario("the header: ProfileHub only for managers and admins, no Style Guide for anyone", async () => {
+await t.scenario("the header: Profile Hub only for managers and admins, no Style Guide for anyone", async () => {
   // the text links only: the first link in the nav is the logo (no text)
   const headerLinks = () => ev("[...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()).filter(Boolean).join('|')");
   for (const [who, manage] of [["member", false], ["checker", false], ["manager", true], ["admin", true]]) {
@@ -997,7 +997,7 @@ await t.scenario("the header: ProfileHub only for managers and admins, no Style 
     await waitFor("!!document.querySelector('header nav a')", "header");
     const links = await headerLinks();
     // administrators also get Registry, the client-name registry page (docs/COMPLIANCE.md)
-    const expected = manage ? "ProfileHub|Generator|My Profiles|Instructions" + (who === "admin" ? "|Registry" : "") : "Generator|Instructions|My Profiles";
+    const expected = manage ? "Profile Hub|Generator|My Profiles|Instructions" + (who === "admin" ? "|Registry" : "") : "Generator|Instructions|My Profiles";
     check(`${who}: header is ${expected.replaceAll("|", " | ")}`, links === expected, links);
     check(`${who}: no Style Guide link in the header`, !links.includes("Style Guide"));
   }

@@ -15,14 +15,14 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
   // Resolve the "home" for whichever route is currently browsing. Each route only
   // links to its own flow; the other is reachable only by knowing its URL.
   const home = pathname.startsWith("/external") ? "/external" : "/internal";
-  // ProfileHub (the managers' page, /manage) is shown to managers and admins only, first in their header; the server
-  // refuses everyone else as well. Managers: ProfileHub | Generator | My Profiles | Instructions.
+  // Profile Hub (the managers' page, /manage) is shown to managers and admins only, first in their header; the server
+  // refuses everyone else as well. Managers: Profile Hub | Generator | My Profiles | Instructions.
   const canManage = user?.role === "manager" || user?.role === "admin";
   // the client-name registry page is for administrators only (the page, the routes and the database refuse everyone else)
   const canAdminister = user?.role === "admin";
   const LINKS: NavLink[] = canManage
     ? [
-        { href: "/manage", label: "ProfileHub" },
+        { href: "/manage", label: "Profile Hub" },
         { href: home, label: "Generator" },
         { href: "/profiles", label: "My Profiles" },
         { href: `${home}/instructions`, label: "Instructions" },
