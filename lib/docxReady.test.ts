@@ -75,7 +75,10 @@ test("pdfFileName falls back to Profile and drops an empty job title", () => {
 });
 
 test("profileDisplayName is the PDF name without .pdf (My Profiles and Manage)", () => {
-  assert.equal(profileDisplayName("Abdul", "Technology Delivery Manager"), "Abdul-Technology_Delivery_Manager-InfoBeans");
-  assert.equal(profileDisplayName("", ""), "Profile-InfoBeans");
-  assert.equal(profileDisplayName("Ana", ""), "Ana-InfoBeans");
+  assert.equal(profileDisplayName("Abdul", "Technology Delivery Manager"), "Abdul_Technology_Delivery_Manager_InfoBeans");
+  assert.equal(profileDisplayName("", ""), "Profile_InfoBeans");
+  assert.equal(profileDisplayName("Ana", ""), "Ana_InfoBeans");
+  // the list name and the download name can never differ
+  const person = { name: "José O'Brien", jobTitle: "QA / Test Lead" };
+  assert.equal(`${profileDisplayName(person.name, person.jobTitle)}.pdf`, pdfFileName(person));
 });

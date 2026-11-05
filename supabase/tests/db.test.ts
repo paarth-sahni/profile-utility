@@ -269,7 +269,7 @@ describe("round trip: getVersion(saveVersion(x)) deep-equals x", () => {
     const found = await searchProfilesByNameAs(ctx.manager, "Zed Legacy");
     assert.ok(found.some((p) => p.ownerEmail === "member@example.test"), "the manager finds the person (one row: their primary or latest profile)");
     assert.ok(found.every((p) => p.template === "internal"), "the manager search never returns an external profile");
-    // the display name <Name>-<Role>-InfoBeans needs the current version's job title in every listing
+    // the display name <Name>_<Role>_InfoBeans needs the current version's job title in every listing
     const title = MINIMAL_INTERNAL_FIXTURE.jobTitle;
     assert.equal(mine.find((p) => p.id === internal.profileId)?.jobTitle, title, "My Profiles list");
     const row = found.find((p) => p.ownerEmail === "member@example.test");

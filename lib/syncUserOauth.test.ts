@@ -40,6 +40,14 @@ test("user mode is refused when the database is not local (hosted URL, or a look
   assert.equal(loadSheetsConfig(env({ NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321" })).mode, "user_oauth");
 });
 
+test("the explicit production opt-in lifts both guards, and only the exact value yes does", () => {
+  const prod = { NODE_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: "https://abcd.supabase.co" };
+  assert.equal(loadSheetsConfig(env({ ...prod, SYNC_ALLOW_USER_OAUTH_IN_PRODUCTION: "yes" })).mode, "user_oauth");
+  for (const v of ["", "no", "true", "1", "YES"]) {
+    assert.throws(() => loadSheetsConfig(env({ ...prod, SYNC_ALLOW_USER_OAUTH_IN_PRODUCTION: v })), (e: unknown) => e instanceof SyncError && e.code === "CONFIG", v);
+  }
+});
+
 test("user mode: a missing variable is named, and no value is repeated", () => {
   for (const name of ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_REFRESH_TOKEN"]) {
     assert.throws(

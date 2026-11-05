@@ -17,7 +17,7 @@ export default function UploadProgress({ stage, fileName }: { stage: UploadStage
   return (
     <div role="status" aria-live="polite" className="flex w-full max-w-md flex-col items-center gap-5 py-2">
       <div className="flex items-center gap-3">
-        <span className="h-6 w-6 animate-spin border-[3px] border-brand-100 border-t-brand-500" aria-hidden />
+        <span className="h-6 w-6 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand-500" aria-hidden />
         <p className="text-base font-medium text-ink-dark">{STEPS[Math.max(0, current)].label}…</p>
       </div>
 

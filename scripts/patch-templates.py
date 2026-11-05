@@ -132,7 +132,10 @@ DIGIT_HEIGHT_EM = 0.7  # Lexend's figures are 0.7 em tall (measured: 5.9pt at 8.
 # LibreOffice puts the baseline of an exact-height line at 80% of the line's height, whatever the font size (measured on
 # Lexend 8-24pt in lines of 12-30pt); an "auto" line puts it at the font's ascent (Lexend: 1.0 em), extra height below.
 EXACT_BASELINE = 0.8
-PAGE_NUMBER_LINE_PT = 12.0
+# The frame and its one exact line must be taller than the glyph's own box: LibreOffice clips a glyph at the edge of an exact line,
+# and at 12pt the lower part of the 14.5pt superscript digit was cut off. The baseline does not depend on the height
+# (EXACT_BASELINE), and frame_top is computed from it, so a taller line leaves the digit exactly where it was.
+PAGE_NUMBER_LINE_PT = 24.0
 
 
 def emu(pt: float) -> int:

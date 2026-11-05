@@ -429,7 +429,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 3. **Consent**: on Preview press *Download PDF* and *Submit* without the box → a message, nothing happens. Tick it →
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
-4. **Same file**: the downloaded file is named like `Jane_Doe-Senior_Engineer-InfoBeans.pdf` and looks exactly like the
+4. **Same file**: the downloaded file is named like `Jane_Doe_Senior_Engineer_InfoBeans.pdf` and looks exactly like the
    preview. There is no *Download DOCX* anywhere (Preview, My Profiles, Manage).
 5. **Formatting** (open the PDF at 100-200 %): the internal PDF looks like the reference format
    (`eval/reference/format.pdf`) side by side; the logo sits under "A PROUD MEMBER OF", top right; the footer logo and

@@ -18,6 +18,7 @@
     "sync:inspect:local": "tsx --env-file=.env.local scripts/sync-inspect.ts",
     "sync:login": "tsx --env-file=.env.local scripts/sync-login.ts",
     "sync:run:local": "tsx --require ./scripts/stubServerOnly.cjs --env-file=.env.local --experimental-websocket scripts/sync-run.ts",
+    "sync:run:hosted": "tsx --require ./scripts/stubServerOnly.cjs --env-file=../deploy/.env.production --experimental-websocket scripts/sync-run-hosted.ts",
     "test:sync": "tsx --require ./scripts/stubServerOnly.cjs --env-file=.env.local.localdb --experimental-websocket --test supabase/tests/sync.test.ts",
     "test:db": "tsx --conditions=react-server --env-file=.env.local --experimental-websocket --test supabase/tests/db.test.ts",
     "test:e2e": "node --env-file=.env.local --experimental-websocket scripts/e2e-drafts.mjs && node --env-file=.env.local --experimental-websocket scripts/e2e-ui.mjs",

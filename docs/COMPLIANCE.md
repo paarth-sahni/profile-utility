@@ -145,3 +145,14 @@ For testing before the service account can read the real sheet. The sheet is a c
 7. `npm run dev`, sign in as `admin@example.test`, open `/admin/compliance`, press **Synchronise now**.
 8. Try the checker: a registered name in a field (red mark, Preview blocked), in a bullet and a tag, on the external form (no mark, Preview works), then as `member@example.test` (no registry page). Delete a sheet row and sync again: the name shows as pending review and stays enforced.
 9. Clean up: delete the test sheet, revoke the sign-in at https://myaccount.google.com/permissions, remove the `GOOGLE_OAUTH_*` / `SYNC_AUTH_MODE` lines, and empty the local registry with `truncate compliance_name_sources, compliance_names, compliance_sync_runs` (inside the local database container).
+
+## 12. Production without a service account (a person's read-only sign-in)
+
+Used when IT cannot share the sheet with a service account. The server reads the sheet as a named person, read-only
+(`spreadsheets.readonly`), with `SYNC_AUTH_MODE=user_oauth`, `GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`, and the explicit
+`SYNC_ALLOW_USER_OAUTH_IN_PRODUCTION=yes` (without it the mode is still refused in production and with a hosted database).
+Risks to accept: the token is that person's account (revocable at https://myaccount.google.com/permissions); if the person loses
+access to the sheet, or the token is revoked or (External app in "Testing") expires after 7 days, the sync fails and the checker
+keeps the last list (names are never deleted), with no alarm. Nothing on the server syncs by itself unless the timer in `ops/` is
+installed or an administrator presses "Synchronise now". To load or refresh the HOSTED registry from the maintainer's computer:
+`npm run sync:run:hosted -- --confirm=<project host>` (reads `../deploy/.env.production`; prints counts only).

@@ -45,11 +45,11 @@ const fileNamePart = (value: string | undefined): string =>
  * decided: the IB employee code can be added to `parts` here once it syncs from the Team app.
  */
 export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }): string {
-  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle), "InfoBeans"].filter(Boolean);
-  return `${parts.join("_")}.pdf`;
+  return `${profileDisplayName(name ?? "", jobTitle ?? "")}.pdf`;
 }
 
-/** How a saved profile is named in the My Profiles and Manage lists, e.g. "Abdul-Technology_Delivery_Manager-InfoBeans". */
+/** How a saved profile is named in the My Profiles and Manage lists: the PDF's name without ".pdf", e.g. "Abdul_Technology_Delivery_Manager_InfoBeans". */
 export function profileDisplayName(name: string, jobTitle: string): string {
-  return `${[fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean).join("-")}-InfoBeans`;
+  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle), "InfoBeans"].filter(Boolean);
+  return parts.join("_");
 }

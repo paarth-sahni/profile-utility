@@ -10,7 +10,9 @@
  * DEV-ONLY alternative (SYNC_AUTH_MODE=user_oauth): read the sheet as a person instead of the service account, with
  *   GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN (written by `npm run sync:login`).
  * It is refused in a production build and whenever NEXT_PUBLIC_SUPABASE_URL is not a loopback address, so a personal token
- * can only ever be used with the local database. The service-account path above is unchanged.
+ * is used with the local database only, UNLESS SYNC_ALLOW_USER_OAUTH_IN_PRODUCTION=yes is set on purpose (the production
+ * choice when the sheet is read with a person's read-only sign-in instead of a service account). The service-account path
+ * above is unchanged.
  */
 import { SyncError } from "./errors";
 import { parseTabNames } from "./tabs";
@@ -61,9 +63,12 @@ export function loadSheetsConfig(env: Env = process.env): SheetsConfig {
   if (!spreadsheetId) throw new SyncError("CONFIG", "GOOGLE_SHEETS_SPREADSHEET_ID is not a spreadsheet id or link.");
 
   if (env.SYNC_AUTH_MODE?.trim() === "user_oauth") {
-    if (env.NODE_ENV === "production") throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is a development setting and is refused in production.");
-    const db = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-    if (db && !isLoopbackUrl(db)) throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is only allowed with the local database (NEXT_PUBLIC_SUPABASE_URL is not a local address).");
+    // Both guards are lifted only by an explicit, deliberate opt-in (set in the production .env when no service account is used).
+    if (env.SYNC_ALLOW_USER_OAUTH_IN_PRODUCTION?.trim() !== "yes") {
+      if (env.NODE_ENV === "production") throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is a development setting and is refused in production.");
+      const db = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+      if (db && !isLoopbackUrl(db)) throw new SyncError("CONFIG", "SYNC_AUTH_MODE=user_oauth is only allowed with the local database (NEXT_PUBLIC_SUPABASE_URL is not a local address).");
+    }
     return {
       mode: "user_oauth",
       spreadsheetId,

@@ -854,7 +854,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   sql(`insert into profiles (owner_id, template, candidate_name) values ('${owner}', 'external', 'E2E Legacy External')`);
   const acc = await post("internal");
   await goto("/profiles");
-  await waitFor("document.body.innerText.includes('E2E_Api_External-a-InfoBeans')", "My Profiles lists the internal profile as <Name>-<Role>-InfoBeans");
+  await waitFor("document.body.innerText.includes('E2E_Api_External_a_InfoBeans')", "My Profiles lists the internal profile as <Name>_<Role>_InfoBeans");
   const cards = JSON.parse(await ev("JSON.stringify([...document.querySelectorAll('main ul li a')].map(a=>a.innerText.replace(/\\s+/g,' ').trim()))"));
   check("My Profiles lists internal profiles only, with no Internal / External tag on the cards", cards.length > 0 && !cards.some((c) => c.includes("E2E_Legacy_External") || /^(Internal|External)\b/.test(c)), JSON.stringify(cards));
   await signIn("manager");
@@ -864,7 +864,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   // one row per team member (their primary profile), so the member appears once
   const memberOwner = sql("select coalesce(nullif(full_name,''), email) from app_users where email='member@example.test'");
   const memberRows = Number(await ev(`[...document.querySelectorAll('main ul li')].filter(li=>li.innerText.includes(${JSON.stringify("owner " + memberOwner)})).length`));
-  check("Manage lists internal profiles only, one row per team member, named <Name>-<Role>-InfoBeans", memberRows === 1 && /E2E_[A-Za-z_]+-[A-Za-z_]+-InfoBeans/.test(found) && !found.includes("E2E_Legacy_External"), String(memberRows));
+  check("Manage lists internal profiles only, one row per team member, named <Name>_<Role>_InfoBeans", memberRows === 1 && /E2E_[A-Za-z_]+_InfoBeans/.test(found) && !found.includes("E2E_Legacy_External"), String(memberRows));
   void acc;
   await goto("/profiles");
   await ev("sessionStorage.clear()");
