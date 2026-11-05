@@ -15,7 +15,8 @@ import Docxtemplater from "docxtemplater";
 import { prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 import { measurePdf } from "./scripts/pdf-measure.mjs";
-import { pageBreakProblems } from "./scripts/pdf-pages.mjs";
+import { descriptionLineCounts, pageBreakProblems } from "./scripts/pdf-pages.mjs";
+import { wrapLines } from "./lib/textMetrics.ts";
 
 const assert = (cond, msg) => {
   if (!cond) {
@@ -32,7 +33,7 @@ const REF = {
   page: { w: 612, h: 792 },
   // footer: external as in the reference; internal with the logo's bottom 44.7pt up, like its left edge (the page number
   // centred on the logo in both)
-  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: { internal: 44.7, external: 15.4 } },
+  footLogo: { x: 44.7, w: 24.7, h: 15.0, bottom: { internal: 44.7, external: 44.7 } },
   pageNumber: { size: 8.4 },
   label: { font: "Lexend-Regular", size: 8, top: 38.4, x: { internal: 411.7, external: TEXT_RIGHT - 130.5 - 0.5 } },
   logo: { w: 130.5, h: 42.0, top: 59.25, x: { internal: 412.2, external: TEXT_RIGHT - 130.5 } },
@@ -263,6 +264,59 @@ const longSidebar = {
   languages: ["English", "Hindi", "Gujarati"],
 };
 
+// Descriptions of every length (fictional): built from these sentences, so a description of about n lines is easy to make.
+// With --pdf, *-desc-<k> shift everything down by k overview lines, so each description meets the foot of a page at
+// every line: a description of up to 6 lines must never split, a longer one keeps at least 2 lines on each side.
+const SENTENCES = [
+  "The platform collects orders from a fictional chain of garden centres and plans next-day deliveries by van.",
+  "Store staff see stock levels per aisle and can reserve plants for customers who order by phone.",
+  "Managers get a weekly report of waste, late deliveries and the products that sold out early.",
+  "The system replaced three spreadsheets and a paper rota that were updated by hand every evening.",
+  "Deliveries are grouped by postcode so each van makes fewer trips and arrives within the promised hour.",
+  "Payments, refunds and loyalty points are handled by an existing service that the team integrated with.",
+];
+const sentences = (n) => Array.from({ length: n }, (_, i) => SENTENCES[i % SENTENCES.length]).join(" ");
+const OVERVIEW_LINE = "Enjoys tidy data models."; // one line in either template
+const descriptionCase = (k) => ({
+  ...internalSample,
+  name: "Ravi Kulkarni",
+  overview: [internalSample.overview, ...Array.from({ length: k }, () => OVERVIEW_LINE)].join("\n"),
+  projects: [2, 3, 5, 7, 9, 12].map((n, i) => ({
+    duration: `Jan ${2012 + i} – Dec ${2012 + i}`,
+    title: `Garden Centre Platform ${i + 1}`,
+    toolsAndTechnologies: ["Java", "PostgreSQL"],
+    teamSize: "5",
+    role: "Developer",
+    projectLink: "NDA",
+    description: sentences(n),
+    responsibilities: ["Built the delivery planner.", "Wrote the stock reports."],
+  })),
+});
+
+// A long external profile (fictional): projects with descriptions and bullets, and employers with highlights, so section
+// headings, project starts, bullets, descriptions and employers meet the foot of a page (*-long-<k>: k overview lines more).
+const externalLong = (k) => ({
+  ...externalSample,
+  name: "Leena Fernandes",
+  overview: [externalSample.overview, ...Array.from({ length: k }, () => OVERVIEW_LINE)].join("\n"),
+  skills: ["Test Automation", "API Testing", "Regression Testing", "Performance Testing", "Accessibility Testing", "Agile", "Mobile Testing", "Security Testing"],
+  tools: ["Selenium", "Postman", "JMeter", "Jenkins", "JIRA", "Appium", "Cypress", "Playwright", "TestRail"],
+  certifications: ["ISTQB Certified Tester – Foundation Level", "ISTQB Agile Tester", "Certified Scrum Master"],
+  projects: [3, 8, 2, 5, 11, 4].map((n, i) => ({
+    duration: `Mar ${2014 + i} – Feb ${2015 + i}`,
+    client: `Garden Centre Platform ${i + 1}`,
+    teamSize: String(4 + i),
+    role: i % 2 ? "QA Lead" : "Senior QA Engineer",
+    description: sentences(n),
+    responsibilities: ["Planned the regression suite for each release and kept it under two hours.", "Automated the checkout and delivery-slot journeys.", "Reported weekly on defects found before release."].slice(0, 1 + (i % 3)),
+  })),
+  experience: [
+    { company: "Brightwave Systems", position: "Senior QA Engineer", duration: "Apr 2020 – Present", highlights: ["Leads a team of four testers across two product lines.", "Set up nightly automated runs in Jenkins."] },
+    { company: "Contoso Software", position: "QA Engineer", duration: "Jul 2015 – Mar 2020", highlights: ["Tested insurance claims portals for web and mobile."] },
+    { company: "Northwind Traders", position: "Junior Tester", duration: "Jun 2013 – Jun 2015", highlights: ["Wrote manual test cases for the order desk.", "Kept the defect log tidy."] },
+  ],
+});
+
 // ------------------------------------------------------------------------------------------------- rendering
 const templateXml = {};
 function render(id, data) {
@@ -464,8 +518,9 @@ for (const id of ["internal", "external"]) {
   assert(/>A PROUD MEMBER OF</.test(labelPara) && !labelPara.includes("<w:tab/>") && /<w:ind w:left="\d+"/.test(labelPara), `${id}: "A PROUD MEMBER OF" has no tabs or padding spaces and a fixed indent`);
   // bullets: one numbering definition, one indent, one bullet, one spacing
   const paras = xml.match(/<w:p[ >].*?<\/w:p>/gs) ?? [];
-  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlights)\}/.test(paras[n - 1]));
-  assert(bullets.length === (id === "internal" ? 1 : 2), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
+  // (external highlights: the first one goes with its employer, the others follow: highlightsHead / highlightsRest)
+  const bullets = paras.filter((p, n) => n > 0 && /\{#(responsibilities|highlightsHead|highlightsRest)\}/.test(paras[n - 1]));
+  assert(bullets.length === (id === "internal" ? 1 : 3), `${id}: expected the bullet paragraphs of the templates, found ${bullets.length}`);
   for (const b of bullets) {
     assert(/<w:numId w:val="1"\/>/.test(b) && /<w:ind w:left="720" w:hanging="360"\/>/.test(b) && /<w:spacing w:before="0" w:after="96" w:line="276" w:lineRule="auto"\/>/.test(b), `${id}: every bullet uses numbering 1, indent 720/360 and the item spacing`);
   }
@@ -928,9 +983,12 @@ if (process.argv.includes("--pdf")) {
   // shortened skill by skill so each kind of item lands at the foot of page 1
   const nine = Array.from({ length: 6 }, (_, k) => [`internal-nine-${k}`, "internal", { ...internalNine, projects: [{ ...NINE[0], responsibilities: NINE[0].responsibilities.slice(k % 4) }, ...NINE.slice(1).map((p, n) => (k >= 4 && n === 0 ? { ...p, responsibilities: p.responsibilities.slice(1) } : p))] }]);
   const sidebar = Array.from({ length: 6 }, (_, k) => [`internal-sidebar-${k}`, "internal", { ...longSidebar, skills: longSidebar.skills.slice(k) }]);
-  cases.push(...nine, ...sidebar);
+  const desc = Array.from({ length: 8 }, (_, k) => [`internal-desc-${k}`, "internal", descriptionCase(k)]);
+  const extLong = Array.from({ length: 8 }, (_, k) => [`external-long-${k}`, "external", externalLong(k)]);
+  cases.push(...nine, ...sidebar, ...desc, ...extLong);
   const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
   const pageCounts = [];
+  const estimates = { same: 0, all: 0, off: [] }; // the description line estimate (lib/textMetrics.ts) vs the PDF
   const selected = only ? cases.filter(([f]) => new RegExp(only).test(f)) : cases;
   for (const [file, id, data] of selected) {
     const { out, zip } = render(id, data);
@@ -939,11 +997,17 @@ if (process.argv.includes("--pdf")) {
     fs.writeFileSync(`${dir}/${file}.pdf`, await convertDocxToPdf(withoutEmbeddedFonts(zip).generate({ type: "uint8array", compression: "DEFLATE" })));
     const measured = await measurePdf(`${dir}/${file}.pdf`);
     console.log(`pdf: ${dir}/${file}.pdf (${measured.length} page${measured.length > 1 ? "s" : ""})`);
-    // page breaks (internal): no heading or label left at the foot of a page, no bullet or sidebar item cut in two
-    if (id === "internal") {
-      const problems = pageBreakProblems(measured, data);
+    // page breaks: no heading, label or employer line left at the foot of a page, no bullet, description or sidebar item cut badly
+    {
+      const problems = pageBreakProblems(measured, data, id);
       for (const p of problems) console.error(`  ${file}: ${p}`);
       assert(problems.length === 0, `${file}: ${problems.length} page-break problem(s), listed above`);
+      for (const d of descriptionLineCounts(measured, data, id)) {
+        const estimate = wrapLines(d.text, id === "internal" ? 344.1 : 525.6, 11).length;
+        estimates.all++;
+        if (estimate === d.lines) estimates.same++;
+        else estimates.off.push(`${file}: ${d.lines} lines, estimated ${estimate}`);
+      }
     }
     // automatic layout checks on what LibreOffice actually laid out
     const lines = execFileSync("pdftotext", ["-layout", `${dir}/${file}.pdf`, "-"], { encoding: "utf8" }).split("\n");
@@ -967,5 +1031,7 @@ if (process.argv.includes("--pdf")) {
   if (!only) assert(pageCounts.includes(1) && pageCounts.includes(2), `internal-foot: the bullets must cross the foot of page 1 for this check to mean anything (pages ${pageCounts})`);
   console.log("pdf: no near-empty last page (internal, last bullet at the foot of a page)");
   console.log(`pdf: reference format, footer and fonts checked on ${selected.length} PDFs (${referenceChecks} measurements)`);
+  // information, not a rule (the page-break checks above are the rule): how well the line estimate matches LibreOffice
+  console.log(`pdf: description line estimate matched the PDF for ${estimates.same} of ${estimates.all} descriptions${estimates.off.length ? ` (off: ${[...new Set(estimates.off)].slice(0, 5).join("; ")})` : ""}`);
 }
 console.log("done");

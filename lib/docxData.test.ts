@@ -131,3 +131,15 @@ test("internal page breaks: each sidebar list is split into its first item (with
   assert.deepEqual(d.skillsHead, (d.skills as unknown[]).slice(0, 1));
   assert.deepEqual(d.skillsRest, (d.skills as unknown[]).slice(1));
 });
+
+test("page breaks: a description of up to 6 lines is one unit; a longer one comes in head / body / tail pieces", () => {
+  type P = { projects: Record<string, unknown>[] };
+  const short = (prepareData("internal", FULL_INTERNAL) as P).projects[0];
+  assert.deepEqual([short.descriptionWhole, short.descriptionLong], [true, false]);
+  const text = Array.from({ length: 12 }, () => "Deliveries are grouped by postcode so each van makes fewer trips.").join(" ");
+  const long = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], description: text }] }) as P).projects[0];
+  assert.deepEqual([long.descriptionWhole, long.descriptionLong], [false, true]);
+  assert.equal(`${long.descriptionHead} ${long.descriptionBody} ${long.descriptionTail}`, text);
+  const none = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], description: "N/A" }] }) as P).projects[0];
+  assert.deepEqual([none.descriptionWhole, none.descriptionLong], [false, false]);
+});

@@ -17,17 +17,18 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    - sidebar items (internal): 1.15 line spacing inside an item, 23.3pt from one item to the next, 27pt from a skill's
      rating to the next skill (SIDEBAR, as in the reference);
    - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
-3. Footer (both templates): logo and page number at fixed places on the page (footer()). External: as in the reference.
-   Internal: the logo's bottom as far above the page's bottom as the logo is from the left edge (44.7pt), the page
-   number centred on it, and the body's bottom margin raised to keep the reference's clearance above the logo.
+3. Footer (both templates): logo and page number at fixed places on the page (footer()): the logo's bottom as far above the
+   page's bottom as the logo is from the left edge (44.7pt), the page number centred on it, and the body's bottom margin
+   raised to keep the reference's clearance above the logo.
 4. The reference format (eval/reference/format.docx and format.pdf, git-ignored; LAYOUT): margins, the internal table's
    columns, "A PROUD MEMBER OF" and the logo (130.5 x 42.0pt, cropped to the artwork), the header lines, every section
    heading (Lexend Light 10pt #EA1B3D, the same space after it), body text (Lexend Light 11pt, 17.25pt lines) and the
    project lines, each font, size and position as in the reference. The internal template matches it; the external one
    keeps its own layout (one column, logo flush right) with the same rules for the same elements.
    Internal only: the grey line under the header block (RULE) and the underlined project heading line.
-5. Page breaks (internal, UNITS): nothing that introduces content is left alone at the foot of a page and no bullet or
-   sidebar item is cut in two. Each such unit is a one-row table that cannot split, nested in its column.
+5. Page breaks (both templates, UNITS): nothing that introduces content is left alone at the foot of a page, no bullet,
+   sidebar item or short description is cut in two, and a long description keeps 2+ lines on each side of a break. Each
+   such unit is a one-row table that cannot split (internal: nested in its column; external: in the body).
 Paragraph numbers below are positions in the ORIGINAL document.xml (python3 -c "..." listing in the commit messages).
 """
 import re
@@ -50,17 +51,7 @@ WRAPS = {
     "external": [
         (3, 3, "hasExperienceSummary"),
         (4, 4, "hasSpecialization"),
-        (19, 21, "hasTools"),  # heading + value + spacer
-        (22, 24, "hasCertifications"),  # heading + value + spacer
-        (25, 25, "hasProjects"),  # the shared "Projects/Experience" heading: only when there ARE projects (with employers only, the "Experience" heading below stands alone)
-        (34, 36, "hasRole"),  # project: spacer + "Role" heading + value
-        (37, 38, "hasDescription"),  # project: spacer + description
-        (39, 42, "hasResponsibilities"),  # project: spacer + bullets
-        (46, 56, "hasExperience"),  # spacer + "Experience" heading + the whole employer loop
-        (50, 50, "hasPosition"),  # employer: position line
-        (51, 51, "hasDuration"),  # employer: duration line
-        (52, 55, "hasHighlights"),  # employer: spacer + bullets
-        (43, 44, "hasNext"),  # the blank lines that separate a project from the next one (as internal)
+        # Education to the end (10-56) is rebuilt from its paragraphs with its conditions: UNITS (external_units)
     ],
 }
 
@@ -125,10 +116,11 @@ NO_EXPAND_SHIFT_RETURN = "<w:doNotExpandShiftReturn/>"
 # eval/reference/format.docx / format.pdf (git-ignored). Positions are PDF points from the page's top left, measured on
 # format.pdf; where the reference uses Avenir (the page number) we use Lexend at the same size.
 PAGE_W, PAGE_H = 612.0, 792.0
-# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge. Its bottom: external 15.4pt above the
-# page's bottom (the reference); internal 44.7pt, the same as its left edge.
+# Footer logo: 24.7 x 15.0pt, its left edge 44.7pt from the page's left edge and its bottom 44.7pt above the page's bottom
+# (the reference has it 15.4pt up: REFERENCE_FOOT_LOGO_BOTTOM).
 FOOT_LOGO = {"w": 24.7, "h": 15.0, "left": 44.7}
-FOOT_LOGO_BOTTOM = {"internal": 44.7, "external": 15.4}
+FOOT_LOGO_BOTTOM = {"internal": 44.7, "external": 44.7}
+REFERENCE_FOOT_LOGO_BOTTOM = 15.4
 # Page number: Lexend at the reference's rendered size (a 14pt superscript, drawn at 8.4pt), its right edge as far from
 # the page's right edge as the logo is from the left one, its digits centred on the logo's middle.
 PAGE_NUMBER_PT = 8.4
@@ -206,8 +198,8 @@ def footer(xml: str, name: str) -> str:
 # Margins (format.docx): top 0.4in, left / right / bottom 0.6in, header 0, footer 0.5in.
 MARGINS = {"top": 576, "right": 864, "bottom": 864, "left": 864, "header": 0, "footer": 720, "gutter": 0}
 # The body ends this far above the footer logo's top (the reference: bottom margin 43.2 - logo 15.4 - 15.0 = 12.8pt), so
-# the bottom margin moves with the logo (internal: 44.7 + 15.0 + 12.8 = 72.5pt; external stays 43.2pt).
-FOOTER_CLEARANCE = MARGINS["bottom"] / 20 - FOOT_LOGO_BOTTOM["external"] - FOOT_LOGO["h"]
+# the bottom margin moves with the logo (44.7 + 15.0 + 12.8 = 72.5pt).
+FOOTER_CLEARANCE = MARGINS["bottom"] / 20 - REFERENCE_FOOT_LOGO_BOTTOM - FOOT_LOGO["h"]
 PAGE_TOP = MARGINS["top"] / 20
 MARGIN_LEFT = MARGINS["left"] / 20
 TEXT_RIGHT = PAGE_W - MARGINS["right"] / 20
@@ -433,10 +425,7 @@ LAYOUT = {"internal": internal_layout(), "external": external_layout()}
 # LAST project only ({^hasNext}), a blank line makes the bullets end where a section's spacer ends, so the heading is
 # SECTION_GAP below either. Added after paragraph 44, outside its {/hasNext}.
 END_OF_PROJECTS = blank_xml(below(BODY_LINE) + SPACER_LINE - BULLET_BELOW)
-AFTER_CLOSE = {
-    "internal": [],
-    "external": [(44, marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"))],
-}
+AFTER_CLOSE = {"internal": [], "external": []}  # (the external one, END_OF_PROJECTS, is part of UNITS now)
 
 
 # ------------------------------------------------------------------------------------- 5. page breaks (internal): UNITS
@@ -447,12 +436,16 @@ AFTER_CLOSE = {
 # paragraphs did. The units:
 #   - a project's start: ("Projects" before the first one,) "Project N - <dates>", the name and the project's first
 #     field (firstX, set in lib/docxData.ts); each further field (restX) on its own;
-#   - each bullet (a description is not a unit: it may run across a page break);
+#   - each bullet;
+#   - a description of up to 6 lines (descriptionWhole); a longer one as its first 2 lines (a unit), the middle (free to run
+#     across a page break) and its last 2 lines (a unit), so a break leaves at least 2 lines on each side: lib/docxData.ts
+#     estimates the lines from Lexend Light's widths (lib/textMetrics.ts), as LibreOffice ignores widow control in cells;
 #   - in the sidebar: a section heading with its first item, then each further item (a skill: its name and rating);
 #     the tool line with its heading.
 # Each condition / loop tag stays outside the unit tables, so a cell never ends up empty, and so a loop repeats whole
 # tables (docxtemplater's paragraph loop). A cell that ends with a table gets a 1pt paragraph after it (Word needs one).
-UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144}  # column minus the cell margins
+# internal: a column minus the cell margins; external: the page between the margins
+UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144, "body": round(PAGE_W * 20) - MARGINS["left"] - MARGINS["right"]}
 END_OF_CELL = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>'
 PROJECT_FIELDS = [("Tech", 19, 20), ("TeamSize", 23, 24), ("Role", 27, 28), ("ProjectLink", 31, 32)]  # label, value
 
@@ -474,6 +467,14 @@ def cond(flag: str, xml: str) -> str:
     return marker("{#" + flag + "}") + xml + marker("{/" + flag + "}")
 
 
+def description_units(para: str, col: str) -> str:
+    """A project description (the paragraph holding {description}) for the page-break rule (see UNITS)."""
+    piece = lambda tag: para.replace("{description}", "{" + tag + "}")
+    return cond("descriptionWhole", unit(para, col)) + cond(
+        "descriptionLong", unit(piece("descriptionHead"), col) + piece("descriptionBody") + unit(piece("descriptionTail"), col)
+    )
+
+
 def internal_units(p: dict) -> dict:
     """The projects (replacing paragraphs 12-39) and the sidebar (40-68) as units; p: paragraph -> formatted xml."""
     first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in PROJECT_FIELDS)
@@ -482,7 +483,7 @@ def internal_units(p: dict) -> dict:
         "projects",
         unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field, "main")
         + rest_fields
-        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + p[34])
+        + cond("hasDescription", blank_xml(DESCRIPTION_GAP) + description_units(p[34], "main"))
         + cond("hasResponsibilities", PROJECT_SPACER + cond("responsibilities", unit(p[36], "main")))
         # the blank line between projects separates their tables too; none after the last (no extra empty page)
         + cond("hasNext", p[38]),
@@ -502,6 +503,42 @@ def internal_units(p: dict) -> dict:
         + END_OF_CELL
     )
     return {12: projects, **{i: "" for i in range(13, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
+
+
+EXTERNAL_FIELDS = [("TeamSize", 31, 32), ("Role", 35, 36)]  # label, value
+
+
+def external_units(p: dict) -> dict:
+    """External, from Education to the end (replacing paragraphs 10-56) as units; p: paragraph -> formatted xml. The spacers
+    between sections stay where they were, so every distance is as before; only the grouping into units is new."""
+    body = lambda xml: unit(xml, "body")
+    sections = (
+        body(p[10] + p[11] + p[12] + p[13] + p[14]) + p[15]  # Education & Training: heading, {#education} year, qualification
+        + body(p[16] + p[17]) + p[18]  # Skills
+        + cond("hasTools", body(p[19] + p[20]) + p[21])
+        + cond("hasCertifications", body(p[22] + p[23]) + p[24])
+    )
+    first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in EXTERNAL_FIELDS)
+    rest_fields = "".join(cond(f"rest{k}", body(blank_xml(LABEL_GAP) + p[label] + p[value])) for k, label, value in EXTERNAL_FIELDS)
+    projects = cond(
+        "projects",
+        body(cond("isFirst", p[25]) + p[27] + p[28] + first_field)  # ("Projects/Experience",) heading, name, first field
+        + rest_fields
+        + cond("hasDescription", p[37] + description_units(p[38], "body"))
+        + cond("hasResponsibilities", p[39] + cond("responsibilities", body(p[41])))
+        # the blank line between projects; after the last one the gap before the Experience heading (END_OF_PROJECTS)
+        + cond("hasNext", p[43]) + marker("{^hasNext}") + END_OF_PROJECTS + marker("{/hasNext}"),
+    )
+    employers = cond(
+        "hasExperience",
+        cond(
+            "experience",
+            # ("Experience",) company, position, dates and the first highlight; then each further highlight
+            body(cond("isFirst", p[47]) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51]) + cond("hasHighlights", p[52] + cond("highlightsHead", p[54])))
+            + cond("highlightsRest", body(p[54])),
+        ),
+    )
+    return {10: sections + projects + employers + END_OF_CELL, **{i: "" for i in range(11, 57)}}
 
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
@@ -697,7 +734,7 @@ def patch(name: str) -> bytes:
             return opens + pre + text + extra + closes + post
 
         wrapped = [rebuild(m) for m in PARA.finditer(xml)]
-        units = internal_units(formatted) if name == "internal" else {}
+        units = internal_units(formatted) if name == "internal" else external_units(formatted)
         parts = iter(units.get(i, w) for i, w in enumerate(wrapped))
         new_xml = page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name)
         out = OUT / f"{name}.docx"

@@ -1,30 +1,37 @@
 /**
- * Purpose: the page-break rules of the internal template, checked on the measured PDF (scripts/pdf-measure.mjs):
+ * Purpose: the page-break rules of both templates, checked on the measured PDF (scripts/pdf-measure.mjs):
  *   - no section heading, "Project N" heading, project name or field label is the last line of its column on a page
  *     (a project starts with its heading, name and at least its first field on one page);
- *   - no bullet runs across a page break (a description may);
- *   - no sidebar item runs across a page break: a skill name with its rating, a certification, the tool line, a
- *     managerial item, a domain, a language;
- *   - no page but the last is mostly empty (both columns end in the top half).
+ *   - no bullet runs across a page break;
+ *   - a project description of up to 6 lines never runs across a page break; a longer one keeps at least 2 lines on
+ *     each side of it;
+ *   - internal: no sidebar item runs across a page break: a skill name with its rating, a certification, the tool line,
+ *     a managerial item, a domain, a language;
+ *   - external: an employer's company, position and dates are never the last line of a page (they stay with the first
+ *     highlight);
+ *   - no page but the last is mostly empty (its text ends in the top half).
  * Returns a list of problems (empty: all good). Used by test-render.mjs (--pdf). Run on its own (no profile data, so
- * without the sidebar item check): node scripts/pdf-pages.mjs file.pdf
+ * without the checks that need it): node scripts/pdf-pages.mjs file.pdf [internal|external]
  */
 import { measurePdf } from "./pdf-measure.mjs";
 
-const SECTION_HEADINGS = ["Overview", "Education & Training", "Projects", "Skills", "Certifications", "Tools", "Managerial Experience", "Domain", "Languages"];
-const FIELD_LABELS = ["Tools & Technologies", "Team Size", "Role", "Project Link"];
+const SECTION_HEADINGS = {
+  internal: ["Overview", "Education & Training", "Projects", "Skills", "Certifications", "Tools", "Managerial Experience", "Domain", "Languages"],
+  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"],
+};
+const FIELD_LABELS = { internal: ["Tools & Technologies", "Team Size", "Role", "Project Link"], external: ["Team Size", "Role"] };
 const SIDEBAR_X = 400;
 const squash = (t) => t.replace(/\s+/g, "");
 
-/** Lines per page and column ({ main: [...], side: [...] }, top to bottom), the footer left out. */
-export function columnLines(pages) {
+/** Lines per page and column ({ main: [...], side: [...] }, top to bottom), the footer left out. External: one column. */
+export function columnLines(pages, template = "internal") {
   return pages.map((p) => {
     const foot = p.images.find((im) => im.y > p.height / 2); // the footer logo: everything level with it or lower is footer
     const footTop = foot ? foot.y - 1 : p.height - 60;
     const cols = { main: [], side: [] };
     for (const r of [...p.runs].sort((a, b) => a.baseline - b.baseline || a.x - b.x)) {
       if (r.baseline >= footTop) continue;
-      const lines = cols[r.x >= SIDEBAR_X ? "side" : "main"];
+      const lines = cols[template === "internal" && r.x >= SIDEBAR_X ? "side" : "main"];
       const line = lines.find((l) => Math.abs(l.baseline - r.baseline) < 0.5);
       if (line) line.runs.push(r);
       else lines.push({ baseline: r.baseline, runs: [r] });
@@ -44,9 +51,7 @@ export function columnLines(pages) {
   });
 }
 
-const isHeading = (l) => SECTION_HEADINGS.includes(l.text) && l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05;
-const isProjectHeading = (l) => /^Project \d+\b/.test(l.text) && l.font === "Lexend-Regular";
-const isLabel = (l) => FIELD_LABELS.includes(l.text) && l.font === "Lexend-Regular";
+const real = (v) => typeof v === "string" && v.trim() !== "" && !/^n\/?a$/i.test(v.trim());
 const isBullet = (l) => l.text.startsWith("•");
 
 /** The sidebar items as they are printed: "<skill> (<rating>/5)", each list item, the tools as one line. */
@@ -60,10 +65,44 @@ function sidebarItems(data) {
   ].map(squash);
 }
 
-/** Problems with the page breaks of an internal PDF (pages from measurePdf; data: the profile, for the sidebar items). */
-export function pageBreakProblems(pages, data) {
+/** The lines of a description (main column, in order across pages), or null when it is not found in one run. */
+function descriptionLines(lines, text) {
+  const want = squash(text);
+  for (let i = 0; i < lines.length; i++) {
+    const first = squash(lines[i].text);
+    if (!first || !want.startsWith(first)) continue;
+    let got = first;
+    let k = i;
+    while (got.length < want.length && k + 1 < lines.length && want.startsWith(got + squash(lines[k + 1].text))) got += squash(lines[++k].text);
+    if (got === want) return lines.slice(i, k + 1);
+  }
+  return null;
+}
+
+/** How many lines each project description takes in the PDF ({ text, lines }), for the ones found in it. */
+export function descriptionLineCounts(pages, data, template = "internal") {
+  const main = columnLines(pages, template).flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
+  return (data?.projects ?? []).filter((p) => real(p.description)).flatMap((p) => {
+    const lines = descriptionLines(main, p.description);
+    return lines ? [{ text: p.description, lines: lines.length }] : [];
+  });
+}
+
+/**
+ * Problems with the page breaks of a PDF (pages from measurePdf; data: the profile, for the descriptions, sidebar items and
+ * employers; template: "internal" (two columns) or "external" (one column)).
+ */
+export function pageBreakProblems(pages, data, template = "internal") {
   const problems = [];
-  const cols = columnLines(pages);
+  const cols = columnLines(pages, template);
+  const isHeading = (l) => SECTION_HEADINGS[template].includes(l.text) && l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05;
+  const isProjectHeading = (l) => /^Project \d+\b/.test(l.text) && l.font === "Lexend-Regular";
+  const isLabel = (l) => FIELD_LABELS[template].includes(l.text) && l.font === "Lexend-Regular";
+  // an employer's header lines, in order: company, position, dates (only the ones printed)
+  const employers = template === "external" && data ? (data.experience ?? []).map((x) => [x.company, x.position, x.duration].filter(real).map(squash)).filter((h) => h.length) : [];
+  /** True when the page's main column ends with the first m+1 header lines of an employer (no highlight after them). */
+  const endsWithEmployer = (main) =>
+    employers.some((h) => h.some((_, m) => main.length > m && h.slice(0, m + 1).every((line, j) => squash(main[main.length - 1 - m + j].text) === line)));
   const last = cols.length - 1;
   cols.forEach(({ main, side }, n) => {
     const page = `page ${n + 1}`;
@@ -75,6 +114,7 @@ export function pageBreakProblems(pages, data) {
         if (isProjectHeading(end)) problems.push(`${page}: project heading "${end.text}" is the last line of the page`);
         if (main.length > 1 && isProjectHeading(main.at(-2))) problems.push(`${page}: project name "${end.text}" (after "${main.at(-2).text}") is the last line of the page`);
         if (isLabel(end)) problems.push(`${page}: field label "${end.text}" is the last line of the page`);
+        if (endsWithEmployer(main)) problems.push(`${page}: employer line "${end.text}" is the last line of the page (it stays with the first highlight)`);
       }
       const sideEnd = side.at(-1);
       if (sideEnd && isHeading(sideEnd)) problems.push(`${page}: sidebar heading "${sideEnd.text}" is the last line of the page`);
@@ -90,8 +130,27 @@ export function pageBreakProblems(pages, data) {
       if (indent !== undefined && Math.abs(main[0].x - indent) < 1) problems.push(`${page}: "${main[0].text}" continues a bullet from page ${n}`);
     }
   });
-  // sidebar items: group the sidebar lines (all pages, in order) into the expected items; every item on one page
+  // descriptions: up to 6 lines never split; longer ones keep at least 2 lines on each side of a page break
   if (data) {
+    const main = cols.flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
+    for (const p of data.projects ?? []) {
+      if (!real(p.description)) continue;
+      const lines = descriptionLines(main, p.description);
+      if (!lines) {
+        problems.push(`description "${p.description.slice(0, 40)}..." not found in the PDF`);
+        continue;
+      }
+      const pagesOf = [...new Set(lines.map((l) => l.page))];
+      if (pagesOf.length === 1) continue;
+      const before = lines.filter((l) => l.page === pagesOf[0]).length;
+      const after = lines.filter((l) => l.page === pagesOf.at(-1)).length;
+      const where = `description "${p.description.slice(0, 40)}..." (${lines.length} lines)`;
+      if (lines.length <= 6) problems.push(`${where} is split across pages ${pagesOf[0] + 1} and ${pagesOf.at(-1) + 1} (${before} + ${after} lines)`);
+      else if (before < 2 || after < 2) problems.push(`${where} leaves ${before < 2 ? `${before} line on page ${pagesOf[0] + 1}` : `${after} line on page ${pagesOf.at(-1) + 1}`}`);
+    }
+  }
+  // sidebar items: group the sidebar lines (all pages, in order) into the expected items; every item on one page
+  if (data && template === "internal") {
     const items = sidebarItems(data);
     const lines = cols.flatMap((c, page) => c.side.map((l) => ({ ...l, page }))).filter((l) => l.text !== "A PROUD MEMBER OF" && !isHeading(l));
     for (let i = 0; i < lines.length; ) {
@@ -107,8 +166,7 @@ export function pageBreakProblems(pages, data) {
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//, ""))) {
-  for (const file of process.argv.slice(2)) {
-    const problems = pageBreakProblems(await measurePdf(file));
-    console.log(`${file}: ${problems.length ? problems.join("\n  ") : "ok"}`);
-  }
+  const [file, template = "internal"] = process.argv.slice(2);
+  const problems = pageBreakProblems(await measurePdf(file), null, template);
+  console.log(`${file}: ${problems.length ? problems.join("\n  ") : "ok"}`);
 }
