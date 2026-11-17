@@ -545,7 +545,7 @@ def external_units(p: dict) -> dict:
     )
     # the gaps inside a project as internal; after the last project, the gap before the Experience heading (END_OF_PROJECTS
     # and, with employers, that heading's space)
-    gaps = {"Label": blank_xml(LABEL_GAP), "Description": p[37], "Bullets": p[39], "Next": p[43], "End": END_OF_PROJECTS + cond("hasExperience", heading_gap)}
+    gaps = {"Label": blank_xml(LABEL_GAP), "Description": p[37], "Bullets": p[39], "Next": p[43], "End": END_OF_PROJECTS + cond("projectsGapAfter", heading_gap)}
     first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in EXTERNAL_FIELDS)
     rest_fields = "".join(cond(f"rest{k}", body(p[label] + p[value] + closing(f"rest{k}", gaps))) for k, label, value in EXTERNAL_FIELDS)
     projects = cond(
@@ -555,16 +555,62 @@ def external_units(p: dict) -> dict:
         + cond("hasDescription", description_units(p[38], "body", closing("description", gaps)))
         + cond("hasResponsibilities", cond("bulletUnits", body(p[41].replace("{.}", "{text}") + cond("last", closing("bullets", gaps))))),
     )
+    # what ends a section that is followed by another: after bullets the bullets end where a section's spacer ends (as after the
+    # last project), after a text line (a field value, a description) the section's spacer; then the heading's space
+    end_after_bullets = END_OF_PROJECTS + heading_gap
+    end_after_text = blank_xml(SPACER_LINE) + heading_gap
+    highlight = p[54].replace("{.}", "{text}")  # each highlight knows whether it ends the section (closeGap: lib/docxData.ts)
     employers = cond(
         "hasExperience",
         cond(
             "experience",
-            # ("Experience",) company, position, dates and the first highlight; then each further highlight
-            body(cond("isFirst", no_before(p[47])) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51]) + cond("hasHighlights", p[52] + cond("highlightsHead", p[54])))
-            + cond("highlightsRest", body(p[54])),
+            # ("Experience",) company, position, dates and the first highlight; then each further highlight. The last unit of the
+            # last employer ends with the gap to Achievements / the custom sections when one follows (closeGap, headerCloseGap)
+            body(
+                cond("isFirst", no_before(p[47])) + p[49] + cond("hasPosition", p[50]) + cond("hasDuration", p[51])
+                + cond("hasHighlights", p[52] + cond("highlightsHead", highlight + cond("closeGap", end_after_bullets)))
+                + cond("headerCloseGap", end_after_text)
+            )
+            + cond("highlightsRest", body(highlight + cond("closeGap", end_after_bullets))),
         ),
     )
-    return {10: sections + projects + employers + END_OF_CELL, **{i: "" for i in range(11, 57)}}
+
+    # Achievements: the Experience heading's paragraph with another word (its first content is a bullet: the "auto" spacing), the
+    # first item in the heading's unit, each further item a unit; the last one ends with the gap when custom sections follow
+    experience_heading = no_before(p[47])
+    assert ">Experience<" in experience_heading, "the Experience heading text moved: the new section headings are built from it"
+    achievements_heading = no_before(set_ppr(p[47], {"spacing": heading(0.0, "auto")["spacing"]})).replace(">Experience<", ">Achievements<")
+    achievements = cond(
+        "hasAchievements",
+        cond("achievementsHead", body(achievements_heading + highlight + cond("last", cond("achievementsGapAfter", end_after_bullets))))
+        + cond("achievementsRest", body(highlight + cond("last", cond("achievementsGapAfter", end_after_bullets)))),
+    )
+
+    # Custom sections (the user's): heading with {title}, fields as label line + value line (the Team Size / Role lines), then the
+    # description (the project description's paragraph and its page-break pieces). The title goes with the first field, or with the
+    # first lines of the description when there are no fields; every unit ends with the gap that follows it (lib/docxData.ts)
+    assert ">Team Size<" in p[31] and "{teamSize}" in p[32], "the Team Size lines moved: the custom field lines are built from them"
+    custom_heading = experience_heading.replace(">Experience<", ">{title}<")
+    field = p[31].replace(">Team Size<", ">{label}<") + p[32].replace("{teamSize}", "{value}")
+    field_end = cond("gapLabel", blank_xml(LABEL_GAP)) + cond("gapDescription", p[37]) + cond("gapSection", end_after_text)
+    section_end = cond("sectionGap", end_after_text)
+    piece = lambda tag: p[38].replace("{description}", "{" + tag + "}")
+    custom = cond(
+        "hasCustomSections",
+        cond(
+            "customSections",
+            body(
+                custom_heading
+                + cond("hasFields", cond("firstField", field + field_end))
+                + cond("noFields", cond("descriptionWhole", p[38] + section_end))
+                + cond("noFields", cond("descriptionLong", piece("descriptionHead")))
+            )
+            + cond("noFields", cond("descriptionLong", piece("descriptionBody") + body(piece("descriptionTail") + section_end)))
+            + cond("restFields", body(field + field_end))
+            + cond("hasFields", cond("hasDescription", description_units(p[38], "body", section_end))),
+        ),
+    )
+    return {10: sections + projects + employers + achievements + custom + END_OF_CELL, **{i: "" for i in range(11, 57)}}
 
 
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)

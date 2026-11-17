@@ -2,9 +2,14 @@
 
 /**
  * Purpose: the "we're working on it" view shown inside the upload box while a resume is being read. The wait is
- * often 10-30 seconds, so it shows a moving bar, the current step and what to expect, instead of a dimmed box.
+ * often 10-30 seconds, so it shows a moving bar, the current step and what to expect, instead of a dimmed box. After
+ * SLOW_AFTER_MS it says so, so a longer wait does not look like a freeze (the server gives up after 60 seconds).
  */
+import { useEffect, useState } from "react";
+
 export type UploadStage = "reading" | "structuring" | "finishing";
+
+const SLOW_AFTER_MS = 30_000;
 
 const STEPS: { stage: UploadStage; label: string }[] = [
   { stage: "reading", label: "Reading your resume" },
@@ -14,6 +19,11 @@ const STEPS: { stage: UploadStage; label: string }[] = [
 
 export default function UploadProgress({ stage, fileName }: { stage: UploadStage; fileName: string | null }) {
   const current = STEPS.findIndex((s) => s.stage === stage);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <div role="status" aria-live="polite" className="flex w-full max-w-md flex-col items-center gap-5 py-2">
       <div className="flex items-center gap-3">
@@ -51,7 +61,11 @@ export default function UploadProgress({ stage, fileName }: { stage: UploadStage
         })}
       </ol>
 
-      <p className="text-xs text-ink-light">This usually takes 10–30 seconds. Please keep this page open.</p>
+      {slow ? (
+        <p className="text-xs font-medium text-ink">This is taking longer than usual. Please keep this page open, we are still working on it.</p>
+      ) : (
+        <p className="text-xs text-ink-light">This usually takes 10–30 seconds. Please keep this page open.</p>
+      )}
     </div>
   );
 }

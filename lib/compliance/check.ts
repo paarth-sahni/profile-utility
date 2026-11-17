@@ -1,7 +1,9 @@
 /**
- * Purpose: scans a profile for registered names. Every string that has real content (not blank, not "N/A") is checked,
- * which is exactly what the Word templates print (see lib/docxData.ts, which drops blank and "N/A" values the same way).
- * Walking every string instead of a hand-kept field list means a field added to the schema later is covered automatically.
+ * Purpose: scans a profile for registered names, but only where a client can actually be identified: the candidate's name,
+ * the job title, and EVERY field of every project (title, duration, tools, team size, role, link, description, bullets).
+ * The rest of the profile (overview, skills, tools, certifications, education, ...) is not scanned. A string with real
+ * content (not blank, not "N/A") is checked, which is what the Word templates print (see lib/docxData.ts).
+ * To change what is covered, change SCANNED_PATH below (one place); every consumer works from the returned paths.
  * Paths use the same dot style as the form errors (lib/fieldErrors.ts), e.g. "projects.0.responsibilities.2".
  * Pure, so it runs in the browser (live highlights) and on the server (the gate).
  */
@@ -12,6 +14,9 @@ export type Violation = TextMatch & { path: string };
 
 export const COMPLIANCE_MESSAGE =
   "Registered client, company or project name found. Remove or rephrase it so the client is not identified.";
+
+/** The field paths that are scanned: the candidate's name, the job title, and anything inside a project. */
+export const SCANNED_PATH = /^(name|jobTitle|projects\.\d+\..+)$/;
 
 function* stringLeaves(value: unknown, path: string): Generator<{ path: string; text: string }> {
   if (typeof value === "string") {
@@ -28,6 +33,7 @@ export function findViolations(matcher: Matcher, data: ResumeData): Violation[] 
   const out: Violation[] = [];
   if (matcher.size === 0) return out;
   for (const leaf of stringLeaves(data, "")) {
+    if (!SCANNED_PATH.test(leaf.path)) continue;
     for (const m of matcher.scan(leaf.text)) out.push({ ...m, path: leaf.path });
   }
   return out;

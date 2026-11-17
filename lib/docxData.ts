@@ -75,24 +75,43 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
         hasNext: i < all.length - 1,
       };
     });
+  const achievements = clean(d.achievements);
+  const customSections = prepareCustomSections(d.customSections);
+  // Experience is followed by Achievements and / or custom sections: then the last unit of the LAST employer ends with the gap
+  const afterExperience = achievements.length > 0 || customSections.length > 0;
   const experience = d.experience
     .filter((x) => anyReal(x.company, x.position, x.duration, x.highlights))
-    .map((x, i) => ({
-      isFirst: i === 0, // page breaks: the "Experience" heading goes with the first employer
-      company: x.company,
-      position: text(x.position),
-      hasPosition: real(x.position),
-      duration: text(x.duration),
-      hasDuration: real(x.duration),
-      highlights: clean(x.highlights),
-      hasHighlights: clean(x.highlights).length > 0,
-      ...headRest("highlights", clean(x.highlights)), // page breaks: the first highlight stays with company, position and dates
-    }));
+    .map((x, i, all) => {
+      const highlights = clean(x.highlights);
+      const closes = afterExperience && i === all.length - 1; // this employer's last unit carries the closing gap
+      return {
+        isFirst: i === 0, // page breaks: the "Experience" heading goes with the first employer
+        company: x.company,
+        position: text(x.position),
+        hasPosition: real(x.position),
+        duration: text(x.duration),
+        hasDuration: real(x.duration),
+        highlights,
+        hasHighlights: highlights.length > 0,
+        // page breaks: the first highlight stays with company, position and dates; each item knows whether it ends the section
+        headerCloseGap: closes && highlights.length === 0,
+        highlightsHead: highlights.slice(0, 1).map((t) => ({ text: t, closeGap: closes && highlights.length === 1 })),
+        highlightsRest: highlights.slice(1).map((t, k, rest) => ({ text: t, closeGap: closes && k === rest.length - 1 })),
+      };
+    });
   const tools = clean(d.tools);
   const certifications = clean(d.certifications);
   return {
     // page breaks: the gap before a section heading goes after the section before it, when one follows
-    ...laterSections([["education", true], ["skills", true], ["tools", tools.length > 0], ["certifications", certifications.length > 0], ["after", projects.length > 0 || experience.length > 0]]),
+    ...laterSections([
+      ["education", true], ["skills", true], ["tools", tools.length > 0], ["certifications", certifications.length > 0],
+      ["projects", projects.length > 0], ["experience", experience.length > 0], ["achievements", achievements.length > 0], ["custom", customSections.length > 0],
+    ]),
+    // the Achievements list: the first item goes with the heading (one unit), each further one is a unit; `last` ends the section
+    ...headRestItems("achievements", achievements, (t) => ({ text: t })),
+    hasAchievements: achievements.length > 0,
+    customSections,
+    hasCustomSections: customSections.length > 0,
     name: d.name,
     jobTitle: d.jobTitle,
     experienceSummary: text(d.experienceSummary),
@@ -111,6 +130,43 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
     experience,
     hasExperience: experience.length > 0,
   };
+}
+
+/**
+ * The custom sections of an external profile (title, "label: value" fields, description), cleaned for the template. A field
+ * needs both a label and a value; a section needs a title and at least one field or a description (anything else is left
+ * out, never a lone heading). Page breaks: the title goes with the section's first field, or with the first lines of the
+ * description when there are no fields; each further field is its own unit; every field knows which gap follows it
+ * (gapLabel: another field, gapDescription: the description, gapSection: the next custom section), and sectionGap tells the
+ * description (the last unit) whether another section follows, so no gap is ever printed at the top of a page.
+ */
+function prepareCustomSections(list: ExternalResume["customSections"] | undefined) {
+  const sections = (list ?? [])
+    .map((s) => ({
+      title: text(s.title).trim(),
+      rows: s.fields.filter((f) => real(f.label) && real(f.value)).map((f) => ({ label: f.label.trim(), value: f.value.trim() })),
+      description: text(s.description),
+    }))
+    .filter((s) => s.title !== "" && (s.rows.length > 0 || real(s.description)));
+  return sections.map((s, i, all) => {
+    const next = i < all.length - 1;
+    const hasDescription = real(s.description);
+    const fields = s.rows.map((f, k) => {
+      const last = k === s.rows.length - 1;
+      return { ...f, gapLabel: !last, gapDescription: last && hasDescription, gapSection: last && !hasDescription && next };
+    });
+    return {
+      title: s.title,
+      hasFields: fields.length > 0,
+      noFields: fields.length === 0,
+      firstField: fields.slice(0, 1),
+      restFields: fields.slice(1),
+      hasDescription,
+      description: s.description,
+      ...descriptionUnits("external", s.description),
+      sectionGap: next,
+    };
+  });
 }
 
 /**

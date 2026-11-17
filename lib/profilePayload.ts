@@ -63,6 +63,18 @@ const externalLenient = z.object({
   skills: list,
   tools: list,
   certifications: list,
+  // new in the external profile; `.default` so a draft saved before they existed still restores
+  achievements: list.default([]),
+  customSections: z
+    .array(
+      z.object({
+        title: z.string().max(200),
+        fields: z.array(z.object({ label: z.string().max(200), value: z.string().max(2_000) })).max(50),
+        description: text,
+      }),
+    )
+    .max(50)
+    .default([]),
 });
 
 /** Structural (not completeness) schema for a template. */

@@ -15,13 +15,16 @@
  *   3j. project description under 2 lines (fewer than 25 words), or none at all -> flag (never padded in code)
  *   3k. project name that is the client (the resume's "Client:" value) -> the resume's "Project:" name when it has one,
  *       else flag; a name that reads like part of the description (a sentence, a leading action verb) -> flag
+ *   3l. external achievements: the model's list is compared with the section the code found in the resume (lib/achievements.ts):
+ *       dropped bulleted items are added back, doubtful ones flagged, repeats in Experience flagged
  * Backstop 4 (reconcileFlagPaths) runs on the normalized output and makes sure every review
  * flag points at a field that exists. All functions are pure except fillEmptyResponsibilities,
  * which edits the (already cloned) data it is given.
  */
+import { findAchievementSections, itemInSource, itemSimilarity, sameItem } from "./achievements";
 import { normalizeDuration } from "./dates";
 import type { ReviewFlag } from "./extract.types";
-import type { TemplateId } from "./schemas";
+import { isNAValue, type TemplateId } from "./schemas";
 
 type Json = Record<string, unknown>;
 const isRecord = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -657,6 +660,103 @@ export function fixProjectNames(templateId: TemplateId, data: unknown, flags: Re
   return out;
 }
 
+/** How many achievements the document is expected to carry before it is flagged as long (the page layout is the limit). */
+export const MAX_ACHIEVEMENTS = 20;
+/** Two lines are the same achievement when they share at least this much of their words (the model may fix grammar). */
+const LOOSE_PAIR = 0.45;
+
+/**
+ * 3l. Achievements (external): the model's list is compared with the section the code cut out of the resume
+ * (lib/achievements.ts), so a dropped item cannot go unnoticed and an invented one cannot pass.
+ * - the final list follows the resume's order; an item the model kept uses the model's wording (grammar fixes),
+ * - an item the model dropped is ADDED BACK when the section had bullet or number markers (each item is then certain) and
+ *   flagged; from a plain list it is not added (line breaks are a guess), only reported,
+ * - a model item that matches nothing in the section stays, flagged (and flagged again when it is not in the resume at all),
+ * - an achievement that is also an Experience bullet is flagged there, never deleted.
+ * Mutates `data` (an already cloned object), like fillEmptyResponsibilities.
+ */
+export function reconcileAchievements(templateId: TemplateId, data: unknown, flags: ReviewFlag[], sourceText: string): ReviewFlag[] {
+  if (templateId !== "external" || !isRecord(data)) return flags;
+  const out = [...flags];
+  const model: string[] = [];
+  for (const v of Array.isArray(data.achievements) ? data.achievements : []) {
+    const s = str(v);
+    if (s && !isNAValue(s) && !model.some((m) => sameItem(m, s))) model.push(s);
+  }
+  const sections = findAchievementSections(sourceText);
+  const detected: { text: string; heading: string; bulleted: boolean }[] = [];
+  for (const sec of sections) {
+    for (const item of sec.items) if (!detected.some((d) => sameItem(d.text, item))) detected.push({ text: item, heading: sec.heading, bulleted: sec.bulleted });
+  }
+
+  const final: string[] = [];
+  const notes: { index: number; reason: string }[] = [];
+  const report: string[] = [];
+  if (detected.length === 0) {
+    model.forEach((m, i) => {
+      final.push(m);
+      if (!itemInSource(m, sourceText)) notes.push({ index: i, reason: "not found in the resume, please check" });
+    });
+  } else {
+    const usedModel = new Set<number>();
+    const match: (number | null)[] = detected.map((d) => {
+      const i = model.findIndex((m, k) => !usedModel.has(k) && sameItem(m, d.text));
+      if (i >= 0) usedModel.add(i);
+      return i >= 0 ? i : null;
+    });
+    // what is left on both sides: pair by the best remaining word overlap (the model may have reworded an item)
+    const pairs: { d: number; m: number; s: number }[] = [];
+    detected.forEach((d, di) => {
+      if (match[di] !== null) return;
+      model.forEach((m, mi) => {
+        const s = itemSimilarity(d.text, m);
+        if (!usedModel.has(mi) && s >= LOOSE_PAIR) pairs.push({ d: di, m: mi, s });
+      });
+    });
+    for (const p of pairs.sort((a, b) => b.s - a.s)) {
+      if (match[p.d] === null && !usedModel.has(p.m)) {
+        match[p.d] = p.m;
+        usedModel.add(p.m);
+      }
+    }
+    const dropped: typeof detected = [];
+    detected.forEach((d, di) => {
+      const m = match[di];
+      if (m !== null) final.push(model[m]);
+      else if (d.bulleted) {
+        final.push(d.text);
+        notes.push({ index: final.length - 1, reason: `added from your resume's "${d.heading}" section, please check` });
+      } else dropped.push(d);
+    });
+    model.forEach((m, mi) => {
+      if (usedModel.has(mi)) return;
+      final.push(m);
+      notes.push({ index: final.length - 1, reason: itemInSource(m, sourceText) ? "not in the resume's achievements section, please check" : "not found in the resume, please check" });
+    });
+    if (dropped.length > 0) report.push(`${dropped.length} item${dropped.length === 1 ? "" : "s"} of the "${dropped[0].heading}" section may be missing from this list: please compare with the resume`);
+    const headings = [...new Set(sections.map((s) => s.heading))];
+    report.push(`Found the ${headings.map((h) => `"${h}"`).join(" and ")} section${headings.length === 1 ? "" : "s"}: ${final.length} item${final.length === 1 ? "" : "s"} listed under Achievements`);
+    const weak = sections.find((s) => s.tier === 2);
+    if (weak && final.length > 0) report.push(`Taken from a section headed "${weak.heading}": remove the items if they only summarise the career`);
+  }
+  if (final.length > MAX_ACHIEVEMENTS) report.push(`More than ${MAX_ACHIEVEMENTS} items: the document may get long`);
+
+  data.achievements = final;
+  for (const n of notes) if (!hasFlag(out, `achievements.${n.index}`, n.reason)) out.push({ path: `achievements.${n.index}`, reason: n.reason });
+  for (const reason of report) if (!hasFlag(out, "achievements", reason)) out.push({ path: "achievements", reason });
+  // an achievement that is also an Experience bullet: flagged on the bullet, never removed
+  if (Array.isArray(data.experience)) {
+    data.experience.forEach((e, i) => {
+      if (!isRecord(e) || !Array.isArray(e.highlights)) return;
+      e.highlights.forEach((h, j) => {
+        if (typeof h === "string" && final.some((a) => sameItem(a, h)) && !hasFlag(out, `experience.${i}.highlights.${j}`, "also listed under Achievements"))
+          out.push({ path: `experience.${i}.highlights.${j}`, reason: "also listed under Achievements" });
+      });
+    });
+  }
+  return out;
+}
+
 /** Applies backstops 1-3 to a clone of the model data; returns the fixed data and flags. */
 export function applyBackstops(
   templateId: TemplateId,
@@ -683,6 +783,7 @@ export function applyBackstops(
   next = flagRepeatedBullets(templateId, copy, next);
   next = flagDescriptionStartsWithTitle(templateId, copy, next);
   next = flagShortDescriptions(templateId, copy, next);
+  next = reconcileAchievements(templateId, copy, next, sourceText);
   return { data: copy, flags: next };
 }
 

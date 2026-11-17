@@ -5,7 +5,7 @@
  */
 import OpenAI from "openai";
 import type { z } from "zod";
-import { ExtractError } from "./extract.types";
+import { EXTRACT_ERROR_MESSAGES, ExtractError } from "./extract.types";
 import { getServerConfig, type ReasoningEffort } from "./serverConfig";
 import { toStrictJsonSchema } from "./strictSchema";
 
@@ -41,7 +41,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     const t = setTimeout(resolve, ms);
     signal?.addEventListener("abort", () => {
       clearTimeout(t);
-      reject(new ExtractError("TIMEOUT", "Timed out"));
+      reject(new ExtractError("TIMEOUT", EXTRACT_ERROR_MESSAGES.TIMEOUT));
     });
   });
 
@@ -146,7 +146,7 @@ export async function completeJson(args: CompleteJsonArgs): Promise<string> {
   } catch (e) {
     if (e instanceof ExtractError) throw e;
     if (args.signal?.aborted || e instanceof OpenAI.APIUserAbortError) {
-      throw new ExtractError("TIMEOUT", "Timed out");
+      throw new ExtractError("TIMEOUT", EXTRACT_ERROR_MESSAGES.TIMEOUT);
     }
     const status = e instanceof OpenAI.APIError ? e.status : undefined;
     console.error(`[extract] ${args.schemaName}: LLM call failed (status ${status ?? "n/a"} ${describeApiError(e)})`);

@@ -703,7 +703,7 @@ await t.scenario("Preview editing: dates, every list item, an emptied item, and 
     } else {
       // the server keeps the registry for 60 s: wait until it knows the fictional name, asking every 3 s (the live check
       // allows 240 requests in 10 minutes per user)
-      const knows = `fetch('/api/compliance/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',data:{overview:'For ${FICTIONAL}.'}})}).then(r=>r.json()).then(j=>j.violations?.length>0)`;
+      const knows = `fetch('/api/compliance/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',data:{jobTitle:'Lead, ${FICTIONAL}'}})}).then(r=>r.json()).then(j=>j.violations?.length>0)`;
       const t0 = Date.now();
       while (!(await ev(knows))) {
         if (Date.now() - t0 > 80000) throw new Error("the server's registry cache did not pick up the fictional name within 80 s");
@@ -770,8 +770,10 @@ await t.scenario("Preview editing: dates, every list item, an emptied item, and 
       // the server's own Submit checks (the UI cannot reach them with this text): a registered name and an incomplete
       // profile are refused with where to fix them, and leave no consent row and no new version
       const submitApi = (data) => ev(`fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',kind:'base',label:'',source:'scratch',profileId:${JSON.stringify(saved.profileId)},data:${JSON.stringify(data)},reviewFlags:[],promptPlan:[],submit:true,consent:{accepted:true}})}).then(async r=>JSON.stringify({status:r.status, body:await r.json()}))`);
-      const named = JSON.parse(await submitApi({ ...COMPLETE, name: "E2E Preview Items", overview: `Built it for ${FICTIONAL}.` }));
-      check("POST /api/profiles Submit naming a registered client: 422 COMPLIANCE with the field, no consent row, no new version", named.status === 422 && named.body.error?.code === "COMPLIANCE" && named.body.error.matches?.[0]?.path === "overview" && consents("submit") === 0 && versions() === 1, JSON.stringify(named));
+      const named = JSON.parse(await submitApi({ ...COMPLETE, name: "E2E Preview Items", jobTitle: `Lead, ${FICTIONAL}` }));
+      check("POST /api/profiles Submit naming a registered client: 422 COMPLIANCE with the field, no consent row, no new version", named.status === 422 && named.body.error?.code === "COMPLIANCE" && named.body.error.matches?.[0]?.path === "jobTitle" && consents("submit") === 0 && versions() === 1, JSON.stringify(named));
+      const overviewOnly = await ev(`fetch('/api/compliance/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template:'internal',data:{overview:'Built it for ${FICTIONAL}.',skills:[{name:'${FICTIONAL}',rating:'4'}]}})}).then(r=>r.json()).then(j=>j.violations?.length)`);
+      check("a registered client named only in the Overview or Skills is NOT flagged (the check covers the name, job title and projects)", overviewOnly === 0, String(overviewOnly));
       const direct = JSON.parse(await submitApi({ ...COMPLETE, name: "E2E Preview Items", overview: "" }));
       check("POST /api/profiles Submit of an incomplete profile: 422 INCOMPLETE naming the field, no consent row", direct.status === 422 && direct.body.error?.code === "INCOMPLETE" && direct.body.error.fields.some((f) => f.path === "overview") && consents("submit") === 0, JSON.stringify(direct));
       // fixed: View PDF, then Download and Submit go through

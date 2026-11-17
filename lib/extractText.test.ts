@@ -65,6 +65,8 @@ test("single-column external profile has no sidebar section", async () => {
     certifications: ["CKA"],
     projects: [],
     experience: [{ company: "Acme", position: "Engineer", duration: "2015 - 2020", highlights: [overview, overview] }],
+    achievements: [],
+    customSections: [],
   };
   const { text } = await extractResumeText(Buffer.from(await renderProfilePdf("external", external)));
   assert.ok(!text.includes("--- SIDEBAR ---"));

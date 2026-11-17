@@ -14,7 +14,11 @@ export interface ServerConfig {
   modelFallback: string;
   reasoningEffort: ReasoningEffort;
   maxUploadBytes: number;
+  /** How long one upload may take in total before it is given up (default 60 s; EXTRACT_TIMEOUT_MS to change it). */
+  extractTimeoutMs: number;
 }
+
+const DEFAULT_EXTRACT_TIMEOUT_MS = 60_000;
 
 const toEffort = (v: string | undefined): ReasoningEffort =>
   v === "low" || v === "high" ? v : "medium";
@@ -27,6 +31,7 @@ export function getServerConfig(): ServerConfig {
     throw new ExtractError("LLM_FAILED", "The extraction service is not configured.");
   }
   const maxMb = Number(process.env.MAX_UPLOAD_MB);
+  const timeoutMs = Number(process.env.EXTRACT_TIMEOUT_MS);
   return {
     apiKey,
     baseURL: process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai/v1",
@@ -35,5 +40,6 @@ export function getServerConfig(): ServerConfig {
     modelFallback: process.env.LLM_MODEL_FALLBACK?.trim() || "openai/gpt-oss-20b",
     reasoningEffort: toEffort(process.env.LLM_REASONING_EFFORT),
     maxUploadBytes: (Number.isFinite(maxMb) && maxMb > 0 ? maxMb : 10) * 1024 * 1024,
+    extractTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 10_000 ? timeoutMs : DEFAULT_EXTRACT_TIMEOUT_MS,
   };
 }

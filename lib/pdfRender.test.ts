@@ -52,6 +52,8 @@ const EXTERNAL: ExternalResume = {
   certifications: [],
   projects: [],
   experience: [{ company: "Example Corp", position: "Engineer", duration: "2015 - 2020", highlights: ["Built things"] }],
+  achievements: [],
+  customSections: [],
 };
 
 /** Runs `work` with a private TMPDIR (other test files convert in parallel) and returns what is left in it afterwards. */

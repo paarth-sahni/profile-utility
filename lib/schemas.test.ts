@@ -35,6 +35,8 @@ const MIN_EXTERNAL: ExternalResume = {
   certifications: [],
   projects: [],
   experience: [],
+  achievements: [],
+  customSections: [],
 };
 
 const clone = <T,>(v: T): T => structuredClone(v);

@@ -17,6 +17,7 @@ const INTERNAL: InternalResume = {
 const EXTERNAL: ExternalResume = {
   name: "Asha Rao", jobTitle: "Engineer", experienceSummary: "6+ Years of Industry Experience", specialization: "", overview: "Built a claims platform.",
   education: [{ year: "2016", qualification: "B.E." }], skills: ["Go"], tools: [], certifications: [], projects: [], experience: [],
+  achievements: [], customSections: [],
 };
 const DOWNLOAD = { action: "download", accepted: true };
 
@@ -63,11 +64,18 @@ test("an incomplete profile: 422 INCOMPLETE with every field to fix; nothing ren
 
 test("an internal profile naming a registered client: 422 COMPLIANCE, nothing rendered, no consent row", async () => {
   const { deps, calls } = setup();
-  const res = await handlePdfPost(request({ template: "internal", data: { ...INTERNAL, overview: "Built it for Example Client One." }, consent: DOWNLOAD }), deps);
+  const res = await handlePdfPost(request({ template: "internal", data: { ...INTERNAL, jobTitle: "Lead, Example Client One" }, consent: DOWNLOAD }), deps);
   assert.equal(res.status, 422);
   const json = (await res.json()) as { error: { code: string; matches: { path: string }[] } };
-  assert.deepEqual([json.error.code, json.error.matches[0].path], ["COMPLIANCE", "overview"]);
+  assert.deepEqual([json.error.code, json.error.matches[0].path], ["COMPLIANCE", "jobTitle"]);
   assert.deepEqual(calls, ["gate"]);
+});
+
+test("a registered client named only in the Overview is not checked (the check covers the name, job title and projects)", async () => {
+  const { deps, calls } = setup();
+  const res = await handlePdfPost(request({ template: "internal", data: { ...INTERNAL, overview: "Built it for Example Client One." }, consent: DOWNLOAD }), deps);
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, ["gate", "render", "consent:user-1:internal"]);
 });
 
 test("an external profile with the same name is not checked: the PDF is made and the consent recorded", async () => {

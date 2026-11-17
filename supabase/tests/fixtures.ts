@@ -74,6 +74,8 @@ export const EXTERNAL_FIXTURE: ExternalResume = {
   skills: ["Python", "SQL", "Airflow"],
   tools: ["dbt", "Git"],
   certifications: ["Sample Data Professional"],
+  achievements: [],
+  customSections: [],
 };
 
 /** Only the required fields; every optional section is empty (the shape the DOCX leaves sections out for). */
@@ -105,4 +107,6 @@ export const MINIMAL_EXTERNAL_FIXTURE: ExternalResume = {
   certifications: [],
   projects: [],
   experience: [],
+  achievements: [],
+  customSections: [],
 };

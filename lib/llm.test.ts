@@ -101,3 +101,14 @@ test("a 400 about the generated output (json_validate_failed) is not treated as 
   assert.match(logs, /status 400 type=invalid_request_error code=json_validate_failed message="Failed to validate JSON/);
   assert.doesNotMatch(logs, /SECRET RESUME TEXT|test-key/, "never logs the generation or the key");
 });
+
+test("a timed-out call says the friendly timeout text, not the bare 'Timed out'", async () => {
+  const { completeJson } = await import("./llm");
+  const { ExtractError, EXTRACT_ERROR_MESSAGES } = await import("./extract.types");
+  let thrown: unknown;
+  await completeJson({ ...base, signal: AbortSignal.abort() }).catch((e) => (thrown = e));
+  assert.ok(thrown instanceof ExtractError && thrown.code === "TIMEOUT");
+  assert.equal((thrown as Error).message, EXTRACT_ERROR_MESSAGES.TIMEOUT);
+  assert.doesNotMatch((thrown as Error).message, /^Timed out$/);
+  assert.match((thrown as Error).message, /longer than usual/);
+});

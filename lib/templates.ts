@@ -12,8 +12,8 @@ export const TEMPLATES: TemplateMeta[] = [
     id: "external",
     name: "External Profile",
     description:
-      "Client-facing single-column profile: overview, education, skills, tools/certifications, numbered projects and an employment history section.",
-    highlights: ["Single column", "Projects + Experience sections", "Skills as comma list"],
+      "Client-facing single-column profile: overview, education, skills, tools/certifications, numbered projects, an employment history section, an optional Achievements section and any custom sections you add.",
+    highlights: ["Single column", "Projects + Experience sections", "Achievements + custom sections", "Skills as comma list"],
   },
   {
     id: "internal",

@@ -20,7 +20,7 @@ import { measurePdf } from "./pdf-measure.mjs";
 
 const SECTION_HEADINGS = {
   internal: ["Overview", "Education & Training", "Projects", "Skills", "Certifications", "Tools", "Managerial Experience", "Domain", "Languages"],
-  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"],
+  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience", "Achievements"],
 };
 const FIELD_LABELS = { internal: ["Tools & Technologies", "Team Size", "Role", "Project Link"], external: ["Team Size", "Role"] };
 const SIDEBAR_X = 400;
@@ -110,11 +110,17 @@ export function descriptionLineCounts(pages, data, template = "internal") {
 export function pageBreakProblems(pages, data, template = "internal") {
   const problems = [];
   const cols = columnLines(pages, template);
-  const isHeading = (l) => SECTION_HEADINGS[template].includes(l.text) && l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05;
+  // an external profile's custom sections print their own title as a heading
+  const customTitles = template === "external" ? (data?.customSections ?? []).map((s) => (s.title ?? "").trim()).filter(Boolean) : [];
+  const isHeading = (l) => (SECTION_HEADINGS[template].includes(l.text) || customTitles.includes(l.text)) && l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05;
   const isProjectHeading = (l) => /^Project \d+\b/.test(l.text) && l.font === "Lexend-Regular";
-  const isLabel = (l) => FIELD_LABELS[template].includes(l.text) && l.font === "Lexend-Regular";
+  // an external profile's custom sections print their fields' labels like the Team Size / Role labels
+  const customLabels = template === "external" ? (data?.customSections ?? []).flatMap((s) => (s.fields ?? []).map((f) => (f.label ?? "").trim())).filter(Boolean) : [];
+  const labels = [...FIELD_LABELS[template], ...customLabels];
+  const isLabel = (l) => labels.includes(l.text) && l.font === "Lexend-Regular";
   // an employer's header lines, in order: company, position, dates (only the ones printed)
-  const employers = template === "external" && data ? (data.experience ?? []).map((x) => [x.company, x.position, x.duration].filter(real).map(squash)).filter((h) => h.length) : [];
+  // (an employer with no highlight has nothing to stay with: its header is its last line, so it may end a page)
+  const employers = template === "external" && data ? (data.experience ?? []).filter((x) => (x.highlights ?? []).some(real)).map((x) => [x.company, x.position, x.duration].filter(real).map(squash)).filter((h) => h.length) : [];
   /** True when the page's main column ends with the first m+1 header lines of an employer (no highlight after them). */
   const endsWithEmployer = (main) =>
     employers.some((h) => h.some((_, m) => main.length > m && h.slice(0, m + 1).every((line, j) => squash(main[main.length - 1 - m + j].text) === line)));
@@ -143,7 +149,7 @@ export function pageBreakProblems(pages, data, template = "internal") {
     if (n > 0) {
       for (const [col, lines] of [["main", main], ["side", side]]) {
         if (!lines[0]) continue;
-        const top = boxTop(lines[0], col, FIELD_LABELS[template]);
+        const top = boxTop(lines[0], col, labels);
         if (Math.abs(top - CONTINUED_TOP[template]) > 1) problems.push(`${page}: the ${col === "main" ? "main column" : "sidebar"} starts at ${top.toFixed(1)}pt, not at the top (${CONTINUED_TOP[template]}pt): "${lines[0].text.slice(0, 40)}"`);
       }
     }

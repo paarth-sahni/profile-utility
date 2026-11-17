@@ -40,6 +40,9 @@ export async function uploadResume(file: File, templateId: TemplateId, signal?: 
     throw new UploadError("LLM_FAILED", EXTRACT_ERROR_MESSAGES.LLM_FAILED);
   }
 
+  // a gateway timeout (e.g. nginx) answers with an HTML page, not our JSON: still a timeout for the user
+  if (res.status === 504) throw new UploadError("TIMEOUT", EXTRACT_ERROR_MESSAGES.TIMEOUT);
+
   let json: unknown;
   try {
     json = await res.json();

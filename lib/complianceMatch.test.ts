@@ -95,22 +95,30 @@ const external = (): ExternalResume => ({ ...(blankResume("external") as Externa
 
 test("findViolations: internal profile, several fields, list items, nested paths", () => {
   const d = internal();
-  d.overview = "Automation for Acme Limited.";
+  d.jobTitle = "Automation for Acme Limited.";
   d.projects = [
     { ...d.projects[0], title: "Project Falcon", responsibilities: ["Fine", "Built it for Zenith"] },
   ];
   const v = findViolations(matcher, d);
-  assert.deepEqual(v.map((x) => x.path).sort(), ["overview", "projects.0.responsibilities.1", "projects.0.title"]);
-  assert.deepEqual(Object.keys(violationsByPath(v)).sort(), ["overview", "projects.0.responsibilities.1", "projects.0.title"]);
-  assert.deepEqual(highlightsByPath(v).overview, [{ start: 15, end: 27 }]);
+  assert.deepEqual(v.map((x) => x.path).sort(), ["jobTitle", "projects.0.responsibilities.1", "projects.0.title"]);
+  assert.deepEqual(Object.keys(violationsByPath(v)).sort(), ["jobTitle", "projects.0.responsibilities.1", "projects.0.title"]);
+  assert.deepEqual(highlightsByPath(v).jobTitle, [{ start: 15, end: 27 }]);
 });
 
-test("findViolations: external profile client and employer fields", () => {
+test("findViolations: only the name, job title and project fields are scanned (the rest of the profile is not)", () => {
+  const d = internal();
+  d.overview = "Automation for Acme Limited.";
+  d.skills = [{ name: "Zenith", rating: "5" }];
+  d.tools = ["Acme Limited"];
+  d.certifications = ["Zenith"];
+  assert.deepEqual(findViolations(matcher, d), []);
+});
+
+test("findViolations: external-shaped data follows the same scope (project fields yes, employers no); external is never gated anyway", () => {
   const d = external();
   d.projects = [{ ...d.projects[0], client: "Zenith", description: "Fine" }];
   d.experience = [{ ...d.experience[0], company: "Acme Limited", highlights: ["ok"] }];
-  const paths = findViolations(matcher, d).map((x) => x.path).sort();
-  assert.deepEqual(paths, ["experience.0.company", "projects.0.client"]);
+  assert.deepEqual(findViolations(matcher, d).map((x) => x.path), ["projects.0.client"]);
 });
 
 test("findViolations: a clean profile and N/A placeholders give nothing", () => {
@@ -122,17 +130,17 @@ test("findViolations: a clean profile and N/A placeholders give nothing", () => 
 
 test("findViolations: content changed after a check is judged on the latest content", () => {
   const d = internal();
-  d.overview = "For Acme Limited";
+  d.jobTitle = "For Acme Limited";
   assert.equal(findViolations(matcher, d).length, 1);
-  d.overview = "For a large insurer";
+  d.jobTitle = "For a large insurer";
   assert.equal(findViolations(matcher, d).length, 0);
-  d.jobTitle = "Zenith lead"; // reintroduced elsewhere
+  d.projects = [{ ...d.projects[0], description: "Zenith rollout" }]; // reintroduced elsewhere
   assert.equal(findViolations(matcher, d).length, 1);
 });
 
 test("toDto exposes only path, offsets, typed text and name types", () => {
   const d = internal();
-  d.overview = "For Zenith";
+  d.jobTitle = "For Zenith";
   const dto = toDto(findViolations(matcher, d)[0]);
   assert.deepEqual(Object.keys(dto).sort(), ["end", "matchedText", "path", "start", "types"]);
 });

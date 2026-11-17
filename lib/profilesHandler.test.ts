@@ -11,13 +11,13 @@ import type { InternalResume } from "./schemas";
 // fakes for the session, the registry, the audit insert and the database.
 const matcher = buildMatcher([{ id: "n1", name: "Example Client One", types: ["client"] }]);
 
-// complete (Submit runs the strict check first), with the overview as the part each test changes
-const profile = (overview = "Built a claims platform."): InternalResume => ({
+// complete (Submit runs the strict check first), with the job title (a field the check reads) as the part each test changes
+const profile = (jobTitle = "Engineer"): InternalResume => ({
   name: "Asha Rao",
-  jobTitle: "Engineer",
+  jobTitle,
   experienceSummary: "6+ Years of Industry Experience",
   specialization: "",
-  overview: overview,
+  overview: "Built a claims platform.",
   education: [{ year: "2016", qualification: "B.E." }],
   projects: [],
   skills: [{ name: "Go", rating: "4" }],

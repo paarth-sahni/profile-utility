@@ -82,13 +82,13 @@ const route = import("../app/api/profiles/route");
 const registry = import("./compliance/registry");
 let userCounter = 0;
 
-// complete (Submit runs the strict check first), with the overview as the part each test changes
-const overview = (text: string) => ({
+// complete (Submit runs the strict check first), with the job title (a field the check reads) as the part each test changes
+const profileWith = (text: string) => ({
   name: "Asha Rao",
-  jobTitle: "Engineer",
+  jobTitle: text,
   experienceSummary: "6+ Years of Industry Experience",
   specialization: "",
-  overview: text,
+  overview: "Built a claims platform.",
   education: [{ year: "2016", qualification: "B.E." }],
   projects: [],
   skills: [{ name: "Go", rating: "4" }],
@@ -103,7 +103,7 @@ const post = async (extra: Record<string, unknown> = {}, text = "Built a claims 
     new Request("http://localhost:3000/api/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ template: "internal", kind: "base", source: "scratch", data: overview(text), ...extra }),
+      body: JSON.stringify({ template: "internal", kind: "base", source: "scratch", data: profileWith(text), ...extra }),
     }),
   );
 const submit = { submit: true, consent: { accepted: true } };
@@ -136,7 +136,7 @@ test("Submit naming a registered client: 422 with the position, no consent row, 
   assert.equal(res.status, 422);
   const body = (await res.json()) as { error: { code: string; matches: { path: string; matchedText: string }[] } };
   assert.equal(body.error.code, "COMPLIANCE");
-  assert.equal(body.error.matches[0].path, "overview");
+  assert.equal(body.error.matches[0].path, "jobTitle");
   assert.equal(body.error.matches[0].matchedText, "Example Client One");
   assert.deepEqual(state.auditInserts, []);
   assert.deepEqual(state.saves, []);

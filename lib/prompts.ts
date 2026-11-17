@@ -4,6 +4,7 @@
  * modules chosen from the analysis + schema description + example. Each part is a named
  * constant so it can be tested on its own.
  */
+import { describeAchievementSections, type AchievementSection } from "./achievements";
 import type { TemplateId } from "./schemas";
 import type { ResumeAnalysis } from "./extract.types";
 
@@ -23,7 +24,9 @@ Determine:
   "business_analysis", "delivery_leadership", "other".
 - projectsLayout: "separate_section" | "embedded_in_jobs" | "none".
 - presentSections: which of these the document actually contains: summary, education, skills, tools, certifications,
-  projects, work_experience, domains, languages, managerial_experience, skill_ratings.
+  projects, work_experience, domains, languages, managerial_experience, skill_ratings, achievements.
+- achievementsHeadings: the exact heading text of every dedicated section that lists achievements, awards, accomplishments, honours or recognition
+  (e.g. "Awards & Recognition", "Key Achievements"), copied as written; [] if there is none. Achievements written inside a job's own bullets do not count.
 - density: "sparse" (little detail), "normal", "very_long" (many roles/projects, 4+ pages).
 - hasMetrics: true if the resume states concrete numbers (%, users, revenue, team sizes).
 - earliestProfessionalStart: "MMM YYYY" of the first full-time professional role, excluding internships and education; "" if unclear.
@@ -95,7 +98,8 @@ export const INTERNAL_RULES = `INTERNAL PROFILE RULES
 
 export const EXTERNAL_RULES = `EXTERNAL PROFILE RULES
 - projects[].client: holds the PROJECT'S NAME (see PROJECT NAME), not the client company. If the resume marks the project name confidential or NDA, keep that wording.
-- experience: one entry per employer.`;
+- experience: one entry per employer.
+- achievements: ONLY the items of a dedicated achievements-type section of the resume (headed Achievements, Key Achievements, Accomplishments, Awards, Awards & Recognition, Honours, Recognition, Accolades or similar). Copy EVERY item of that section, one entry per item, in the resume's order, exactly as written (fix only grammar and line breaks that wrapped an item). Do NOT apply the bullet writing standard to them: do not shorten, merge, split, reword to start with a verb or add anything. Achievements mentioned inside a job's bullets or the overview are not taken: they stay where they are, and an achievement listed here must not be repeated in experience.highlights or the overview. If the resume has no such section, return []. Never invent an achievement.`;
 
 interface PromptModule {
   name: string;
@@ -117,8 +121,36 @@ const ROLE_HINTS: Partial<Record<ResumeAnalysis["roleFamily"], string>> = {
   backend: "Languages, frameworks, API design and databases are skills; Postman, Docker, Git are tools.",
 };
 
+/**
+ * The adaptation for a resume that has an achievements-type section. `found` is what the code detector cut out of the resume
+ * text (lib/achievements.ts): the exact heading and every item, which the model must copy. When only the model's own analysis
+ * saw such a heading, the model is told to look for it.
+ */
+function achievementsModule(a: ResumeAnalysis, found: AchievementSection[]): PromptModule | null {
+  if (found.length > 0) {
+    const weak = found.some((s) => s.tier === 2);
+    return {
+      name: "achievements-section",
+      text:
+        `The resume has an achievements-type section. Copy EVERY item of it into "achievements", verbatim and in this order, none dropped, merged or reworded (a wrapped line belongs to the item above it). The items found in the resume text:\n${describeAchievementSections(found)}\n` +
+        (weak
+          ? `A section headed like "Highlights" or "Activities" is only a possible achievements section: if its items merely summarise skills or years of experience instead of naming achievements, awards or recognition, return [] for "achievements" and add a reviewFlag (path "achievements") saying so.`
+          : `Add nothing that is not in these items.`),
+    };
+  }
+  const headings = a.achievementsHeadings ?? []; // an analysis stored before this field existed has none
+  if (headings.length > 0 || a.presentSections.includes("achievements")) {
+    const headed = headings.length > 0 ? ` headed ${headings.map((h) => `"${h}"`).join(" / ")}` : "";
+    return {
+      name: "achievements-section",
+      text: `The resume appears to have an achievements-type section${headed}. Copy EVERY item of that section into "achievements", verbatim and in order. If you cannot find such a section, return [].`,
+    };
+  }
+  return null;
+}
+
 /** Chooses the prompt modules for this document. Order is stable so plans are comparable. */
-function selectModules(a: ResumeAnalysis): PromptModule[] {
+function selectModules(a: ResumeAnalysis, achievements: AchievementSection[] = []): PromptModule[] {
   const m: PromptModule[] = [];
   if (a.documentType === "infobeans_internal_profile" || a.documentType === "infobeans_external_profile") {
     m.push({
@@ -172,12 +204,14 @@ function selectModules(a: ResumeAnalysis): PromptModule[] {
   }
   const hint = ROLE_HINTS[a.roleFamily];
   if (hint) m.push({ name: `role-${a.roleFamily}`, text: hint });
+  const ach = achievementsModule(a, achievements);
+  if (ach) m.push(ach);
   return m;
 }
 
 /** Names of the modules applied for this analysis (shown on Review and in eval output). */
-export function describePromptPlan(analysis: ResumeAnalysis): string[] {
-  return selectModules(analysis).map((m) => m.name);
+export function describePromptPlan(analysis: ResumeAnalysis, achievements: AchievementSection[] = []): string[] {
+  return selectModules(analysis, achievements).map((m) => m.name);
 }
 
 const DESC_COMMENT =
@@ -213,6 +247,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
       "highlights": [string]       // Achievement bullet points, each a single sentence; [] if none are given
     }
   ],
+  "achievements": [string],        // Every item of the resume's own Achievements / Awards / Accomplishments / Recognition section, verbatim and in order (see the achievements rule); [] if the resume has no such section
   "reviewFlags": [                 // Every inferred/estimated value; [] if none
     { "path": string,              // dot path, e.g. "projects.0.duration"
       "reason": string }           // short reason, e.g. "Project dates not stated"
@@ -220,7 +255,7 @@ const EXTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 }`;
 
 const EXTERNAL_EXAMPLE = `EXAMPLE OUTPUT (format reference only — use the actual resume content):
-{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 – Nov 2023","client":"Card Processing Platform Migration","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform, with infrastructure defined in Terraform, automated build and deployment pipelines, and monitoring of service health across environments.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"Jun 2019 – Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
+{"name":"Nora Lindqvist","jobTitle":"Cloud Platform Lead","experienceSummary":"9+ Years of Industry Experience","specialization":"Cloud Infrastructure & DevOps","overview":"Automates infrastructure and CI/CD for cloud platforms, with a focus on container-based environments. Led the migration of payment services to containerised environments. Worked across the banking and insurance domains.","education":[{"year":"2014","qualification":"Master of Computer Applications, Northfield Institute of Technology"}],"skills":["Kubernetes","Terraform","CI/CD pipeline design","Incident management"],"tools":["Jenkins","Grafana","GitLab"],"certifications":["AWS Solutions Architect – Associate"],"projects":[{"duration":"Mar 2022 – Nov 2023","client":"Card Processing Platform Migration","teamSize":"8-10","role":"DevOps Lead","description":"Migration of the bank's card-processing services from virtual machines to a managed Kubernetes platform, with infrastructure defined in Terraform, automated build and deployment pipelines, and monitoring of service health across environments.","responsibilities":["Designed Terraform modules for the new cluster environments.","Built Jenkins pipelines for automated build, test and deployment.","Set up Grafana dashboards and alert rules for service health."]}],"experience":[{"company":"Brightwave Systems","position":"Senior DevOps Engineer","duration":"Jun 2019 – Present","highlights":["Automated infrastructure provisioning with Terraform across three environments.","Reduced deployment time from two hours to twenty minutes by introducing pipeline caching."]}],"achievements":["Platform Excellence Award, Brightwave Systems, 2022","Speaker, Cloud Native Summit 2021"],"reviewFlags":[{"path":"experienceSummary","reason":"Calculated from the earliest full-time role (2017) to today"}]}`;
 
 const INTERNAL_SCHEMA = `JSON SCHEMA (field -> description):
 {
@@ -269,10 +304,12 @@ export const schemaDescription = (id: TemplateId): string => (id === "external" 
  * Builds the full pass-2 system prompt: core rules + template rules + selected modules
  * + schema description + example. `today` is injected by the server (e.g. "5 October 2026").
  */
-export function buildExtractionPrompt(templateId: TemplateId, analysis: ResumeAnalysis, today: string): string {
+export function buildExtractionPrompt(templateId: TemplateId, analysis: ResumeAnalysis, today: string, achievements: AchievementSection[] = []): string {
   const core = CORE_RULES.replaceAll("{PROFILE}", templateId.toUpperCase()).replaceAll("{TODAY}", today);
   const templateRules = templateId === "internal" ? INTERNAL_RULES : EXTERNAL_RULES;
-  const modules = selectModules(analysis)
+  // the achievements section exists in the external profile only
+  const modules = selectModules(analysis, templateId === "external" ? achievements : [])
+    .filter((m) => templateId === "external" || m.name !== "achievements-section")
     .map((m) => `- ${m.text}`)
     .join("\n");
   const example = templateId === "external" ? EXTERNAL_EXAMPLE : INTERNAL_EXAMPLE;

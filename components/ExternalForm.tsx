@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { cleanList, hasContent } from "@/lib/previewModel";
-import { wordCount, type ExternalResume } from "@/lib/schemas";
+import { CUSTOM_LABEL_MAX, CUSTOM_TITLE_MAX, CUSTOM_VALUE_MAX, wordCount, type ExternalResume } from "@/lib/schemas";
 import { hasErrorUnder } from "@/lib/fieldErrors";
-import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { Accordion, AddButton, AreaField, Field, FieldPairsEditor, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+
+type CustomSection = ExternalResume["customSections"][number];
 
 const BLANK_PROJECT: ExternalResume["projects"][number] = {
   duration: "", client: "", teamSize: "", role: "", description: "", responsibilities: [""],
@@ -27,6 +29,11 @@ export default function ExternalForm({
   highlights?: Record<string, Range[]>;
 }) {
   const [projectsRemoved, setProjectsRemoved] = useState(false);
+  // the custom section just added opens by itself, so the title can be typed straight away
+  const [openCustom, setOpenCustom] = useState<number | null>(null);
+  // a profile from before these sections existed has neither key until it is saved again
+  const achievements = data.achievements ?? [];
+  const customSections = data.customSections ?? [];
 
   const set = <K extends keyof ExternalResume>(key: K, value: ExternalResume[K]) =>
     onChange({ ...data, [key]: value });
@@ -169,6 +176,75 @@ export default function ExternalForm({
           );
         })}
       </Section>
+
+      <Section title="Achievements" invalid={hasErrorUnder(fe, "achievements")} empty={cleanList(achievements).length === 0}>
+        <p className="text-xs text-ink-light">
+          Awards, recognition and accomplishments, one per item. Filled in automatically when the uploaded resume has an Achievements, Awards or
+          Accomplishments section; you can edit, add or remove items.
+        </p>
+        <StringListEditor
+          items={achievements}
+          marks={listMarks("achievements")}
+          onChange={(v) => set("achievements", v)}
+          addLabel="Add achievement"
+          multiline
+        />
+      </Section>
+
+      {customSections.map((s, i) => {
+        const setS = (patch: Partial<CustomSection>) => set("customSections", customSections.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        const move = (to: number) => set("customSections", moveItem(customSections, i, to));
+        const arrow = "p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
+        return (
+          <Section
+            key={i}
+            title={s.title.trim() || `Custom section ${i + 1}`}
+            defaultOpen={openCustom === i}
+            invalid={hasErrorUnder(fe, `customSections.${i}`)}
+            empty={!hasContent(s.title, s.description) && !s.fields.some((f) => hasContent(f.label, f.value))}
+            onRemove={() => {
+              set("customSections", customSections.filter((_, j) => j !== i));
+              setOpenCustom(null);
+            }}
+            actions={
+              <span className="flex items-center gap-0.5">
+                <button type="button" title="Move section up" className={arrow} disabled={i === 0} onClick={() => move(i - 1)}>↑</button>
+                <button type="button" title="Move section down" className={arrow} disabled={i === customSections.length - 1} onClick={() => move(i + 1)}>↓</button>
+              </span>
+            }
+          >
+            <p className="text-xs text-ink-light">Printed in the document as this title, then the fields (label and value), then the description.</p>
+            <Field
+              label="Section title"
+              {...mk(`customSections.${i}.title`)}
+              value={s.title}
+              onChange={(v) => setS({ title: v })}
+              maxLength={CUSTOM_TITLE_MAX}
+              hint={`${s.title.length} of ${CUSTOM_TITLE_MAX} characters`}
+            />
+            <FieldPairsEditor
+              label="Fields (label and value)"
+              items={s.fields}
+              onChange={(v) => setS({ fields: v })}
+              marks={(k) => ({ label: fe[`customSections.${i}.fields.${k}.label`], value: fe[`customSections.${i}.fields.${k}.value`] })}
+              maxLabel={CUSTOM_LABEL_MAX}
+              maxValue={CUSTOM_VALUE_MAX}
+            />
+            <AreaField label="Description" optional {...mk(`customSections.${i}.description`)} value={s.description} onChange={(v) => setS({ description: v })} />
+          </Section>
+        );
+      })}
+
+      <button
+        type="button"
+        onClick={() => {
+          set("customSections", [...customSections, { title: "", fields: [], description: "" }]);
+          setOpenCustom(customSections.length);
+        }}
+        className="w-full border border-dashed border-brand-300 px-4 py-3 text-sm font-medium text-brand-600 transition hover:bg-brand-50"
+      >
+        + Add custom section
+      </button>
     </Accordion>
   );
 }

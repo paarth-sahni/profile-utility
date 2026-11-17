@@ -184,12 +184,15 @@ export function Field({
   error,
   highlights,
   rating = false,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   /** Parts of the text that name a registered client; shown marked under the field. */
   highlights?: Range[];
+  /** Longest text the field takes (typing stops there). */
+  maxLength?: number;
   /** When true, shows a ✕ to clear the value so this field is left out of the final document. */
   optional?: boolean;
   /** Restrict input to digits — non-digit characters are stripped as the user types. */
@@ -228,7 +231,7 @@ export function Field({
         <input
           type="text"
           inputMode={rating ? "decimal" : numeric ? "numeric" : undefined}
-          maxLength={rating ? 3 : undefined}
+          maxLength={rating ? 3 : maxLength}
           value={value}
           onChange={(e) => handleChange(e.target.value)}
           className={`w-full border py-2 pl-3 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus ${
@@ -311,25 +314,86 @@ export function AddButton({ onClick, label }: { onClick: () => void; label: stri
   );
 }
 
-/** Up / down / remove controls for an array item. */
+/** Up / down / remove controls for an array item. The last remaining item cannot be removed unless `allowRemoveLast`. */
 export function ItemControls({
   index,
   length,
   onMove,
   onRemove,
+  allowRemoveLast = false,
 }: {
   index: number;
   length: number;
   onMove: (from: number, to: number) => void;
   onRemove: (index: number) => void;
+  allowRemoveLast?: boolean;
 }) {
   const btn = "p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <span className="flex shrink-0 items-center gap-0.5">
       <button type="button" title="Move up" className={btn} disabled={index === 0} onClick={() => onMove(index, index - 1)}>↑</button>
       <button type="button" title="Move down" className={btn} disabled={index === length - 1} onClick={() => onMove(index, index + 1)}>↓</button>
-      <button type="button" title="Remove" className={`${btn} hover:text-red-600`} disabled={length === 1} onClick={() => onRemove(index)}>✕</button>
+      <button type="button" title="Remove" className={`${btn} hover:text-red-600`} disabled={length === 1 && !allowRemoveLast} onClick={() => onRemove(index)}>✕</button>
     </span>
+  );
+}
+
+/**
+ * Editable "label and value" rows (the fields of a custom section) with add / remove / reorder. Unlike the other lists it may
+ * be emptied completely. A row needs both a label and a value to be printed; `marks` shows what is wrong with either box.
+ */
+export function FieldPairsEditor({
+  label,
+  items,
+  onChange,
+  marks,
+  addLabel = "Add field",
+  maxLabel,
+  maxValue,
+}: {
+  label?: string;
+  items: { label: string; value: string }[];
+  onChange: (items: { label: string; value: string }[]) => void;
+  marks?: (index: number) => { label?: string; value?: string };
+  addLabel?: string;
+  maxLabel?: number;
+  maxValue?: number;
+}) {
+  const update = (i: number, patch: Partial<{ label: string; value: string }>) => onChange(items.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const box = (error?: string) =>
+    `w-full border px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus ${error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"}`;
+  return (
+    <div>
+      {label && <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>}
+      <div className="space-y-2">
+        {items.length === 0 && <p className="text-xs text-gray-400">No fields yet: add one, or use only the description below.</p>}
+        {items.map((row, i) => {
+          const m = marks?.(i) ?? {};
+          return (
+            <div key={i} className="flex items-start gap-2" data-invalid={m.label || m.value ? "true" : undefined}>
+              <div className="grid w-full gap-2 sm:grid-cols-[2fr_3fr]">
+                <div>
+                  <input type="text" aria-label={`Field ${i + 1}, label`} placeholder="Label, e.g. Languages" maxLength={maxLabel} value={row.label} onChange={(e) => update(i, { label: e.target.value })} className={box(m.label)} />
+                  {m.label && <p className="mt-1 text-xs font-medium text-brand-600">{m.label}</p>}
+                </div>
+                <div>
+                  <input type="text" aria-label={`Field ${i + 1}, value`} placeholder="Value, e.g. English, Hindi" maxLength={maxValue} value={row.value} onChange={(e) => update(i, { value: e.target.value })} className={box(m.value)} />
+                  {m.value && <p className="mt-1 text-xs font-medium text-brand-600">{m.value}</p>}
+                </div>
+              </div>
+              <ItemControls
+                index={i}
+                length={items.length}
+                allowRemoveLast
+                onMove={(from, to) => onChange(moveItem(items, from, to))}
+                onRemove={(idx) => onChange(items.filter((_, j) => j !== idx))}
+              />
+            </div>
+          );
+        })}
+        <AddButton label={addLabel} onClick={() => onChange([...items, { label: "", value: "" }])} />
+      </div>
+    </div>
   );
 }
 

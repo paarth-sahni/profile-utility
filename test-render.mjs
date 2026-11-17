@@ -56,7 +56,7 @@ const REF = {
 };
 const HEADINGS = {
   internal: ["Overview", "Education & Training", "Projects", "Skills", "Certifications", "Tools", "Managerial Experience", "Domain", "Languages"],
-  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"],
+  external: ["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience", "Achievements"],
 };
 const FIELD_LABELS = ["Tools & Technologies", "Team Size", "Role", "Project Link"];
 const near = (value, want, tol) => Math.abs(value - want) <= tol;
@@ -103,6 +103,8 @@ const external = {
     { company: "Accenture", position: "POS-MARK Senior Engineer", duration: "2020 - Present", highlights: ["HIGH-MARK one", "HIGH-MARK two"] },
     { company: "Infosys", position: "POS-MARK Engineer", duration: "2015 - 2020", highlights: ["HIGH-MARK three"] },
   ],
+  achievements: ["ACH-MARK one", "ACH-MARK two"],
+  customSections: [{ title: "CSTITLE-MARK Languages", fields: [{ label: "CSLABEL-MARK Native", value: "CSVALUE-MARK Hindi" }], description: "CSBODY-MARK works across teams." }],
 };
 
 // Realistic fictional profiles shaped like the reference (the same sections and kinds of field, invented text): rendered
@@ -391,6 +393,8 @@ const EXTERNAL_SECTIONS = [
   ["tools", /\bTools\b|TOOL-MARK/, (d, v) => ({ ...d, tools: v === undefined ? [] : ["", v] })],
   ["certifications", /Certifications|CERT-MARK/, (d, v) => ({ ...d, certifications: v === undefined ? [] : [v] })],
   ["employers (heading + all entries)", /(?<!Projects\/)\bExperience\b|Accenture|Infosys|POS-MARK|HIGH-MARK/, (d, v) => ({ ...d, experience: v === undefined ? [] : [{ company: v, position: v, duration: v, highlights: [v] }] })],
+  ["achievements (heading + all items)", /\bAchievements\b|ACH-MARK/, (d, v) => ({ ...d, achievements: v === undefined ? [] : [v] })],
+  ["custom sections (title, fields, description)", /CSTITLE-MARK|CSLABEL-MARK|CSVALUE-MARK|CSBODY-MARK/, (d, v) => ({ ...d, customSections: v === undefined ? [] : [{ title: v, fields: [{ label: v, value: v }], description: v }] })],
 ];
 const EXTERNAL_PROJECT_FIELDS = [
   ["project duration", /Jan 2022 - Dec 2022|Mar 2021 - Nov 2021|Project 1 - |Project 2 - /, "duration", ""],
@@ -1022,7 +1026,7 @@ if (process.argv.includes("--pdf")) {
     if (file.startsWith("internal-foot-")) pageCounts.push(pages.length);
     if (id === "external") {
       // single column: a heading must be followed by content, never by another heading or by nothing
-      const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience"]);
+      const HEADINGS = new Set(["Overview", "Education & Training", "Skills", "Tools", "Certifications", "Projects/Experience", "Experience", "Achievements"]);
       const body = lines.map((l) => l.trim()).filter((l) => l && !/^\d+$/.test(l)); // drop blanks and page numbers
       body.forEach((l, n) => {
         if (HEADINGS.has(l)) assert(n + 1 < body.length && !HEADINGS.has(body[n + 1]), `${file}: orphan heading "${l}" (followed by ${body[n + 1] ?? "nothing"})`);

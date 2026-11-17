@@ -113,6 +113,17 @@ export default function InstructionsContent({ audience }: { audience: Audience }
                   for accuracy.
                 </li>
                 <li>
+                  <strong>Achievements</strong> – If the resume has an Achievements, Awards or Accomplishments
+                  section, its items are listed here automatically. Check that every item is there and edit or remove
+                  as needed. The section is left out of the document when it is empty.
+                </li>
+                <li>
+                  <strong>Custom sections</strong> – Use <strong>+ Add custom section</strong> at the bottom to add
+                  any extra section (for example Languages or Volunteering). Give it a title, add fields (a label and
+                  a value, such as &ldquo;Native: Hindi&rdquo;) and/or a description. You can add as many as you
+                  need, reorder them or remove them.
+                </li>
+                <li>
                   <strong>Content accuracy</strong> – Ensure all information is complete, relevant, and free from
                   formatting or content errors.
                 </li>

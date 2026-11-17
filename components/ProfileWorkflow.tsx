@@ -166,6 +166,7 @@ export default function ProfileWorkflow({
   // upload screen
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorCode, setUploadErrorCode] = useState<string | null>(null); // so a timeout can look different from a failure
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const stageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -320,6 +321,7 @@ export default function ProfileWorkflow({
       return;
     }
     setUploadError(null);
+    setUploadErrorCode(null);
     setFileName(file.name);
     setUploadStatus("reading");
     // step the progress view forward while the server works (the last timer is cleared in `finally`)
@@ -343,6 +345,7 @@ export default function ProfileWorkflow({
       setErrors(null);
     } catch (e) {
       setUploadError(e instanceof UploadError ? e.message : "Something went wrong. Please try again.");
+      setUploadErrorCode(e instanceof UploadError ? e.code : null);
     } finally {
       if (stageTimer.current) clearTimeout(stageTimer.current);
       setUploadStatus("idle");
@@ -886,12 +889,14 @@ export default function ProfileWorkflow({
 
               {uploadError && !uploading && (
                 <div role="alert" className="mt-2 space-y-3 border border-brand-200 bg-brand-50 p-3">
+                  {uploadErrorCode === "TIMEOUT" && <p className="text-sm font-semibold text-brand-700">Taking longer than usual</p>}
                   <p className="text-sm text-brand-700">{uploadError}</p>
                   <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
                       onClick={() => {
                         setUploadError(null);
+                        setUploadErrorCode(null);
                         fileInput.current?.click();
                       }}
                       className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600"

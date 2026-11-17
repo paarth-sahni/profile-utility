@@ -29,7 +29,7 @@ test("mode: only COMPLIANCE_ENFORCE=on enforces; unset or anything else is dorma
 
 test("dormant: nothing is checked and the registry is never even loaded", async () => {
   const d = internal();
-  d.overview = "Built for Example Client One.";
+  d.jobTitle = "Lead, Example Client One account";
   let loaded = 0;
   const out = await checkProfile("internal", d, { mode: "off", getMatcher: async () => { loaded++; return matcher; } });
   assert.deepEqual(out, { enforced: false, violations: [] });
@@ -39,7 +39,7 @@ test("dormant: nothing is checked and the registry is never even loaded", async 
 
 test("enforcing: an internal profile naming a client is refused with 422 and exact positions", async () => {
   const d = internal();
-  d.overview = "Delivered claims automation for Example Client One, cutting manual review.";
+  d.projects = [{ ...d.projects[0], description: "Delivered claims automation for Example Client One, cutting manual review." }];
   const res = await gateResponse("internal", d, { mode: "on", getMatcher });
   assert.ok(res);
   assert.equal(res.status, 422);
@@ -47,9 +47,9 @@ test("enforcing: an internal profile naming a client is refused with 422 and exa
   assert.equal(body.error.code, "COMPLIANCE");
   assert.equal(body.error.matches.length, 1);
   const m = body.error.matches[0];
-  assert.equal(m.path, "overview");
+  assert.equal(m.path, "projects.0.description");
   assert.equal(m.matchedText, "Example Client One");
-  assert.equal(d.overview.slice(m.start as number, m.end as number), "Example Client One");
+  assert.equal(d.projects[0].description.slice(m.start as number, m.end as number), "Example Client One");
   assert.deepEqual(m.types, ["client", "friendly"]);
 });
 
@@ -87,17 +87,58 @@ test("enforcing: a clean profile passes (null = carry on)", async () => {
 
 test("enforcing: every request is judged on its own body (changed after an earlier check, or reintroduced elsewhere)", async () => {
   const d = internal();
-  d.overview = "For Example Client One";
+  d.projects = [{ ...d.projects[0], description: "For Example Client One" }];
   assert.ok(await gateResponse("internal", d, { mode: "on", getMatcher }));
-  d.overview = "For a large insurer";
+  d.projects = [{ ...d.projects[0], description: "For a large insurer" }];
   assert.equal(await gateResponse("internal", d, { mode: "on", getMatcher }), null);
   d.jobTitle = "Lead, Example Group account";
   assert.ok(await gateResponse("internal", d, { mode: "on", getMatcher }));
 });
 
+test("scope: a registered name outside Name, Job title and the projects is NOT checked", async () => {
+  const d = internal();
+  const name = "Example Client One";
+  d.overview = `Built for ${name}.`;
+  d.experienceSummary = `${name} for 5 years`;
+  d.specialization = name;
+  d.education = [{ year: "2015", qualification: `${name} Institute` }];
+  d.skills = [{ name, rating: "5" }];
+  d.tools = [name];
+  d.certifications = [name];
+  d.managerialExperience = [name];
+  d.domains = [name];
+  d.languages = [name];
+  assert.deepEqual((await checkProfile("internal", d, { mode: "on", getMatcher })).violations, []);
+  assert.equal(await gateResponse("internal", d, { mode: "on", getMatcher }), null);
+});
+
+test("scope: the candidate's name, the job title and EVERY field of a project are checked", async () => {
+  const name = "Example Client One";
+  const project = (over: Record<string, unknown>) => ({ ...internal().projects[0], ...over });
+  const cases: [string, (d: InternalResume) => void][] = [
+    ["name", (d) => { d.name = name; }],
+    ["jobTitle", (d) => { d.jobTitle = `Lead, ${name}`; }],
+    ["projects.0.title", (d) => { d.projects = [project({ title: name })]; }],
+    ["projects.0.duration", (d) => { d.projects = [project({ duration: `${name} 2020` })]; }],
+    ["projects.0.toolsAndTechnologies.0", (d) => { d.projects = [project({ toolsAndTechnologies: [name] })]; }],
+    ["projects.0.teamSize", (d) => { d.projects = [project({ teamSize: name })]; }],
+    ["projects.0.role", (d) => { d.projects = [project({ role: `Lead at ${name}` })]; }],
+    ["projects.0.projectLink", (d) => { d.projects = [project({ projectLink: `https://${name}` })]; }],
+    ["projects.0.description", (d) => { d.projects = [project({ description: `For ${name}` })]; }],
+    ["projects.0.responsibilities.1", (d) => { d.projects = [project({ responsibilities: ["fine", `For ${name}`] })]; }],
+    ["projects.1.title", (d) => { d.projects = [project({ title: "Fine" }), project({ title: name })]; }],
+  ];
+  for (const [path, apply] of cases) {
+    const d = internal();
+    apply(d);
+    const out = await checkProfile("internal", d, { mode: "on", getMatcher });
+    assert.ok(out.violations.some((v) => v.path === path), `${path} must be scanned`);
+  }
+});
+
 test("enforcing: the answer holds only the text the caller typed, never registry data", async () => {
   const d = internal();
-  d.overview = "For example client one limited of nothing";
+  d.jobTitle = "For example client one limited of nothing";
   const res = await gateResponse("internal", d, { mode: "on", getMatcher });
   assert.ok(res);
   const text = JSON.stringify(await res.json());

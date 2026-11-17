@@ -19,12 +19,11 @@ import { extractResumeText } from "./extractText";
 import { applyBackstops, reconcileFlagPaths } from "./backstops";
 import { completeJson } from "./llm";
 import { toNameCase } from "./nameCase";
+import { findAchievementSections } from "./achievements";
 import { normalizeToShape } from "./normalize";
 import { ANALYZE_PROMPT, RESUME_AS_DATA_RULE, buildExtractionPrompt, describePromptPlan } from "./prompts";
 import { describeFieldPath, schemaFor, type TemplateId } from "./schemas";
 import { getServerConfig } from "./serverConfig";
-
-const TOTAL_TIMEOUT_MS = 60_000;
 
 const wrapResume = (text: string) => `<resume>\n${text}\n</resume>`;
 
@@ -64,7 +63,7 @@ function toIssues(issues: z.core.$ZodIssue[]): ExtractIssue[] {
 /** Runs the full pipeline for one uploaded file. */
 export async function extractProfile(buffer: Buffer, templateId: TemplateId): Promise<ExtractResult> {
   const cfg = getServerConfig();
-  const signal = AbortSignal.timeout(TOTAL_TIMEOUT_MS);
+  const signal = AbortSignal.timeout(cfg.extractTimeoutMs); // 60 s unless EXTRACT_TIMEOUT_MS says otherwise
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
   // 1. Read the file into plain text.
@@ -93,9 +92,17 @@ export async function extractProfile(buffer: Buffer, templateId: TemplateId): Pr
   }
   const analysis: ResumeAnalysis = analysisParsed.data;
 
+  // 2b. Achievements (external only): the code detector reads the resume text itself and WINS over the model's guess, so the
+  //     model gets the exact heading and every item to copy, and nothing depends on the model noticing the section.
+  const achievementSections = templateId === "external" ? findAchievementSections(text) : [];
+  if (achievementSections.length > 0) {
+    analysis.achievementsHeadings = achievementSections.map((s) => s.heading);
+    if (!analysis.presentSections.includes("achievements")) analysis.presentSections = [...analysis.presentSections, "achievements"];
+  }
+
   // 3. Build the adaptive prompt.
-  const system = buildExtractionPrompt(templateId, analysis, today);
-  const promptPlan = describePromptPlan(analysis);
+  const system = buildExtractionPrompt(templateId, analysis, today, achievementSections);
+  const promptPlan = describePromptPlan(analysis, templateId === "external" ? achievementSections : []);
 
   // 4. Pass 2: extract (retry once with the fallback model if the output isn't JSON).
   const profileSchema = schemaFor(templateId);

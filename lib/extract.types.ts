@@ -3,7 +3,7 @@
  * (server route, pipeline, prompts) and its browser client.
  */
 import { z } from "zod";
-import { schemaFor, type ResumeData, type TemplateId } from "./schemas";
+import { externalResumeSchema, internalResumeSchema, type ResumeData, type TemplateId } from "./schemas";
 
 /** Friendly, stable error codes returned by /api/extract. */
 export type ExtractErrorCode =
@@ -36,7 +36,10 @@ export type ReviewFlag = z.infer<typeof reviewFlagSchema>;
  * zod refinements and normalizeToShape, which run after parsing, never in the JSON Schema.
  */
 export const extractionSchemaFor = (templateId: TemplateId) =>
-  schemaFor(templateId).extend({ reviewFlags: z.array(reviewFlagSchema) });
+  templateId === "external"
+    ? // custom sections are written by the person, never by the model: it must not even see the field
+      externalResumeSchema.omit({ customSections: true }).extend({ reviewFlags: z.array(reviewFlagSchema) })
+    : internalResumeSchema.extend({ reviewFlags: z.array(reviewFlagSchema) });
 
 /** Pass-1 output: a description of the document used to adapt the extraction prompt. */
 export const resumeAnalysisSchema = z.object({
@@ -73,8 +76,11 @@ export const resumeAnalysisSchema = z.object({
       "languages",
       "managerial_experience",
       "skill_ratings",
+      "achievements",
     ]),
   ),
+  /** The exact heading of every achievements / awards / accomplishments / recognition section ([] if none). */
+  achievementsHeadings: z.array(z.string()).default([]),
   density: z.enum(["sparse", "normal", "very_long"]),
   hasMetrics: z.boolean(),
   earliestProfessionalStart: z.string(),
@@ -109,7 +115,7 @@ export const EXTRACT_ERROR_MESSAGES: Record<ExtractErrorCode, string> = {
   TOO_LARGE: "That file is too large. Please upload a smaller PDF or DOCX.",
   UNREADABLE: "This file looks like a scanned image. Please upload a DOCX or a text-based PDF.",
   LLM_FAILED: "We couldn't read this resume automatically. Please try again, or fill in the form manually.",
-  TIMEOUT: "This is taking too long. Please try again, or fill in the form manually.",
+  TIMEOUT: "This is taking longer than usual (the resume may be long, or the service is busy). Please try again, or fill in the form manually.",
   RATE_LIMITED: "The service is busy, try again in a minute.",
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
 };

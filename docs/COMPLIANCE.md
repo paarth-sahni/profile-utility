@@ -19,6 +19,10 @@ when the registry is unavailable. In code, `complianceApplies(template)` in `lib
 4. The server refuses an internal profile at the protected steps: **Preview** (the PDF), **PDF download** and **Submit**, whatever the
    browser did.
 
+**Where it looks (changed 17 Nov 2026):** only the candidate's **Name**, the **Job title** and **every field of every project** (title,
+duration, tools, team size, role, link, description, bullets). The Overview, Skills, Tools, Certifications, Education and the other
+sections are not scanned. The one place that decides this is `SCANNED_PATH` in `lib/compliance/check.ts`.
+
 Not covered, by decision: names that are not on the list (no unknown-company detection), and project names (the new sheet has none).
 
 ```
@@ -36,7 +40,7 @@ Google Sheet --(read-only service account, A:E)--> runSync --(service_role-only 
 
 | Area | Files |
 |---|---|
-| Matching (pure) | `lib/compliance/normalize.ts` (one way to normalise), `match.ts` (whole-word phrases, longest match), `check.ts` (scans every real string of a profile) |
+| Matching (pure) | `lib/compliance/normalize.ts` (one way to normalise), `match.ts` (whole-word phrases, longest match), `check.ts` (scans the name, job title and project fields only: `SCANNED_PATH`) |
 | Server gate | `lib/compliance/gate.ts` (decision, 422/503 bodies), `registryCache.ts` (60 s cache, 24 h stale copy), `registry.ts` (wiring, server-only) |
 | Routes | `app/api/pdf`, `app/api/profiles` (call the gate), `app/api/compliance/check` (live check), `app/api/admin/sync`, `app/api/admin/compliance/review`, `app/api/internal/sync` |
 | Sheet reading | `lib/sync/googleAuth.ts` (JWT), `sheetsClient.ts` (A:E only), `parseTab.ts` (headers by value), `tabs.ts`, `buildSnapshot.ts`, `hints.ts` (safe error wording) |

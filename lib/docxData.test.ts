@@ -20,6 +20,7 @@ const FULL_EXTERNAL: ExternalResume = {
   education: [{ year: "2014", qualification: "M.Sc." }], skills: ["S1", "", "S2"], tools: ["T1", "T2"], certifications: ["C1", "C2"],
   projects: [{ duration: "2020", client: "Acme", teamSize: "4", role: "Lead", description: "D", responsibilities: ["r1", ""] }],
   experience: [{ company: "Co", position: "Eng", duration: "2015", highlights: ["h1", "N/A"] }],
+  achievements: [], customSections: [],
 };
 const EMPTY_EXTERNAL: ExternalResume = { ...FULL_EXTERNAL, experienceSummary: "N/A", specialization: "", tools: [], certifications: [""], projects: [], experience: [] };
 
