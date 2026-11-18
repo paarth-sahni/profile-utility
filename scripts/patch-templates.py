@@ -26,6 +26,10 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    project lines, each font, size and position as in the reference. The internal template matches it; the external one
    keeps its own layout (one column, logo flush right) with the same rules for the same elements.
    Internal only: the grey line under the header block (RULE) and the underlined project heading line.
+6. Continued pages (both templates, CONTINUED): on every page after the first the first line of each column starts
+   CONTINUED_TOP below the page's top edge, as far as the footer logo's bottom is above the page's bottom edge. Page 1
+   keeps its own empty header ("different first page"); the later pages get a header holding one empty line of an exact
+   height, which pushes the body down to that place. The footer is the same on every page (a copy for the first page).
 5. Page breaks (both templates, UNITS): nothing that introduces content is left alone at the foot of a page, no bullet,
    sidebar item or short description is cut in two, and a long description keeps 2+ lines on each side of a break. Each
    such unit is a one-row table that cannot split (internal: nested in its column; external: in the body).
@@ -613,6 +617,58 @@ def external_units(p: dict) -> dict:
     return {10: sections + projects + employers + achievements + custom + END_OF_CELL, **{i: "" for i in range(11, 57)}}
 
 
+# ---------------------------------------------------------------------------------------------- 6. continued pages
+# The first line of each column on a page after the first: its box's top this far below the page's top edge (the footer logo's
+# bottom is as far above the page's bottom edge). The body starts where the continued pages' header ends, so that header is one
+# empty line of an exact height (internal: less the table cells' top margin, which LibreOffice repeats on every page).
+CONTINUED_TOP = FOOT_LOGO_BOTTOM["internal"]
+CONTINUED_HEADER = {"internal": CONTINUED_TOP - CELL_TOP, "external": CONTINUED_TOP}
+# the parts added for them (ids not used by the originals: rId1-rId8)
+FIRST_FOOTER_RID, CONTINUED_HEADER_RID = "rId101", "rId102"
+WML_HEADER_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
+WML_FOOTER_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
+REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def continued_header(name: str) -> str:
+    tiny = '<w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>'
+    para = f'<w:p><w:pPr><w:spacing {attrs(exact(CONTINUED_HEADER[name]))}/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/>{tiny}</w:pPr></w:p>'
+    return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="{REL}">{para}</w:hdr>'
+
+
+def continued_pages(parts: dict, name: str) -> dict:
+    """"Different first page": page 1 keeps the original header (rId7) and footer (rId8, copied as footer2.xml for it), the
+    later pages get the continued header (header2.xml). parts: zip path -> text, changed in place and returned."""
+    parts["word/header2.xml"] = continued_header(name)
+    parts["word/footer2.xml"] = parts["word/footer1.xml"]
+    parts["word/_rels/footer2.xml.rels"] = parts["word/_rels/footer1.xml.rels"]
+    rels = parts["word/_rels/document.xml.rels"]
+    assert FIRST_FOOTER_RID not in rels and CONTINUED_HEADER_RID not in rels
+    rels = rels.replace(
+        "</Relationships>",
+        f'<Relationship Id="{FIRST_FOOTER_RID}" Type="{REL}/footer" Target="footer2.xml"/>'
+        f'<Relationship Id="{CONTINUED_HEADER_RID}" Type="{REL}/header" Target="header2.xml"/></Relationships>',
+    )
+    parts["word/_rels/document.xml.rels"] = rels
+    types = parts["[Content_Types].xml"].replace(
+        "</Types>",
+        f'<Override ContentType="{WML_FOOTER_CT}" PartName="/word/footer2.xml"/><Override ContentType="{WML_HEADER_CT}" PartName="/word/header2.xml"/></Types>',
+    )
+    parts["[Content_Types].xml"] = types
+    doc = parts["word/document.xml"]
+    old_refs = '<w:headerReference r:id="rId7" w:type="default"/><w:footerReference r:id="rId8" w:type="default"/>'
+    assert doc.count(old_refs) == 1, "the section's header / footer references moved"
+    doc = doc.replace(
+        old_refs,
+        f'<w:headerReference r:id="{CONTINUED_HEADER_RID}" w:type="default"/><w:headerReference r:id="rId7" w:type="first"/>'
+        f'<w:footerReference r:id="rId8" w:type="default"/><w:footerReference r:id="{FIRST_FOOTER_RID}" w:type="first"/>',
+    )
+    assert doc.count("<w:pgNumType ") == 1
+    doc = re.sub(r"(<w:pgNumType [^>]*/>)", r"\1<w:titlePg/>", doc)
+    parts["word/document.xml"] = doc
+    return parts
+
+
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 PPR_ORDER = [
     "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl", "numPr", "suppressLineNumbers",
@@ -810,18 +866,20 @@ def patch(name: str) -> bytes:
         parts = iter(units.get(i, w) for i, w in enumerate(wrapped))
         new_xml = page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name)
         out = OUT / f"{name}.docx"
+        text_parts = {
+            "word/document.xml": new_xml,
+            "word/numbering.xml": numbering(zin.read("word/numbering.xml").decode("utf8")),
+            "word/settings.xml": settings(zin.read("word/settings.xml").decode("utf8")),
+            "word/footer1.xml": footer(zin.read("word/footer1.xml").decode("utf8"), name),
+            **{f: zin.read(f).decode("utf8") for f in ("word/_rels/footer1.xml.rels", "word/_rels/document.xml.rels", "[Content_Types].xml")},
+        }
+        text_parts = continued_pages(text_parts, name)
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
-                data = zin.read(item.filename)
-                if item.filename == "word/document.xml":
-                    data = new_xml.encode("utf8")
-                elif item.filename == "word/numbering.xml":
-                    data = numbering(data.decode("utf8")).encode("utf8")
-                elif item.filename == "word/settings.xml":
-                    data = settings(data.decode("utf8")).encode("utf8")
-                elif item.filename == "word/footer1.xml":
-                    data = footer(data.decode("utf8"), name).encode("utf8")
+                data = text_parts.pop(item.filename).encode("utf8") if item.filename in text_parts else zin.read(item.filename)
                 zout.writestr(item, data)
+            for filename, text in text_parts.items():  # the new parts
+                zout.writestr(filename, text.encode("utf8"))
     return out.read_bytes()
 
 

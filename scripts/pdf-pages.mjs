@@ -54,11 +54,12 @@ export function columnLines(pages, template = "internal") {
   });
 }
 
-// Where the first line of a column starts on a continued page (pt from the page top): the top margin (0.4in), internal plus
-// the table cell's top margin (7.2pt). From a line's baseline to the top of its box, by its style (scripts/patch-templates.py):
+// Where the first line of a column starts on a continued page (pt from the page top): as far below the page's top edge as the
+// footer logo's bottom is above its bottom edge, in both templates (scripts/patch-templates.py, CONTINUED: the continued
+// pages' header pushes the body down to it). From a line's baseline to the top of its box, by its style (the patcher):
 // a bullet or sidebar item (auto 1.15 lines: the baseline at the font's ascent, 1 em), a section heading or field label (an
 // exact 15pt line: 80%), body text, a project heading or an employer (an exact 17.25pt line: 80%).
-const CONTINUED_TOP = { internal: 36.0, external: 28.8 };
+const CONTINUED_TOP = { internal: 44.7, external: 44.7 };
 function boxTop(l, col, labels) {
   if (l.font === "Lexend-Light" && Math.abs(l.size - 10) < 0.05) return l.baseline - 0.8 * 15;
   if (l.text.startsWith("•") || col === "side") return l.baseline - l.size;
