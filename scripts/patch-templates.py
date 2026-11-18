@@ -212,6 +212,12 @@ MARGIN_LEFT = MARGINS["left"] / 20
 TEXT_RIGHT = PAGE_W - MARGINS["right"] / 20
 # Internal table as in format.docx: columns of 7170 + 3300 twips; a 6-twip indent puts the text at x = 50.7 / 409.2.
 GRID = {"internal": (6, 7170, 3300)}
+# Internal: 0.4in (576 twips) between the main column's text and the sidebar's. The space comes from the main column (its
+# cell's right margin in row 2: 576 - the sidebar cell's 144 left margin), so the sidebar keeps its place and width and the
+# header row (one cell across both columns) is unchanged: main text x 50.7..380.4, sidebar text from 409.2.
+COLUMN_GAP = 576
+CELL_MARGIN = 144  # the table's cells: left and right margins (twips)
+MAIN_RIGHT_MARGIN = COLUMN_GAP - CELL_MARGIN
 CELL_TOP = 7.2  # the table cells' top margin (144 twips); the external name paragraph gets the same space above it
 ROW1_MIN = 107.0  # internal: the header row is at least 2140 twips tall, so row 2 (Overview, Skills) starts below it
 LEXEND_ASCENT = 1.0  # em: the baseline of an "auto" line sits this far below its top
@@ -452,7 +458,7 @@ AFTER_CLOSE = {"internal": [], "external": []}  # (the external one, END_OF_PROJ
 # Each condition / loop tag stays outside the unit tables, so a cell never ends up empty, and so a loop repeats whole
 # tables (docxtemplater's paragraph loop). A cell that ends with a table gets a 1pt paragraph after it (Word needs one).
 # internal: a column minus the cell margins; external: the page between the margins
-UNIT_W = {"main": GRID["internal"][1] - 2 * 144, "side": GRID["internal"][2] - 2 * 144, "body": round(PAGE_W * 20) - MARGINS["left"] - MARGINS["right"]}
+UNIT_W = {"main": GRID["internal"][1] - CELL_MARGIN - MAIN_RIGHT_MARGIN, "side": GRID["internal"][2] - 2 * CELL_MARGIN, "body": round(PAGE_W * 20) - MARGINS["left"] - MARGINS["right"]}
 END_OF_CELL = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>'
 PROJECT_FIELDS = [("Tech", 19, 20), ("TeamSize", 23, 24), ("Role", 27, 28), ("ProjectLink", 31, 32)]  # label, value
 
@@ -669,6 +675,21 @@ def continued_pages(parts: dict, name: str) -> dict:
     return parts
 
 
+# The document's last paragraph (internal: after the body's table; external: after the last unit; Word needs a paragraph
+# there): one twip high, LibreOffice's smallest step. At 1pt it started a page of its own, empty but for the footer, whenever
+# the content above it ended within 1pt of the foot of a page (internal-desc-4 in test-render.mjs --pdf, after the column gap).
+LAST_PARAGRAPH = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>'
+
+
+def last_paragraph(xml: str) -> str:
+    """The paragraph just before the section properties (the body's last) as LAST_PARAGRAPH."""
+    end = xml.index("<w:sectPr>")
+    start = xml.rindex("<w:p>", 0, end)
+    last = xml[start:end]
+    assert last.endswith("</w:p>") and last.count("</w:p>") == 1 and "<w:t" not in last, "the body's last paragraph moved or has text"
+    return xml[:start] + LAST_PARAGRAPH + xml[end:]
+
+
 PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
 PPR_ORDER = [
     "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl", "numPr", "suppressLineNumbers",
@@ -756,7 +777,12 @@ def table_grid(xml: str, name: str) -> str:
     ind, main, side = GRID[name]
     xml = re.sub(r'<w:tblW w:w="[\d.]+" w:type="dxa"/>', f'<w:tblW w:w="{main + side}" w:type="dxa"/>', xml, count=1)
     xml = re.sub(r'<w:tblInd w:w="[\d.]+" w:type="dxa"/>', f'<w:tblInd w:w="{ind}" w:type="dxa"/>', xml, count=1)
-    return re.sub(r'<w:gridCol w:w="\d+"/><w:gridCol w:w="\d+"/>', f'<w:gridCol w:w="{main}"/><w:gridCol w:w="{side}"/>', xml)
+    xml = re.sub(r'<w:gridCol w:w="\d+"/><w:gridCol w:w="\d+"/>', f'<w:gridCol w:w="{main}"/><w:gridCol w:w="{side}"/>', xml)
+    # the gap between the columns: row 2's main cell (the table's second row; row 1 is the header across both columns)
+    row2 = [m.start() for m in re.finditer(r"<w:tr>", xml)][1]
+    cell = re.compile(r'(<w:tcMar>.*?<w:right w:w=")([\d.]+)(" w:type="dxa"/>)', re.S).search(xml, row2)
+    assert float(cell.group(2)) == CELL_MARGIN and "gridSpan" not in xml[row2 : cell.start()], "row 2's main cell moved"
+    return xml[: cell.start()] + cell.group(1) + str(MAIN_RIGHT_MARGIN) + cell.group(3) + xml[cell.end() :]
 
 
 def page_margins(xml: str, name: str) -> str:
@@ -864,7 +890,7 @@ def patch(name: str) -> bytes:
         wrapped = [rebuild(m) for m in PARA.finditer(xml)]
         units = internal_units(formatted) if name == "internal" else external_units(formatted)
         parts = iter(units.get(i, w) for i, w in enumerate(wrapped))
-        new_xml = page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name)
+        new_xml = last_paragraph(page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name))
         out = OUT / f"{name}.docx"
         text_parts = {
             "word/document.xml": new_xml,

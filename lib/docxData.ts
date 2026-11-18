@@ -171,9 +171,11 @@ function prepareCustomSections(list: ExternalResume["customSections"] | undefine
 
 /**
  * Page breaks: the width (pt) of the column a project description is printed in (scripts/patch-templates.py: internal, the
- * main column's units, 7170 - 2 x 144 twips; external, the page between its 0.6in margins) and its size (Lexend Light 11pt).
+ * main column's units, 7170 - 144 - 432 twips (its cell's margins; the right one makes the 0.4in gap to the sidebar);
+ * external, the page between its 0.6in margins) and its size (Lexend Light 11pt). test-render.mjs --pdf compares the
+ * estimate with the PDF.
  */
-const DESCRIPTION_COLUMN_PT: Record<TemplateId, number> = { internal: 344.1, external: 525.6 };
+export const DESCRIPTION_COLUMN_PT: Record<TemplateId, number> = { internal: 329.7, external: 525.6 };
 const DESCRIPTION_SIZE_PT = 11;
 
 /**

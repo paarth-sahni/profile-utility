@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
-import { prepareData } from "./lib/docxData.ts";
+import { DESCRIPTION_COLUMN_PT, prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 import { measurePdf } from "./scripts/pdf-measure.mjs";
 import { descriptionLineCounts, pageBreakProblems } from "./scripts/pdf-pages.mjs";
@@ -588,7 +588,15 @@ console.log("templates: logo crop and size, one bullet style, no stretched manua
   const second = paras.findIndex((p) => p.text.startsWith("Project 2"));
   assert(second > 0 && paras[second - 1].text === "" && /w:line="\d+" w:lineRule="exact"/.test(paras[second - 1].xml), "internal: a blank line still separates one project from the next");
 }
-console.log("internal: no trailing blank line after the last project");
+// both: the document's last paragraph is one twip high, so it never starts a page of its own (a 1pt one did, empty but for
+// the footer, when the content above it ended within 1pt of the foot of a page)
+for (const id of ["internal", "external"]) {
+  const xml = render(id, id === "internal" ? internal : external).zip.file("word/document.xml").asText();
+  const body = xml.slice(0, xml.indexOf("<w:sectPr>"));
+  const last = body.slice(body.lastIndexOf("<w:p>"));
+  assert(/w:line="1" w:lineRule="exact"/.test(last) && !/<w:t[ >]/.test(last), `${id}: the document's last paragraph must be one twip high and empty`);
+}
+console.log("internal: no trailing blank line after the last project; both: a one-twip last paragraph");
 
 
 /** Every word on every page with its box (pt, from the top left), read with pdftotext -bbox. */
@@ -1048,7 +1056,7 @@ if (process.argv.includes("--pdf")) {
       for (const p of problems) console.error(`  ${file}: ${p}`);
       assert(problems.length === 0, `${file}: ${problems.length} page-break problem(s), listed above`);
       for (const d of descriptionLineCounts(measured, data, id)) {
-        const estimate = wrapLines(d.text, id === "internal" ? 344.1 : 525.6, 11).length;
+        const estimate = wrapLines(d.text, DESCRIPTION_COLUMN_PT[id], 11).length;
         estimates.all++;
         if (estimate === d.lines) estimates.same++;
         else estimates.off.push(`${file}: ${d.lines} lines, estimated ${estimate}`);
