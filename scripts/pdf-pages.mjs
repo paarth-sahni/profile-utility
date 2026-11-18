@@ -3,8 +3,8 @@
  *   - no section heading, "Project N" heading, project name or field label is the last line of its column on a page
  *     (a project starts with its heading, name and at least its first field on one page);
  *   - no bullet runs across a page break;
- *   - a project description of up to 6 lines never runs across a page break; a longer one keeps at least 2 lines on
- *     each side of it;
+ *   - a project description, or an external custom section's description, of up to 6 lines never runs across a page
+ *     break; a longer one keeps at least 2 lines on each side of it;
  *   - internal: no sidebar item runs across a page break: a skill name with its rating, a certification, the tool line,
  *     a managerial item, a domain, a language;
  *   - external: an employer's company, position and dates are never the last line of a page (they stay with the first
@@ -94,12 +94,22 @@ function descriptionLines(lines, text) {
   return null;
 }
 
-/** How many lines each project description takes in the PDF ({ text, lines }), for the ones found in it. */
+/**
+ * The descriptions printed with the page-break rule for descriptions (texts): every project's, and an external profile's custom
+ * sections' (a section is printed when it has a title and a field or a description: lib/docxData.ts).
+ */
+function ruledDescriptions(data, template) {
+  const projects = (data?.projects ?? []).map((p) => p.description);
+  const custom = template === "external" ? (data?.customSections ?? []).filter((s) => real(s.title)).map((s) => s.description) : [];
+  return [...projects, ...custom].filter(real);
+}
+
+/** How many lines each description (ruledDescriptions) takes in the PDF ({ text, lines }), for the ones found in it. */
 export function descriptionLineCounts(pages, data, template = "internal") {
   const main = columnLines(pages, template).flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
-  return (data?.projects ?? []).filter((p) => real(p.description)).flatMap((p) => {
-    const lines = descriptionLines(main, p.description);
-    return lines ? [{ text: p.description, lines: lines.length }] : [];
+  return ruledDescriptions(data, template).flatMap((text) => {
+    const lines = descriptionLines(main, text);
+    return lines ? [{ text, lines: lines.length }] : [];
   });
 }
 
@@ -162,18 +172,17 @@ export function pageBreakProblems(pages, data, template = "internal") {
   // descriptions: up to 6 lines never split; longer ones keep at least 2 lines on each side of a page break
   if (data) {
     const main = cols.flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
-    for (const p of data.projects ?? []) {
-      if (!real(p.description)) continue;
-      const lines = descriptionLines(main, p.description);
+    for (const description of ruledDescriptions(data, template)) {
+      const lines = descriptionLines(main, description);
       if (!lines) {
-        problems.push(`description "${p.description.slice(0, 40)}..." not found in the PDF`);
+        problems.push(`description "${description.slice(0, 40)}..." not found in the PDF`);
         continue;
       }
       const pagesOf = [...new Set(lines.map((l) => l.page))];
       if (pagesOf.length === 1) continue;
       const before = lines.filter((l) => l.page === pagesOf[0]).length;
       const after = lines.filter((l) => l.page === pagesOf.at(-1)).length;
-      const where = `description "${p.description.slice(0, 40)}..." (${lines.length} lines)`;
+      const where = `description "${description.slice(0, 40)}..." (${lines.length} lines)`;
       if (lines.length <= 6) problems.push(`${where} is split across pages ${pagesOf[0] + 1} and ${pagesOf.at(-1) + 1} (${before} + ${after} lines)`);
       else if (before < 2 || after < 2) problems.push(`${where} leaves ${before < 2 ? `${before} line on page ${pagesOf[0] + 1}` : `${after} line on page ${pagesOf.at(-1) + 1}`}`);
     }

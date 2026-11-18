@@ -319,6 +319,44 @@ const externalLong = (k) => ({
   ],
 });
 
+// An external profile with Achievements and custom sections (fictional) for the page-break rules on them: achievements that
+// wrap, custom sections with fields only, fields and a description, a description only (short and longer than 6 lines) and a
+// value of two lines. Two sweeps move them over the foot of a page in small steps (the overview alone moves in jumps, as
+// whole earlier units change pages): external-sections-<k> gives the last employer k more one-line highlights (20.6pt each),
+// so every heading, field, item and description line of the new parts meets the foot of page 2 in some case;
+// external-achievements-<k> has no employers and k more overview lines (17.25pt each), so the Achievements heading and the
+// first custom sections meet the foot of page 1.
+const SECTIONS_PROFILE = {
+  name: "Nisha Varghese",
+  projects: [],
+  achievements: [
+    "Quality Champion of the Year 2023 at a fictional software house, for cutting escaped defects by half across three product lines.",
+    "Speaker at a fictional regional testing meetup on contract tests.",
+    "Built the internal test data generator now used by every team in the delivery unit, replacing a shared spreadsheet of accounts.",
+    "Mentored six junior testers to their first certification.",
+    "Runner-up in a fictional company hackathon with an accessibility checker for mobile screens.",
+    "Wrote the team's guide to exploratory testing sessions.",
+  ],
+  customSections: [
+    { title: "Volunteering", fields: [{ label: "Organisation", value: "Riverside Coding Club (fictional)" }, { label: "Since", value: "2019" }], description: `Teaches weekend coding classes. ${sentences(3)}` },
+    { title: "Publications", fields: [], description: `Writes about test design. ${sentences(9)}` },
+    { title: "Languages Spoken", fields: [{ label: "Native", value: "Malayalam" }, { label: "Fluent", value: "English" }, { label: "Basic", value: "German" }], description: "" },
+    { title: "Community Talks", fields: [], description: `Gives talks to local groups. ${sentences(2)}` },
+    {
+      title: "Patents",
+      fields: [{ label: "Filed", value: "A fictional method for replaying recorded mobile sessions against new app builds to find layout changes that block a purchase, filed in 2022." }],
+      description: `Co-inventor with two colleagues. ${sentences(8)}`,
+    },
+    { title: "Hobbies", fields: [{ label: "Outdoors", value: "Trail running and birdwatching" }], description: "" },
+  ],
+};
+const externalSections = (k) => {
+  const base = externalLong(0);
+  const extra = Array.from({ length: k }, (_, i) => `Ran release checklist review number ${i + 1}.`);
+  return { ...base, ...SECTIONS_PROFILE, experience: base.experience.map((x, i, all) => (i === all.length - 1 ? { ...x, highlights: [...x.highlights, ...extra] } : x)) };
+};
+const externalAchievements = (k) => ({ ...externalLong(k), ...SECTIONS_PROFILE, name: "Tomas Lindqvist", experience: [] });
+
 // ------------------------------------------------------------------------------------------------- rendering
 const templateXml = {};
 function render(id, data) {
@@ -990,7 +1028,9 @@ if (process.argv.includes("--pdf")) {
   const sidebar = Array.from({ length: 6 }, (_, k) => [`internal-sidebar-${k}`, "internal", { ...longSidebar, skills: longSidebar.skills.slice(k) }]);
   const desc = Array.from({ length: 8 }, (_, k) => [`internal-desc-${k}`, "internal", descriptionCase(k)]);
   const extLong = Array.from({ length: 8 }, (_, k) => [`external-long-${k}`, "external", externalLong(k)]);
-  cases.push(...nine, ...sidebar, ...desc, ...extLong);
+  const extSections = Array.from({ length: 20 }, (_, k) => [`external-sections-${k}`, "external", externalSections(k)]);
+  const extAchievements = Array.from({ length: 12 }, (_, k) => [`external-achievements-${k}`, "external", externalAchievements(k)]);
+  cases.push(...nine, ...sidebar, ...desc, ...extLong, ...extSections, ...extAchievements);
   const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
   const pageCounts = [];
   const estimates = { same: 0, all: 0, off: [] }; // the description line estimate (lib/textMetrics.ts) vs the PDF
