@@ -16,7 +16,8 @@ template XML by hand: change this script and run it again. Run: python3 scripts/
    - a blank line between the Role line and the project description and between the description and the bullets;
    - sidebar items (internal): 1.15 line spacing inside an item, 23.3pt from one item to the next, 27pt from a skill's
      rating to the next skill (SIDEBAR, as in the reference);
-   - lines ending in a manual line break are not stretched in justified paragraphs (as in Google Docs).
+   - all text is left-aligned, never justified (LEFT_ALIGNED: the document default and every paragraph); the setting that
+     kept a justified line ending in a manual line break from stretching (as in Google Docs) stays, harmless.
 3. Footer (both templates): logo and page number at fixed places on the page (footer()): the logo's bottom as far above the
    page's bottom as the logo is from the left edge (44.7pt), the page number centred on it, and the body's bottom margin
    raised to keep the reference's clearance above the logo.
@@ -71,7 +72,7 @@ INLINE = {
 SPACERS = {"internal": [], "external": []}
 PRE_SPACERS = {"internal": [], "external": []}
 # The blank line before the internal bullets: the form of the project's other spacers (e.g. paragraph 26, before "Role").
-PROJECT_SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
+PROJECT_SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:line="240" w:lineRule="auto"/><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr></w:r></w:p>'
 
 # ---------------------------------------------------------------------------------------------------- 2. formatting
 # 1 line of Lexend at 11pt is 1.25em = 13.75pt (its typo metrics). 1.15 lines inside an item (w:line 276), and
@@ -327,7 +328,7 @@ def rule_run() -> str:
 
 
 # What each kind of paragraph looks like (the run formatting of every run in it).
-BODY = {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK), "ind": {"left": "0", "right": "0", "firstLine": "0"}, "jc": "both", "no_break": True}
+BODY = {"spacing": exact(BODY_LINE), "run": run("Lexend Light", 11, DARK), "ind": {"left": "0", "right": "0", "firstLine": "0"}, "jc": "left", "no_break": True}
 PROJECT_HEADING = {"spacing": exact(BODY_LINE), "run": run("Lexend", 11, DARK)}
 # Internal only: the whole "Project N - <dates>" line is underlined (format.docx: <w:u w:val="single"/>)
 PROJECT_HEADING_UNDERLINED = {**PROJECT_HEADING, "run": run("Lexend", 11, DARK, underline=True)}
@@ -836,6 +837,14 @@ def numbering(xml: str) -> str:
     return re.sub(r'<w:lvl w:ilvl="0">.*?</w:lvl>', lambda m: BULLET_LVL0 if "\u25cf" in m.group(0) else m.group(0), xml, flags=re.S)
 
 
+# Left-aligned text: the originals justify by default (styles.xml, pPrDefault) and on many paragraphs; every one is left.
+JUSTIFIED, LEFT = '<w:jc w:val="both"/>', '<w:jc w:val="left"/>'
+
+
+def left_aligned(xml: str) -> str:
+    return xml.replace(JUSTIFIED, LEFT)
+
+
 def settings(xml: str) -> str:
     if NO_EXPAND_SHIFT_RETURN in xml:
         return xml
@@ -893,7 +902,8 @@ def patch(name: str) -> bytes:
         new_xml = last_paragraph(page_margins(table_grid(PARA.sub(lambda m: next(parts), xml), name), name))
         out = OUT / f"{name}.docx"
         text_parts = {
-            "word/document.xml": new_xml,
+            "word/document.xml": left_aligned(new_xml),
+            "word/styles.xml": left_aligned(zin.read("word/styles.xml").decode("utf8")),
             "word/numbering.xml": numbering(zin.read("word/numbering.xml").decode("utf8")),
             "word/settings.xml": settings(zin.read("word/settings.xml").decode("utf8")),
             "word/footer1.xml": footer(zin.read("word/footer1.xml").decode("utf8"), name),

@@ -572,8 +572,13 @@ for (const id of ["internal", "external"]) {
   const lvl0 = numbering.match(new RegExp(`<w:abstractNum [^>]*w:abstractNumId="${abstractId}".*?<w:lvl w:ilvl="0">(.*?)</w:lvl>`, "s"))[1];
   assert(lvl0.includes('w:val="•"') && lvl0.includes('w:ascii="Lexend"') && lvl0.includes('<w:sz w:val="22"/>') && lvl0.includes('<w:ind w:left="720" w:hanging="360"/>'), `${id}: the bullet is a Lexend "•" at text size with a 720/360 indent`);
   assert(zip.file("word/settings.xml").asText().includes("<w:doNotExpandShiftReturn/>"), `${id}: justified lines ending in a line break must not be stretched`);
+  // all text left-aligned: no paragraph, style or default justified (or centred / distributed)
+  for (const part of ["word/document.xml", "word/styles.xml"]) {
+    const other = [...new Set([...zip.file(part).asText().matchAll(/<w:jc w:val="(\w+)"\/>/g)].map((m) => m[1]).filter((v) => v !== "left" && v !== "right"))];
+    assert(other.length === 0, `${id}: ${part} aligns text as ${other.join(", ")}; all text is left-aligned`);
+  }
 }
-console.log("templates: logo crop and size, one bullet style, no stretched manual-break lines");
+console.log("templates: logo crop and size, one bullet style, no stretched manual-break lines, all text left-aligned");
 
 // internal: the projects column ends with the last project's content. A trailing blank line there spilled onto an
 // extra, near-empty last page (footer only) whenever the last bullet sat at the foot of a page; see the PDF sweep below.
