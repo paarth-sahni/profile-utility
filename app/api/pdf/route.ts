@@ -14,10 +14,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { complianceGate } from "@/lib/compliance/registry";
 import { consentAuditRow } from "@/lib/consent";
 import { PDF_RATE_LIMIT, handlePdfPost } from "@/lib/pdfHandler";
+import { versionOwnerEmailForLead } from "@/lib/db/teamProfiles";
 import { ownerIbCodeWith } from "@/lib/pdfOwner";
 import { renderProfilePdf } from "@/lib/pdfRender";
 import { allowRequest } from "@/lib/rateLimit";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { accessFor } from "@/lib/teamAccess";
 import { teams } from "@/lib/teamsClient";
 
 export const runtime = "nodejs";
@@ -46,7 +48,10 @@ export async function POST(request: Request) {
               .eq("id", id)
               .maybeSingle();
             const profile = data?.profile as unknown as { owner?: { email?: string | null } | null } | null;
-            return profile?.owner?.email ?? null;
+            if (profile?.owner?.email) return profile.owner.email;
+            // a lead may download profiles RLS does not show them (/profile/<ib_code>): the owner through the lead reads
+            const user = await getCurrentUser();
+            return user ? versionOwnerEmailForLead(await accessFor(user, teams), id) : null;
           },
           teams,
         },

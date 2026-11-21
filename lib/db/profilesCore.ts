@@ -207,7 +207,14 @@ async function fetchVersion(supabase: SupabaseClient, versionId: string): Promis
   if (!uuid.safeParse(versionId).success) return null;
   const { data, error } = await supabase.rpc("get_profile_version", { p_version_id: versionId });
   if (error || !data) return null;
+  return parseLoadedVersion(data);
+}
+
+/** A version as get_profile_version returns it, checked against the schema; null when it does not parse. */
+export function parseLoadedVersion(data: unknown): LoadedVersion | null {
+  if (!data || typeof data !== "object") return null;
   const j = data as { template: TemplateId; data: unknown; reviewFlags: unknown; meta: LoadedVersion["meta"] };
+  if (j.template !== "internal" && j.template !== "external") return null;
   const parsed = lenientSchemaFor(j.template).safeParse(j.data);
   const flags = z.array(reviewFlagSchema).safeParse(j.reviewFlags);
   if (!parsed.success) return null;
@@ -342,4 +349,29 @@ export async function getVersionForManagerAs({ supabase }: DbContext, versionId:
   const profile = owning?.profile as unknown as { is_primary: boolean; current_version_id: string | null } | null;
   if (!profile?.is_primary || profile.current_version_id !== versionId) return null;
   return fetchVersion(supabase, versionId);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Profile links and the team list (/profile/<ib_code>, Profile Hub): by the owner's email. Read with the user's own
+// session: RLS shows the owner their own rows and managers / admins everyone's (leads go through lib/db/teamProfiles.ts).
+// ---------------------------------------------------------------------------------------------------------
+
+/** The primary profiles the caller can see: each owner's email (lower case) and the current version id. */
+export async function listPrimaryOwnersAs({ supabase }: DbContext): Promise<{ email: string; versionId: string }[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("current_version_id, owner:app_users!profiles_owner_id_fkey(email)")
+    .eq("is_primary", true)
+    .not("current_version_id", "is", null);
+  if (error) throw new Error("PROFILES_FAILED");
+  return (data ?? []).flatMap((r) => {
+    const owner = (Array.isArray(r.owner) ? r.owner[0] : r.owner) as { email?: string | null } | null;
+    return owner?.email && r.current_version_id ? [{ email: owner.email.toLowerCase(), versionId: r.current_version_id as string }] : [];
+  });
+}
+
+/** The current version of the primary profile owned by `email`, if the caller can see it; null otherwise. */
+export async function getPrimaryVersionByEmailAs(ctx: DbContext, email: string): Promise<LoadedVersion | null> {
+  const found = (await listPrimaryOwnersAs(ctx)).find((o) => o.email === email.trim().toLowerCase());
+  return found ? fetchVersion(ctx.supabase, found.versionId) : null;
 }

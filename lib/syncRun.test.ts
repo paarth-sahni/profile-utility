@@ -214,7 +214,8 @@ test("the service-role key is only ever named in lib/sync/adminClient.ts (and te
 });
 
 test("only the sync entry points may import adminClient, and no client component does", () => {
-  const ALLOWED = new Set<string>(["lib/compliance/registry.ts", "lib/sync/runner.ts"]); // everything else goes through these two
+  // everything else goes through these: the registry, the sync runner, and the lead profile reads (lib/db/teamProfiles.ts)
+  const ALLOWED = new Set<string>(["lib/compliance/registry.ts", "lib/sync/runner.ts", "lib/db/teamProfiles.ts"]);
   const importers = files.filter((f) => !/\.test\.ts$/.test(f) && rel(f) !== "lib/sync/adminClient.ts" && /from\s+["'](?:@\/lib\/sync\/adminClient|\.{1,2}\/(?:sync\/)?adminClient)["']/.test(readFileSync(f, "utf8")));
   assert.deepEqual(importers.map(rel).filter((f) => !ALLOWED.has(f)), []);
   assert.ok(readFileSync(path.join(ROOT, "lib/sync/adminClient.ts"), "utf8").includes('import "server-only"'));

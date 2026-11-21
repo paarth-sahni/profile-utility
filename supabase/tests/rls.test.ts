@@ -120,7 +120,8 @@ after(async () => {
 });
 
 describe("app_users: each role gets exactly its rows", () => {
-  const expected: Record<RoleName, number> = { member: 1, member2: 1, checker: 1, manager: 5, admin: 5 };
+  // managers and admins see every seeded user: the five roles and lead@ (a team_member who leads people in the mock Teams data)
+  const expected: Record<RoleName, number> = { member: 1, member2: 1, checker: 1, manager: 6, admin: 6 };
   for (const r of ROLES) {
     test(`${r} sees ${expected[r]} row(s)`, async () => {
       const res = await db(r).from("app_users").select("id,email,role");
@@ -748,4 +749,42 @@ describe("app_settings is unreachable from the API", () => {
       assert.ok(nothingHappened(await db(r).from("app_settings").update({ value: "on" }).eq("key", "allow_example_test").select()));
     });
   }
+});
+
+describe("lead profile reads (team_primary_profile*, team_version_owner_email): the service key only", () => {
+  const CALLS: [string, Record<string, unknown>][] = [
+    ["team_primary_profile", { p_email: "member@example.test" }],
+    ["team_primary_profile_emails", { p_emails: ["member@example.test"] }],
+    ["team_version_owner_email", { p_version_id: "00000000-0000-0000-0000-000000000000" }],
+  ];
+
+  test("anon and every signed-in role (a lead in the Teams data too) are refused", async () => {
+    const lead = await signedIn("lead" as RoleName);
+    try {
+      for (const client of [anon, lead, ...ROLES.map(db)]) {
+        for (const [fn, args] of CALLS) {
+          const res = await client.rpc(fn, args);
+          assert.ok(res.error, `${fn} must be refused`);
+        }
+      }
+    } finally {
+      await lead.auth.signOut();
+    }
+  });
+
+  test("the service key reads a primary profile, which emails have one, and a version's owner", async () => {
+    const service = createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    const profile = await service.rpc("team_primary_profile", { p_email: "MEMBER@example.test" });
+    assert.equal(profile.error, null);
+    const p = profile.data as { profileId: string; versionId: string; template: string; data: { name: string } };
+    assert.equal(p.profileId, profileA);
+    assert.ok(versionsA.includes(p.versionId));
+    assert.equal(p.data.name, "Alex Sample");
+    assert.equal((await service.rpc("team_primary_profile", { p_email: "lead@example.test" })).data, null, "no primary profile");
+    const emails = await service.rpc("team_primary_profile_emails", { p_emails: ["member@example.test", "Member2@example.test", "lead@example.test", "admin@example.test"] });
+    assert.deepEqual([...(emails.data as string[])].sort(), ["member2@example.test", "member@example.test"], "the admin's profile is not primary; the lead has none");
+    assert.equal((await service.rpc("team_version_owner_email", { p_version_id: versionsC[0] })).data, "member2@example.test");
+  });
 });

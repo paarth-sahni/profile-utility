@@ -1,8 +1,9 @@
 /**
  * Purpose: the ONLY place in the application that reads SUPABASE_SERVICE_ROLE_KEY (lib/syncSecurity.test.ts enforces
  * this by scanning the source). It gives the sync runner the three database functions it needs and nothing else:
- * it never uses `.from()`, so it cannot read or edit any table directly. Besides the sync it exposes two read-only calls: the names the
- * profile check enforces, and the scheduler's settings. What it may change is decided by the
+ * it never uses `.from()`, so it cannot read or edit any table directly. Besides the sync it exposes read-only calls: the names the
+ * profile check enforces, the scheduler's settings, and (createLeadProfileSource) the primary-profile reads for LEADS, whom
+ * only the server can recognise (lib/teamAccess.ts decides first; supabase/migrations/20261122120000_lead_profile_reads.sql). What it may change is decided by the
  * security-definer functions of supabase/migrations/20261023120100_compliance_rpcs.sql, which only service_role can run.
  * Server-only. The key is never logged, never sent to the browser and never part of an error message.
  */
@@ -86,6 +87,39 @@ export function createSchedulerSource(client: SupabaseClient = serviceClient()):
       const { data, error } = await client.rpc("compliance_scheduler_state", { p_day: day });
       if (error) throw dbError(error);
       return (data as SchedulerState | null) ?? null;
+    },
+  };
+}
+
+/**
+ * Primary-profile reads for a LEAD (someone with reportees in the Teams data, whose app role may be team_member). The caller
+ * must have decided the access first (lib/db/teamProfiles.ts after lib/teamAccess.ts): these functions do not check it.
+ */
+export type LeadProfileSource = {
+  /** get_profile_version's shape plus profileId / versionId, or null when the person has no primary profile. */
+  primaryProfile(email: string): Promise<unknown>;
+  /** Which of these emails (lower case) own a primary profile. */
+  primaryProfileEmails(emails: string[]): Promise<string[]>;
+  /** The owner's email (lower case) of a saved version, or null. */
+  versionOwnerEmail(versionId: string): Promise<string | null>;
+};
+
+export function createLeadProfileSource(client: SupabaseClient = serviceClient()): LeadProfileSource {
+  return {
+    async primaryProfile(email) {
+      const { data, error } = await client.rpc("team_primary_profile", { p_email: email });
+      if (error) throw dbError(error);
+      return data ?? null;
+    },
+    async primaryProfileEmails(emails) {
+      const { data, error } = await client.rpc("team_primary_profile_emails", { p_emails: emails });
+      if (error || !Array.isArray(data)) throw dbError(error);
+      return (data as unknown[]).filter((e): e is string => typeof e === "string");
+    },
+    async versionOwnerEmail(versionId) {
+      const { data, error } = await client.rpc("team_version_owner_email", { p_version_id: versionId });
+      if (error) throw dbError(error);
+      return typeof data === "string" ? data : null;
     },
   };
 }

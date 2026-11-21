@@ -1,8 +1,9 @@
 -- Purpose: LOCAL development seed (runs after migrations on `npm run db:reset`). Fictional data only:
--- five sign-in users (password `password123`, local use only) and three fictional profiles.
+-- six sign-in users (password `password123`, local use only) and three fictional profiles.
 -- Never put real people or employees here. Not for cloud projects.
 --
--- Users:    member@ / member2@ (two team members), checker@ / manager@ / admin@example.test
+-- Users:    member@ / member2@ (two team members), lead@ (a team member who leads people in the mock Teams data),
+--           checker@ / manager@ / admin@example.test
 -- Profiles: "Alex Sample" (internal, 2 versions, owned by member), "Jamie Placeholder" (internal, 1 version,
 --           owned by member2) and "Riley Example" (external, 2 versions, owned by the admin). The RLS tests
 --           check member-vs-member isolation (Alex vs Jamie) as well as member-vs-admin (Alex vs Riley).
@@ -29,7 +30,9 @@ from (values
   ('00000000-0000-0000-0000-000000000102'::uuid, 'checker@example.test', 'Test Checker'),
   ('00000000-0000-0000-0000-000000000103'::uuid, 'manager@example.test', 'Test Manager'),
   ('00000000-0000-0000-0000-000000000104'::uuid, 'admin@example.test',   'Test Admin'),
-  ('00000000-0000-0000-0000-000000000105'::uuid, 'member2@example.test', 'Test Member Two')
+  ('00000000-0000-0000-0000-000000000105'::uuid, 'member2@example.test', 'Test Member Two'),
+  -- a team_member in the app who is a LEAD in the Teams data's mock mode (people report to them: docs/TEAMS-DB.md)
+  ('00000000-0000-0000-0000-000000000106'::uuid, 'lead@example.test',    'Test Lead')
 ) as u(id, email, full_name);
 
 insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
