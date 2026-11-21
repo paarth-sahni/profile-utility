@@ -5,6 +5,8 @@ import SiteNav from "@/components/SiteNav";
 import Footer from "@/components/Footer";
 import { sessionExpired } from "@/lib/authRules";
 import { getCurrentUser } from "@/lib/auth";
+import { accessFor, canSeeTeamList, isStaffRole } from "@/lib/teamAccess";
+import { teams } from "@/lib/teamsClient";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { NavUser } from "@/components/UserMenu";
 
@@ -43,7 +45,9 @@ export default async function RootLayout({
   // The role comes from app_users through the user's own session (never from the browser or the JWT).
   // It only decides which nav links are shown; the pages and the database enforce access themselves.
   const [display, me] = await Promise.all([currentUser(), getCurrentUser()]);
-  const user: NavUser | null = display ? { ...display, role: me?.role ?? null } : null;
+  // Profile Hub: managers and admins, and leads (people with reportees in the Teams data; cached there, 10 minutes)
+  const hub = !!me && (isStaffRole(me.role) || canSeeTeamList(await accessFor(me, teams)));
+  const user: NavUser | null = display ? { ...display, role: me?.role ?? null, hub } : null;
   return (
     <html lang="en" className={`${lexend.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-[--background] text-ink">

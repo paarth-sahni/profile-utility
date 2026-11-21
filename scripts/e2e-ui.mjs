@@ -1010,10 +1010,12 @@ await t.scenario("every top-nav link opens its page (no 404) for a signed-in use
   }
 });
 
-await t.scenario("the header: Profile Hub only for managers and admins, no Style Guide for anyone", async () => {
+await t.scenario("the header: Profile Hub for managers, admins and leads, no Style Guide for anyone", async () => {
   // the text links only: the first link in the nav is the logo (no text)
   const headerLinks = () => ev("[...document.querySelectorAll('header nav a')].map(a=>a.textContent.trim()).filter(Boolean).join('|')");
-  for (const [who, manage] of [["member", false], ["checker", false], ["manager", true], ["admin", true]]) {
+  // lead@ is a team_member in the app who leads people in the mock Teams data (docs/TEAMS-DB.md): Profile Hub in mock mode only
+  const mock = process.env.TEAMS_DB_MODE === "mock";
+  for (const [who, manage] of [["member", false], ["checker", false], ["lead", mock], ["manager", true], ["admin", true]]) {
     await signIn(who);
     await goto("/profiles");
     await waitFor("!!document.querySelector('header nav a')", "header");
@@ -1070,6 +1072,34 @@ await t.scenario("checkers and managers create and submit their own profile like
     await waitFor(`document.body.innerText.includes('E2E_Own_${who}')`, `My Profiles (${who})`);
     check(`${who}'s My Profiles lists it`, true);
   }
+});
+
+await t.scenario("Teams data (mock): /profile/<ib_code> and the Profile Hub team list follow the access rules", async () => {
+  if (process.env.TEAMS_DB_MODE !== "mock") return void console.log("SKIP  needs TEAMS_DB_MODE=mock (docs/TEAMS-DB.md)");
+  // fictional mock people (ops/teams_db.py): IB9003 member@ (Alex Sample, primary), IB9004 member2@, IB9005 Riya (no account)
+  const linkState = () => ev("document.querySelector('[data-profile-link-state]')?.dataset.profileLinkState ?? (document.body.innerText.includes(\"isn't available to you\") ? 'denied' : document.body.innerText.includes('No such employee') ? 'unknown' : '?')");
+  const open = async (code) => (await goto(`/profile/${code}`), linkState());
+  await signIn("member");
+  check("member: their own /profile link opens their primary profile", (await open("IB9003")) === "ok" && (await bodyText()).includes("Alex_Sample"));
+  check("member: someone else's link is not available", (await open("IB9004")) === "denied");
+  check("member: an unknown IB code looks the same", (await open("IB0000")) === "denied");
+  await goto("/manage");
+  check("member: no team list", (await bodyText()).includes("have access to this page"));
+  await signIn("lead");
+  check("lead (a team_member with reportees): opens a team member's profile", (await open("IB9003")) === "ok");
+  check("lead: \"No profile yet\" for someone without one", (await open("IB9005")) === "none" && (await bodyText()).includes("No profile yet"));
+  await goto("/manage");
+  await waitFor("!!document.querySelector('[data-team-list]')", "team list");
+  const leadRows = await ev("[...document.querySelectorAll('tr[data-team-row]')].map(r=>r.dataset.teamRow).join(',')");
+  check("lead: My team lists direct and indirect reportees only", leadRows === "IB9005,,IB9003", leadRows);
+  check("lead: View is enabled only with a profile", (await ev("[...document.querySelectorAll('tr[data-team-row] a[href^=\"/profile/\"]')].map(a=>a.getAttribute('href')).join(',')")) === "/profile/IB9003");
+  await signIn("manager");
+  await goto("/manage?tab=team&scope=all&du=Delivery%20Unit%20Beta");
+  await waitFor("!!document.querySelector('[data-team-list]')", "team list");
+  const beta = await ev("[...document.querySelectorAll('tr[data-team-row]')].map(r=>r.dataset.teamRow).join(',')");
+  check("manager: All team members, filtered by delivery unit", beta === "IB9005,,IB9008,IB9004", beta);
+  await goto("/profile/IB9004");
+  check("manager: opens anyone's primary profile", (await linkState()) === "ok");
 });
 
 await t.finish();

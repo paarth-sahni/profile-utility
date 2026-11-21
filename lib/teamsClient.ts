@@ -2,7 +2,8 @@
  * Purpose: the ONLY way the app reads the Teams app's employee data (IB code, email, name, role, delivery unit, department,
  * manager). It runs ops/teams_db.py (live read, nothing stored; docs/TEAMS-DB.md) with execFile, no shell, validated
  * arguments, a 5 s time-out and only PATH, the locale and the TEAMS_* settings in the child's environment. Answers are kept in
- * memory for 10 minutes (per server process); nothing is written anywhere. It never throws: a failure is { ok: false }, and
+ * memory for 10 minutes (per server process), failures for 1 minute (so pages do not each wait out the time-out while the Teams
+ * server is down); nothing is written anywhere. It never throws: a failure is { ok: false }, and
  * callers fall back (file name without the IB code, "Team list unavailable", own profile only). Rows are never logged; a
  * failure logs its code only. Server-only.
  *
@@ -25,6 +26,7 @@ export type Units = { deliveryUnits: string[]; departments: string[] };
 export type TeamsResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 const TTL_MS = 10 * 60 * 1000;
+const FAILURE_TTL_MS = 60 * 1000;
 const TIMEOUT_MS = 5000;
 const MAX_CACHE = 1000;
 const EMAIL = /^[^@\s]{1,64}@[^@\s]{1,190}$/;
@@ -84,12 +86,15 @@ export function createTeamsClient(options: { run?: Runner; now?: () => number; t
   const now = options.now ?? Date.now;
   const timeoutMs = options.timeoutMs ?? TIMEOUT_MS;
   const cache = new Map<string, { at: number; value: unknown }>();
+  const failures = new Map<string, { at: number; error: string }>();
   const inFlight = new Map<string, Promise<TeamsResult<unknown>>>();
 
   async function call<T>(args: string[], parse: (json: unknown) => T): Promise<TeamsResult<T>> {
     const key = args.join("\u0000");
     const hit = cache.get(key);
     if (hit && now() - hit.at < TTL_MS) return { ok: true, data: hit.value as T };
+    const failed = failures.get(key);
+    if (failed && now() - failed.at < FAILURE_TTL_MS) return { ok: false, error: failed.error };
     const pending = inFlight.get(key);
     if (pending) return pending as Promise<TeamsResult<T>>;
     const promise = (async (): Promise<TeamsResult<T>> => {
@@ -99,10 +104,13 @@ export function createTeamsClient(options: { run?: Runner; now?: () => number; t
         const value = parse(json);
         if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value as string);
         cache.set(key, { at: now(), value });
+        failures.delete(key);
         return { ok: true, data: value };
       } catch (e) {
         const code = e instanceof Error && /^[a-z_]{1,40}$/.test(e.message) ? e.message : "bad_output";
         console.warn(`teams: ${args[0]} failed (${code})`); // the command and the code only: no argument, no row
+        if (failures.size >= MAX_CACHE) failures.delete(failures.keys().next().value as string);
+        failures.set(key, { at: now(), error: code });
         return { ok: false, error: code };
       } finally {
         inFlight.delete(key);

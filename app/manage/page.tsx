@@ -1,6 +1,10 @@
 /**
- * Purpose: /manage — name search over all profiles for managers and admins. Server-rendered; the search is a
- * plain GET form (?q=). Other roles see an access-denied view, and the data layer refuses them as well (403).
+ * Purpose: /manage — Profile Hub. Two tabs:
+ *   - Team list (?tab=team, the default): the people under the signed-in person, or everyone, from the Teams data at request
+ *     time (components/TeamList.tsx). For managers, admins and leads (anyone with a reportee in the Teams data: lib/teamAccess.ts).
+ *   - Search profiles (?tab=search): name search over all profiles, managers and admins only (?q=; the data layer refuses
+ *     other roles as well, 403).
+ * Server-rendered; everyone else sees an access-denied view.
  */
 import type { Metadata } from "next";
 import Form from "next/form";
@@ -8,22 +12,61 @@ import Link from "next/link";
 import ManageAccessDenied from "@/components/ManageAccessDenied";
 import { PrimaryBadge } from "@/components/MarkPrimaryButton";
 import PageHero from "@/components/PageHero";
+import TeamList from "@/components/TeamList";
 import { getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, searchProfilesByName, type ManagedProfileSummary } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
+import { accessFor, canSeeTeamList, isStaffRole } from "@/lib/teamAccess";
+import { parseTeamFilters } from "@/lib/teamList";
+import { teams } from "@/lib/teamsClient";
 import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Manage profiles — Profile Generator" };
+export const metadata: Metadata = { title: "Profile Hub — Profile Generator" };
 export const dynamic = "force-dynamic";
 
 const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
-export default async function ManagePage({ searchParams }: { searchParams: Promise<{ q?: string | string[] }> }) {
+export default async function ManagePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/manage");
-  if (user.role !== "manager" && user.role !== "admin") return <ManageAccessDenied />;
+  const staff = isStaffRole(user.role);
+  const access = await accessFor(user, teams);
+  if (!staff && !canSeeTeamList(access)) return <ManageAccessDenied />;
 
-  const raw = (await searchParams).q;
+  const sp = await searchParams;
+  // the team list by default; the search when asked for, or for an old /manage?q=... link
+  const tab = staff && (sp.tab === "search" || (sp.tab === undefined && sp.q !== undefined)) ? "search" : "team";
+  const tabs = (
+    <nav aria-label="Profile Hub" className="mb-5 flex gap-1 border-b border-gray-200">
+      {[
+        { id: "team", label: "Team list", href: "/manage?tab=team" },
+        ...(staff ? [{ id: "search", label: "Search profiles", href: "/manage?tab=search" }] : []),
+      ].map((t) => (
+        <Link
+          key={t.id}
+          href={t.href}
+          aria-current={tab === t.id ? "page" : undefined}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === t.id ? "border-brand-500 text-ink-dark" : "border-transparent text-ink-light hover:text-ink"}`}
+        >
+          {t.label}
+        </Link>
+      ))}
+    </nav>
+  );
+
+  if (tab === "team") {
+    return (
+      <div className="w-full text-ink">
+        <PageHero title="Profile Hub" subtitle="Your team from the employee data, with each person's primary profile. Read-only." compact />
+        <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5">
+          {tabs}
+          <TeamList user={user} access={access} filters={parseTeamFilters(sp)} />
+        </main>
+      </div>
+    );
+  }
+
+  const raw = sp.q;
   const q = (Array.isArray(raw) ? raw[0] : raw)?.trim().slice(0, 100) ?? "";
 
   let results: ManagedProfileSummary[] = [];
@@ -38,10 +81,12 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="w-full text-ink">
-      <PageHero title="Manage profiles" subtitle="Search team members by name. Each shows their primary profile. Read-only." compact />
+      <PageHero title="Profile Hub" subtitle="Search team members by name. Each shows their primary profile. Read-only." compact />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5">
+        {tabs}
         <Form action="/manage" className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="tab" value="search" />
           <div className="min-w-[14rem] flex-1">
             <label htmlFor="manage-q" className="mb-1 block text-xs font-medium text-ink-light">
               Team member name

@@ -34,7 +34,7 @@ test("the real script in mock mode: lookups, team, reportees, units", async () =
 
 const PERSON = { ib_code: "IB1", email: "a@example.test", name: "Fictional A", role: "Dev", delivery_unit: "U", department: "D", manager_email: null };
 
-test("answers are cached for 10 minutes, shared while in flight, failures are not cached", async () => {
+test("answers are cached for 10 minutes, shared while in flight, failures for 1 minute", async () => {
   let clock = 0;
   const calls: string[][] = [];
   let fail = false;
@@ -54,7 +54,11 @@ test("answers are cached for 10 minutes, shared while in flight, failures are no
   fail = true;
   assert.deepEqual(await t.byEmail("a@example.test"), { ok: false, error: "connect_failed" });
   assert.deepEqual(await t.byEmail("a@example.test"), { ok: false, error: "connect_failed" });
-  assert.equal(calls.length, 3, "a failure is retried next time, not cached");
+  assert.equal(calls.length, 2, "a failure is remembered for a minute (pages do not each wait out the time-out)");
+  clock += 61 * 1000;
+  fail = false;
+  assert.ok((await t.byEmail("a@example.test")).ok, "and tried again after it");
+  assert.equal(calls.length, 3);
 });
 
 test("arguments are validated before anything runs; bad output and error answers are failures", async () => {

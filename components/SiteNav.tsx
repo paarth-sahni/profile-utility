@@ -15,9 +15,9 @@ export default function SiteNav({ user }: { user?: NavUser | null }) {
   // Resolve the "home" for whichever route is currently browsing. Each route only
   // links to its own flow; the other is reachable only by knowing its URL.
   const home = pathname.startsWith("/external") ? "/external" : "/internal";
-  // Profile Hub (the managers' page, /manage) is shown to managers and admins only, first in their header; the server
-  // refuses everyone else as well. Managers: Profile Hub | Generator | My Profiles | Instructions.
-  const canManage = user?.role === "manager" || user?.role === "admin";
+  // Profile Hub (/manage) is shown to managers, admins and leads (people with reportees in the Teams data: `hub`, decided on the
+  // server), first in their header; the server refuses everyone else as well. Profile Hub | Generator | My Profiles | Instructions.
+  const canManage = user?.role === "manager" || user?.role === "admin" || user?.hub === true;
   // the client-name registry page is for administrators only (the page, the routes and the database refuse everyone else)
   const canAdminister = user?.role === "admin";
   const LINKS: NavLink[] = canManage

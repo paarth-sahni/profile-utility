@@ -47,8 +47,8 @@ export default async function ManageProfilePage({ params }: { params: Promise<{ 
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5">
         <div className="mb-4 flex flex-wrap items-center gap-4">
-          <Link href="/manage" className="text-sm font-medium text-brand-600 hover:underline">
-            ← Manage profiles
+          <Link href="/manage?tab=search" className="text-sm font-medium text-brand-600 hover:underline">
+            ← Profile Hub
           </Link>
           <PrimaryBadge />
         </div>

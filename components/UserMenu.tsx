@@ -6,7 +6,8 @@ import { clearDraftsOnSignOut, getSessionStorage } from "@/lib/draftStorage";
 /** Role as stored in app_users (read on the server). Only used to decide which nav links to show. */
 export type NavRole = "team_member" | "checker" | "manager" | "admin";
 
-export type NavUser = { name: string; email: string; avatarUrl: string | null; role: NavRole | null };
+/** `hub`: Profile Hub is shown (managers, admins and leads; decided on the server, lib/teamAccess.ts). */
+export type NavUser = { name: string; email: string; avatarUrl: string | null; role: NavRole | null; hub?: boolean };
 
 /** Up to two initials from a display name (falls back to the email's first letter). */
 function initialsOf(user: NavUser): string {
