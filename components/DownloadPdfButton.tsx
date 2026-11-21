@@ -51,7 +51,7 @@ export default function DownloadPdfButton({
     setBusy(true);
     try {
       await recordConsent(template, "download");
-      savePdf(await fetchProfilePdf(template, ready.data), pdfFileName(ready.data));
+      savePdf(await fetchProfilePdf(template, ready.data, { versionId }), pdfFileName(ready.data));
     } catch (e) {
       setMessage(
         (e instanceof PdfRequestError || e instanceof ConsentError) && e.status === 401

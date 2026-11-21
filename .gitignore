@@ -54,3 +54,6 @@ AGENTS.md
 /lib/ratings.test.ts
 /lib/validNames.test.ts
 supabase/snippets/
+
+# Python caches (ops/)
+__pycache__/

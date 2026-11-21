@@ -6,15 +6,19 @@
  * (docs/COMPLIANCE.md). A download sends `consent: { action: "download", accepted: true }`, recorded only after every
  * check passed and the PDF was made. The Word template is filled exactly as in the browser and converted by LibreOffice
  * (lib/pdfRender.ts). The request logic and its order are in lib/pdfHandler.ts (tested with fakes); this file wires the
- * real parts. Nothing is stored and no profile content is logged; the response is not cached.
+ * real parts. The file name carries the owner's IB code from the Teams data when there is one (lib/pdfOwner.ts; `versionId`
+ * names a saved version, whose owner is read with the user's own session). Nothing is stored and no profile content is
+ * logged; the response is not cached.
  */
 import { getCurrentUser } from "@/lib/auth";
 import { complianceGate } from "@/lib/compliance/registry";
 import { consentAuditRow } from "@/lib/consent";
 import { PDF_RATE_LIMIT, handlePdfPost } from "@/lib/pdfHandler";
+import { ownerIbCodeWith } from "@/lib/pdfOwner";
 import { renderProfilePdf } from "@/lib/pdfRender";
 import { allowRequest } from "@/lib/rateLimit";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { teams } from "@/lib/teamsClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,5 +34,23 @@ export async function POST(request: Request) {
       const { error } = await supabase.from("audit_log").insert(consentAuditRow(userId, { template, action: "download", accepted: true }));
       if (error) throw error;
     },
+    ownerIbCode: (_userId, versionId) =>
+      ownerIbCodeWith(
+        {
+          userEmail: async () => (await getCurrentUser())?.email ?? null,
+          versionOwnerEmail: async (id) => {
+            const supabase = await createSupabaseServerClient();
+            const { data } = await supabase
+              .from("profile_versions")
+              .select("profile:profiles!profile_versions_profile_id_fkey(owner:app_users!profiles_owner_id_fkey(email))")
+              .eq("id", id)
+              .maybeSingle();
+            const profile = data?.profile as unknown as { owner?: { email?: string | null } | null } | null;
+            return profile?.owner?.email ?? null;
+          },
+          teams,
+        },
+        versionId,
+      ),
   });
 }

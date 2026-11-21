@@ -44,7 +44,10 @@ const fileNamePart = (value: string | undefined): string =>
  * underscores between all parts and inside them, e.g. "Asha_Rao_AI_Intern_InfoBeans.pdf". The one place the format is
  * decided: the IB employee code can be added to `parts` here once it syncs from the Team app.
  */
-export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }): string {
+export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }, ibCode?: string | null): string {
+  // with the owner's IB code (from the Teams data, looked up on the server): IBCode_FullName_Role.pdf, else FullName_Role_InfoBeans.pdf
+  const code = ibCode && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(ibCode.trim()) ? ibCode.trim().toUpperCase() : "";
+  if (code) return `${[code, fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean).join("_")}.pdf`;
   return `${profileDisplayName(name ?? "", jobTitle ?? "")}.pdf`;
 }
 

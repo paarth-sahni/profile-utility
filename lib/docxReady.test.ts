@@ -82,3 +82,11 @@ test("profileDisplayName is the PDF name without .pdf (My Profiles and Manage)",
   const person = { name: "José O'Brien", jobTitle: "QA / Test Lead" };
   assert.equal(`${profileDisplayName(person.name, person.jobTitle)}.pdf`, pdfFileName(person));
 });
+
+test("pdfFileName with the owner's IB code: IBCode_FullName_Role.pdf; an empty or unsafe code falls back", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Saumya Jain", jobTitle: "AI Intern" }, "IB1234"), "IB1234_Saumya_Jain_AI_Intern.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "" }, " ib77 "), "IB77_Asha_Rao.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, null), "Asha_Rao_AI_Intern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, ""), "Asha_Rao_AI_Intern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, "../IB1"), "Asha_Rao_AI_Intern_InfoBeans.pdf");
+});

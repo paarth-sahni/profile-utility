@@ -31,6 +31,7 @@ function setup(over: Partial<PdfDeps> = {}) {
     gate: async (template, data) => (calls.push("gate"), gateResponse(template, data, { mode: "on", getMatcher: async () => matcher })),
     render: async () => (calls.push("render"), new Uint8Array([37, 80, 68, 70])),
     recordDownloadConsent: async (userId, template) => void calls.push(`consent:${userId}:${template}`),
+    ownerIbCode: async () => null,
     ...over,
   };
   return { deps, calls };
@@ -126,4 +127,29 @@ test("signed out 401, rate limit 429 with a clear message, unknown template 400"
   assert.equal(((await limited.json()) as { error: { message: string } }).error.message, PDF_RATE_MESSAGE);
   assert.match(PDF_RATE_MESSAGE, /60 in 10 minutes/);
   assert.equal((await handlePdfPost(request({ template: "other", data: {} }), setup().deps)).status, 400);
+});
+
+const fileNameOf = (res: Response) => decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "");
+
+test("file name: IBCode_FullName_Role.pdf with the owner's IB code, the fallback name without one or on a failure", async () => {
+  const asked: [string, string | null][] = [];
+  const withCode = setup({ ownerIbCode: async (userId, versionId) => (asked.push([userId, versionId]), "ib1234") });
+  assert.equal(fileNameOf(await handlePdfPost(request({ template: "internal", data: INTERNAL }), withCode.deps)), "IB1234_Asha_Rao_Engineer.pdf");
+  assert.deepEqual(asked, [["user-1", null]], "the signed-in user is the owner when no saved version is named");
+  const version = "00000000-0000-4000-8000-000000000001";
+  await handlePdfPost(request({ template: "internal", data: INTERNAL, versionId: version }), withCode.deps);
+  assert.deepEqual(asked[1], ["user-1", version], "a saved version: its owner is looked up");
+  const none = setup();
+  assert.equal(fileNameOf(await handlePdfPost(request({ template: "external", data: EXTERNAL }), none.deps)), "Asha_Rao_Engineer_InfoBeans.pdf");
+  const failing = setup({ ownerIbCode: async () => { throw new Error("teams down"); } });
+  const res = await handlePdfPost(request({ template: "internal", data: INTERNAL }), failing.deps);
+  assert.equal(res.status, 200);
+  assert.equal(fileNameOf(res), "Asha_Rao_Engineer_InfoBeans.pdf");
+});
+
+test("a versionId that is not a version id is a bad request (before anything runs)", async () => {
+  const { deps, calls } = setup();
+  const res = await handlePdfPost(request({ template: "internal", data: INTERNAL, versionId: "../x" }), deps);
+  assert.equal(res.status, 400);
+  assert.deepEqual(calls, []);
 });

@@ -47,7 +47,9 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 
    Buttons:
    - **← Back to edit** — keeps every edit.
-   - **Download PDF** — all users. File name `FullName_Role_InfoBeans.pdf`, e.g.
+   - **Download PDF** — all users. File name `IBCode_FullName_Role.pdf` with the profile owner's IB code from the Teams
+     data (e.g. `IB1234_Saumya_Jain_AI_Intern.pdf`; looked up on the server, docs/TEAMS-DB.md), or
+     `FullName_Role_InfoBeans.pdf` when there is none or the Teams data is unavailable, e.g.
      `Abdul_Technology_Delivery_Manager_InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed; the
      format is `pdfFileName` in `lib/docxReady.ts`, the same for every download and both templates).
      For an internal profile it always builds the PDF of the current text with the server, so the file matches the
@@ -270,7 +272,7 @@ E2E_ONLY='preview' npm run test:e2e      # only the scenarios whose title matche
 - **Editing:** the editable view (fields and their names, read-only header and headings, plain text, ratings, dates).
 - **View PDF:** required before Download / Submit (blocked before, enabled after, blocked again after an edit); shows the
   edited text, and afterwards the downloaded file itself (same SHA-256).
-- **Download:** named `FullName_Role_InfoBeans.pdf`, with the edited text; no DOCX anywhere.
+- **Download:** named `IBCode_FullName_Role.pdf` (or `FullName_Role_InfoBeans.pdf` without an IB code), with the edited text; no DOCX anywhere.
 - **Blocking:** an emptied required field or list item blocks Download and Submit, with focus on it.
 - **Consent:** required before Download / Submit, recorded in `audit_log`; cleared when the text changes.
 - **Refusals with no consent row:** `/api/pdf` and `/api/profiles` refuse incomplete data with field paths, and a
@@ -429,7 +431,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 3. **Consent**: on Preview press *Download PDF* and *Submit* without the box → a message, nothing happens. Tick it →
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
-4. **Same file**: the downloaded file is named like `Jane_Doe_Senior_Engineer_InfoBeans.pdf` and looks exactly like the
+4. **Same file**: the downloaded file is named like `IB1234_Jane_Doe_Senior_Engineer.pdf` (`Jane_Doe_Senior_Engineer_InfoBeans.pdf` without an IB code) and looks exactly like the
    preview. There is no *Download DOCX* anywhere (Preview, My Profiles, Manage).
 5. **Formatting** (open the PDF at 100-200 %): the internal PDF looks like the reference format
    (`eval/reference/format.pdf`) side by side; the logo sits under "A PROUD MEMBER OF", top right; the footer logo and

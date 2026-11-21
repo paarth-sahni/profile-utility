@@ -8,6 +8,8 @@
  *   4. the PDF is made (503 when LibreOffice is missing, 500 when it fails)
  *   5. a download (body `consent: { action: "download", accepted: true }`): the consent row is written, only now, after
  *      every check passed and the file exists; if that fails the PDF is not sent (500 CONSENT_FAILED)
+ *   6. the file name: IBCode_FullName_Role.pdf with the profile OWNER's IB code (the signed-in user, or the owner of the
+ *      saved version named by `versionId`), looked up on the server; FullName_Role_InfoBeans.pdf without one or on any failure
  * A preview (no `consent`) records nothing. Nothing is stored and no profile content is logged.
  */
 import { checkReadyForDocx, pdfFileName } from "./docxReady";
@@ -21,7 +23,11 @@ export type PdfDeps = {
   render: (template: TemplateId, data: ResumeData) => Promise<Uint8Array>;
   /** Writes the download consent row for the user; throws on failure. */
   recordDownloadConsent: (userId: string, template: TemplateId) => Promise<void>;
+  /** The IB code of the profile's owner (the user, or the owner of `versionId`), or null; may fail (the name falls back). */
+  ownerIbCode: (userId: string, versionId: string | null) => Promise<string | null>;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const PDF_RATE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 export const PDF_RATE_MESSAGE = "You have made a lot of PDFs in a short time (the limit is 60 in 10 minutes). Please wait a few minutes and try again.";
@@ -43,7 +49,7 @@ export async function handlePdfPost(request: Request, deps: PdfDeps): Promise<Re
   if (!userId) return err(401, "UNAUTHENTICATED", "Please sign in to continue.");
   if (!deps.allow(userId)) return err(429, "RATE_LIMITED", PDF_RATE_MESSAGE);
 
-  let body: { template?: unknown; data?: unknown; consent?: unknown };
+  let body: { template?: unknown; data?: unknown; consent?: unknown; versionId?: unknown };
   try {
     if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return err(413, "TOO_LARGE", "That profile is too large.");
     const raw = await request.text();
@@ -55,6 +61,7 @@ export async function handlePdfPost(request: Request, deps: PdfDeps): Promise<Re
   if (!body || typeof body !== "object" || !TEMPLATES.includes(body.template as TemplateId)) {
     return err(400, "BAD_REQUEST", "Unknown profile type.");
   }
+  if (body.versionId !== undefined && !(typeof body.versionId === "string" && UUID.test(body.versionId))) return err(400, "BAD_REQUEST", "Unknown profile version.");
   const consent = consentOf(body.consent);
   if (consent === "bad") return err(400, "BAD_REQUEST", "Please confirm the statement to continue.");
   const template = body.template as TemplateId;
@@ -82,7 +89,13 @@ export async function handlePdfPost(request: Request, deps: PdfDeps): Promise<Re
       return err(500, "CONSENT_FAILED", "We could not record your confirmation. Please try again.");
     }
   }
-  const name = pdfFileName(ready.data);
+  let ibCode: string | null = null;
+  try {
+    ibCode = await deps.ownerIbCode(userId, (body.versionId as string | undefined) ?? null);
+  } catch {
+    ibCode = null; // the Teams data is optional: the name falls back
+  }
+  const name = pdfFileName(ready.data, ibCode);
   const ascii = name.replace(/[^\x20-\x7e]/g, "_");
   return new Response(Buffer.from(pdf), {
     status: 200,

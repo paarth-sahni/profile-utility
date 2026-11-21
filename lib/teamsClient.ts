@@ -35,9 +35,10 @@ export type Runner = (args: string[], timeoutMs: number) => Promise<string>;
 
 /** The environment the script gets: what it needs to start, and its own settings. Nothing else (no Supabase or LLM keys). */
 function childEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+  // (built from scratch: only these keys are passed on)
+  const env: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) if (k.startsWith("TEAMS_") || ["PATH", "LANG", "LC_ALL", "HOME", "SYSTEMROOT"].includes(k)) env[k] = v;
-  return env;
+  return env as NodeJS.ProcessEnv;
 }
 
 const defaultRunner: Runner = (args, timeoutMs) =>
