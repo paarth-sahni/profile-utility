@@ -1142,6 +1142,9 @@ await t.scenario("Teams data (mock): /profile/<ib_code> and the Profile Hub team
   // fictional mock people (ops/teams_db.py): IB9003 member@ (Alex Sample, primary), IB9004 member2@, IB9005 Riya (no account)
   const linkState = () => ev("document.querySelector('[data-profile-link-state]')?.dataset.profileLinkState ?? (document.body.innerText.includes(\"isn't available to you\") ? 'denied' : document.body.innerText.includes('No such employee') ? 'unknown' : '?')");
   const open = async (code) => (await goto(`/profile/${code}`), linkState());
+  // earlier scenarios make an E2E profile the member's primary (asPrimary): use the seeded one here
+  sql(`update profiles set is_primary = false where owner_id = (select id from auth.users where email='member@example.test') and is_primary`);
+  sql(`update profiles set is_primary = true where owner_id = (select id from auth.users where email='member@example.test') and candidate_name = 'Alex Sample'`);
   await signIn("member");
   check("member: their own /profile link opens their primary profile", (await open("IB9003")) === "ok" && (await bodyText()).includes("Alex_Sample"));
   check("member: someone else's link is not available", (await open("IB9004")) === "denied");
