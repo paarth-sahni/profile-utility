@@ -1,0 +1,2 @@
+# ops/teams_db.py (docs/TEAMS-DB.md). Python 3.10+.
+pymssql==2.4.6
