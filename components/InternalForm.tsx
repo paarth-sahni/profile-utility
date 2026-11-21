@@ -4,7 +4,9 @@ import { useState } from "react";
 import { cleanList, hasContent } from "@/lib/previewModel";
 import { formatYearsExperience, wordCount, type InternalResume } from "@/lib/schemas";
 import { hasErrorUnder } from "@/lib/fieldErrors";
-import { Accordion, AddButton, AreaField, Field, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { itemTitle } from "@/lib/collapsibleList";
+import { Accordion, AddButton, AreaField, CollapsibleItemCard, Field, ItemCard, ListExpandControls, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { useCollapsibleList } from "./useCollapsibleList";
 
 const BLANK_PROJECT: InternalResume["projects"][number] = {
   duration: "", title: "", toolsAndTechnologies: [""], teamSize: "", role: "", projectLink: "", description: "", responsibilities: [""],
@@ -47,6 +49,10 @@ export default function InternalForm({
   const mk = (path: string) => ({ error: fe[path], highlights: hl[path] });
   const listMarks = (base: string) => (i: number) => mk(`${base}.${i}`);
   const tagError = (base: string) => (i: number) => fe[`${base}.${i}`];
+  // a project needs attention when any field in it has a problem (a required field, or a registered client name)
+  const problemUnder = (prefix: string) => hasErrorUnder(fe, prefix) || Object.entries(hl).some(([k, r]) => r.length > 0 && (k === prefix || k.startsWith(`${prefix}.`)));
+  const projectNeeds = data.projects.map((_, i) => problemUnder(`projects.${i}`));
+  const projectCards = useCollapsibleList(data.projects.length, projectNeeds);
 
   return (
     <Accordion expandTick={expandTick}>
@@ -102,21 +108,36 @@ export default function InternalForm({
           actions={
             <AddButton
               label="Add project"
-              onClick={() => set("projects", [...data.projects, { ...BLANK_PROJECT }])}
+              onClick={() => {
+                // a new project goes first, as Project 1, open, with the focus in its first field
+                set("projects", [{ ...BLANK_PROJECT }, ...data.projects]);
+                projectCards.addedTop();
+              }}
             />
           }
         >
+          <ListExpandControls what="projects" onAll={projectCards.setAll} />
+          <div ref={projectCards.listRef} className="space-y-3">
           {data.projects.map((p, i) => {
             const setP = (patch: Partial<InternalResume["projects"][number]>) =>
               set("projects", data.projects.map((x, j) => (j === i ? { ...x, ...patch } : x)));
             return (
-              <ItemCard
+              <CollapsibleItemCard
                 key={i}
-                title={`Project ${i + 1}`}
+                title={itemTitle("Project", i, p.title, p.duration)}
                 index={i}
                 length={data.projects.length}
-                onMove={(from, to) => set("projects", moveItem(data.projects, from, to))}
-                onRemove={(idx) => set("projects", data.projects.filter((_, j) => j !== idx))}
+                open={projectCards.isOpen(i)}
+                onToggle={() => projectCards.toggle(i)}
+                needsAttention={projectNeeds[i]}
+                onMove={(from, to) => {
+                  set("projects", moveItem(data.projects, from, to));
+                  projectCards.moved(from, to);
+                }}
+                onRemove={(idx) => {
+                  set("projects", data.projects.filter((_, j) => j !== idx));
+                  projectCards.removed(idx);
+                }}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Project Name" {...mk(`projects.${i}.title`)} value={p.title} onChange={(v) => setP({ title: v })} />
@@ -147,9 +168,10 @@ export default function InternalForm({
                   addLabel="Add responsibility"
                   multiline
                 />
-              </ItemCard>
+              </CollapsibleItemCard>
             );
           })}
+          </div>
         </Section>
       )}
 

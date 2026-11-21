@@ -1074,6 +1074,39 @@ await t.scenario("checkers and managers create and submit their own profile like
   }
 });
 
+await t.scenario("Edit details: project cards collapse, Add project puts a new open Project 1 first, Expand / Collapse all", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "edit form");
+  await click("Projects", "section button[aria-expanded]");
+  await waitFor("!!document.querySelector('[data-item-card]')", "project cards");
+  const cards = () => ev("JSON.stringify([...document.querySelectorAll('[data-item-card]')].map(c=>{const b=c.querySelector('button[aria-expanded]'); return {title:b.textContent.trim(), open:b.getAttribute('aria-expanded')==='true', body:!document.getElementById(b.getAttribute('aria-controls'))?.hidden}}))").then(JSON.parse);
+  let now = await cards();
+  check("a new form: Project 1 is open, its toggle names its body (aria-controls)", now.length === 1 && now[0].open && now[0].body, JSON.stringify(now));
+  await t.fill("Project Name", "First Fictional Project");
+  await click("Add project");
+  await sleep(300);
+  now = await cards();
+  check("Add project: the new project is Project 1, open; the old one is renumbered Project 2", now.length === 2 && now[0].title === "Project 1" && now[0].open && now[1].title.startsWith("Project 2 – First Fictional Project"), JSON.stringify(now));
+  check("the focus is in the new Project 1's first field", await ev("!!document.activeElement?.closest(\"[data-item-card='0']\") && document.activeElement.tagName === 'INPUT'"));
+  await click("Collapse all", 'button[aria-label="Collapse all projects"]');
+  await sleep(200);
+  now = await cards();
+  check("Collapse all: every card collapsed (aria-expanded false, body hidden)", now.every((c) => !c.open && !c.body), JSON.stringify(now));
+  await ev("document.querySelector(\"[data-item-card='1'] button[aria-expanded]\").click()");
+  await sleep(200);
+  await ev("document.querySelector(\"[data-item-card='1'] button[title='Move up']\").click()");
+  await sleep(200);
+  now = await cards();
+  check("the move arrows keep each card's open state with it", now[0].title.startsWith("Project 1 – First Fictional Project") && now[0].open && !now[1].open, JSON.stringify(now));
+  await click("Expand all", 'button[aria-label="Expand all projects"]');
+  await sleep(200);
+  check("Expand all opens every card", (await cards()).every((c) => c.open && c.body));
+});
+
 await t.scenario("Teams data (mock): /profile/<ib_code> and the Profile Hub team list follow the access rules", async () => {
   if (process.env.TEAMS_DB_MODE !== "mock") return void console.log("SKIP  needs TEAMS_DB_MODE=mock (docs/TEAMS-DB.md)");
   // fictional mock people (ops/teams_db.py): IB9003 member@ (Alex Sample, primary), IB9004 member2@, IB9005 Riya (no account)

@@ -4,7 +4,9 @@ import { useState } from "react";
 import { cleanList, hasContent } from "@/lib/previewModel";
 import { CUSTOM_LABEL_MAX, CUSTOM_TITLE_MAX, CUSTOM_VALUE_MAX, wordCount, type ExternalResume } from "@/lib/schemas";
 import { hasErrorUnder } from "@/lib/fieldErrors";
-import { Accordion, AddButton, AreaField, Field, FieldPairsEditor, ItemCard, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { itemTitle } from "@/lib/collapsibleList";
+import { Accordion, AddButton, AreaField, CollapsibleItemCard, Field, FieldPairsEditor, ListExpandControls, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { useCollapsibleList } from "./useCollapsibleList";
 
 type CustomSection = ExternalResume["customSections"][number];
 
@@ -47,6 +49,12 @@ export default function ExternalForm({
   const mk = (path: string) => ({ error: fe[path], highlights: hl[path] });
   const listMarks = (base: string) => (i: number) => mk(`${base}.${i}`);
   const tagError = (base: string) => (i: number) => fe[`${base}.${i}`];
+  // a project / employer needs attention when any field in it has a problem (a required field, or a registered client name)
+  const problemUnder = (prefix: string) => hasErrorUnder(fe, prefix) || Object.entries(hl).some(([k, r]) => r.length > 0 && (k === prefix || k.startsWith(`${prefix}.`)));
+  const projectNeeds = data.projects.map((_, i) => problemUnder(`projects.${i}`));
+  const employerNeeds = data.experience.map((_, i) => problemUnder(`experience.${i}`));
+  const projectCards = useCollapsibleList(data.projects.length, projectNeeds);
+  const employerCards = useCollapsibleList(data.experience.length, employerNeeds);
 
   return (
     <Accordion expandTick={expandTick}>
@@ -99,21 +107,36 @@ export default function ExternalForm({
           actions={
             <AddButton
               label="Add project"
-              onClick={() => set("projects", [...data.projects, { ...BLANK_PROJECT }])}
+              onClick={() => {
+                // a new project goes first, as Project 1, open, with the focus in its first field
+                set("projects", [{ ...BLANK_PROJECT }, ...data.projects]);
+                projectCards.addedTop();
+              }}
             />
           }
         >
+          <ListExpandControls what="projects" onAll={projectCards.setAll} />
+          <div ref={projectCards.listRef} className="space-y-3">
           {data.projects.map((p, i) => {
             const setP = (patch: Partial<ExternalResume["projects"][number]>) =>
               set("projects", data.projects.map((x, j) => (j === i ? { ...x, ...patch } : x)));
             return (
-              <ItemCard
+              <CollapsibleItemCard
                 key={i}
-                title={`Project ${i + 1}`}
+                title={itemTitle("Project", i, p.client, p.duration)}
                 index={i}
                 length={data.projects.length}
-                onMove={(from, to) => set("projects", moveItem(data.projects, from, to))}
-                onRemove={(idx) => set("projects", data.projects.filter((_, j) => j !== idx))}
+                open={projectCards.isOpen(i)}
+                onToggle={() => projectCards.toggle(i)}
+                needsAttention={projectNeeds[i]}
+                onMove={(from, to) => {
+                  set("projects", moveItem(data.projects, from, to));
+                  projectCards.moved(from, to);
+                }}
+                onRemove={(idx) => {
+                  set("projects", data.projects.filter((_, j) => j !== idx));
+                  projectCards.removed(idx);
+                }}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Project Name" {...mk(`projects.${i}.client`)} value={p.client} onChange={(v) => setP({ client: v })} />
@@ -130,9 +153,10 @@ export default function ExternalForm({
                   addLabel="Add responsibility"
                   multiline
                 />
-              </ItemCard>
+              </CollapsibleItemCard>
             );
           })}
+          </div>
         </Section>
       )}
 
@@ -143,21 +167,36 @@ export default function ExternalForm({
         actions={
           <AddButton
             label="Add employer"
-            onClick={() => set("experience", [...data.experience, { company: "", position: "", duration: "", highlights: [""] }])}
+            onClick={() => {
+              // a new employer goes first, open, with the focus in its first field (the same as projects)
+              set("experience", [{ company: "", position: "", duration: "", highlights: [""] }, ...data.experience]);
+              employerCards.addedTop();
+            }}
           />
         }
       >
+        <ListExpandControls what="employers" onAll={employerCards.setAll} />
+        <div ref={employerCards.listRef} className="space-y-3">
         {data.experience.map((e, i) => {
           const setE = (patch: Partial<ExternalResume["experience"][number]>) =>
             set("experience", data.experience.map((x, j) => (j === i ? { ...x, ...patch } : x)));
           return (
-            <ItemCard
+            <CollapsibleItemCard
               key={i}
-              title={`Employer ${i + 1}`}
+              title={itemTitle("Employer", i, e.company, e.duration)}
               index={i}
               length={data.experience.length}
-              onMove={(from, to) => set("experience", moveItem(data.experience, from, to))}
-              onRemove={(idx) => set("experience", data.experience.filter((_, j) => j !== idx))}
+              open={employerCards.isOpen(i)}
+              onToggle={() => employerCards.toggle(i)}
+              needsAttention={employerNeeds[i]}
+              onMove={(from, to) => {
+                set("experience", moveItem(data.experience, from, to));
+                employerCards.moved(from, to);
+              }}
+              onRemove={(idx) => {
+                set("experience", data.experience.filter((_, j) => j !== idx));
+                employerCards.removed(idx);
+              }}
             >
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Company Name" {...mk(`experience.${i}.company`)} value={e.company} onChange={(v) => setE({ company: v })} />
@@ -172,9 +211,10 @@ export default function ExternalForm({
                 addLabel="Add responsibility"
                 multiline
               />
-            </ItemCard>
+            </CollapsibleItemCard>
           );
         })}
+        </div>
       </Section>
 
       <Section title="Achievements" invalid={hasErrorUnder(fe, "achievements")} empty={cleanList(achievements).length === 0}>

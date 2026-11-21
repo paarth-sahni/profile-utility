@@ -14,6 +14,9 @@ export const LEFT_OUT_NOTE = "— left out of the document";
 /** Lets "Expand all / Collapse all" (and "expand on error") reach every Section inside an Accordion. */
 const AccordionContext = createContext<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
 
+/** The page-level Expand all / Collapse all signal, for collapsible lists inside the sections (components/useCollapsibleList.ts). */
+export const useAccordionSignal = () => useContext(AccordionContext);
+
 /** Wraps the form sections: adds an Expand all / Collapse all control and shares it with each Section. */
 export function Accordion({ children, expandTick = 0 }: { children: ReactNode; expandTick?: number }) {
   const [signal, setSignal] = useState<{ mode: "open" | "closed"; tick: number }>({ mode: "closed", tick: 0 });
@@ -480,6 +483,77 @@ export function ItemCard({
         <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
       </div>
       <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Expand all / Collapse all for one list of cards (projects, employers). */
+export function ListExpandControls({ onAll, what }: { onAll: (open: boolean) => void; what: string }) {
+  return (
+    <div className="flex justify-end gap-3 text-xs font-medium">
+      <button type="button" onClick={() => onAll(true)} className="text-brand-600 hover:underline" aria-label={`Expand all ${what}`}>
+        Expand all
+      </button>
+      <span className="text-gray-300" aria-hidden>
+        |
+      </span>
+      <button type="button" onClick={() => onAll(false)} className="text-brand-600 hover:underline" aria-label={`Collapse all ${what}`}>
+        Collapse all
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A card of an item list that collapses to one line: "Project N – name – dates", a "Needs attention" badge when a field in it
+ * has a problem, and the move / remove controls. The toggle is a button with aria-expanded and aria-controls; a collapsed
+ * body stays in the page, hidden.
+ */
+export function CollapsibleItemCard({
+  title,
+  index,
+  length,
+  open,
+  onToggle,
+  needsAttention = false,
+  onMove,
+  onRemove,
+  children,
+}: {
+  title: string;
+  index: number;
+  length: number;
+  open: boolean;
+  onToggle: () => void;
+  needsAttention?: boolean;
+  onMove: (from: number, to: number) => void;
+  onRemove: (index: number) => void;
+  children: ReactNode;
+}) {
+  const bodyId = useId();
+  return (
+    <div className={`border ${needsAttention ? "border-amber-300 bg-warm" : "border-gray-200 bg-gray-50"}`} data-item-card={index} data-needs-attention={needsAttention ? "true" : undefined}>
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-ink-light transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <span className="min-w-0 truncate text-xs font-semibold text-gray-600">{title}</span>
+          {needsAttention && (
+            <span className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs attention</span>
+          )}
+        </button>
+        <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
+      </div>
+      <div id={bodyId} hidden={!open} className="space-y-3 px-4 pb-4">
+        {children}
+      </div>
     </div>
   );
 }
