@@ -15,7 +15,10 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 1. **Start** — upload a resume / existing profile, or start from a blank form.
 2. **Upload profile** — the file is read and pre-fills the form; a single note above the form asks you to review every
    section (`ExtractionSummary`).
-3. **Edit details** — every field is editable (tags for skills/tools, add / remove / reorder items). Required fields
+3. **Edit details** — every field is editable (tags for tools, add / remove / reorder items). Project and employer
+   cards collapse to "Project N – name – dates" with a *Needs attention* badge when a field in them has a problem
+   (Expand all / Collapse all; after upload only Project 1 and any card with a problem are open; *Add project* puts a new
+   open Project 1 at the top). Internal skills are a compact table (Skill | Rating | move | remove). Required fields
    (name, job title, experience summary / years of experience, overview, one education entry, one skill) are marked in red when missing. There is **no save
    control here**: an internal profile is saved only by **Submit** on Preview & Submit (below).
 4. **Preview & Submit** (internal; **Preview** for external, which has no Submit) — pressing *Preview & Submit →*
@@ -131,6 +134,9 @@ same PDF.
 - Memory / CPU (measured): one conversion takes ~1.2 s and ~220 MB peak for LibreOffice; at most 2 run at once per
   Node process, so allow ~500 MB on top of the app.
 - Smoke test after deploy: open Preview for any profile, or `npm run test:render -- --pdf` on the box.
+- **Teams employee data** (IB codes, team list, profile links; optional): Python 3.10+ and pymssql
+  (`pip install -r ops/requirements.txt`), `ops/teams_db.py` copied next to the server (or `TEAMS_DB_SCRIPT`), the
+  `TEAMS_SQL_*` settings, and network access to the Teams SQL Server. See [docs/TEAMS-DB.md](docs/TEAMS-DB.md).
 
 ## Templates
 
@@ -195,6 +201,10 @@ cases, for example `npm run test:render -- --pdf --only='nine|sidebar'`.
 - `lib/publicOrigin.ts` — public address for sign-in / sign-out redirects behind a proxy
 - `components/SavedProfileDocument.tsx` — the PDF shown on My Profiles and Profile Hub pages
 - `scripts/patch-templates.py` — generates `public/templates/*.docx` from `docs/template-backups/`
+- `ops/teams_db.py`, `lib/teamsClient.ts` — the Teams employee data, read live (docs/TEAMS-DB.md)
+- `lib/teamAccess.ts` — who may see the team list and open whose `/profile/<ib_code>`
+- `lib/db/teamProfiles.ts`, `components/TeamList.tsx`, `app/profile/[ibCode]/page.tsx` — primary profiles by email, the team list, the profile link
+- `components/SkillsTable.tsx`, `components/useCollapsibleList.ts` — the skills table and the collapsible cards on Edit details
 
 ## Develop
 
@@ -218,7 +228,8 @@ server. Copy `.env.example` to `.env.local` for development; a production build 
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Open in Google Docs (needed at build time; optional) |
 | `SOFFICE_PATH`, `PDF_FONTS_DIR` | PDF (optional, see [PDF](#pdf)) |
 | `NEXT_PUBLIC_BASE_PATH` | Sub-path hosting (default none) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Read by `lib/sync/adminClient.ts` alone (client-name registry sync and read); also seed scripts and tests. Leave unset until the compliance migrations are applied |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Read by `lib/sync/adminClient.ts` alone (client-name registry sync and read, and the read-only profile reads for **leads**: see [Teams data](#teams-data-ib-codes-team-list-profile-links)); also seed scripts and tests. Without it, leads who are not managers or admins cannot open other people's profiles |
+| `TEAMS_SQL_HOST`, `TEAMS_SQL_PORT`, `TEAMS_SQL_DATABASE`, `TEAMS_SQL_USER`, `TEAMS_SQL_PASSWORD` (**secret**), `TEAMS_SQL_ENCRYPT`, `TEAMS_DB_MODE`, `TEAMS_DB_PYTHON`, `TEAMS_DB_SCRIPT` | Teams employee data, read only by `ops/teams_db.py` (optional; `TEAMS_DB_MODE=mock` for fictional employees). See [docs/TEAMS-DB.md](docs/TEAMS-DB.md) |
 | `COMPLIANCE_ENFORCE`, `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SA_CLIENT_EMAIL`, `GOOGLE_SA_PRIVATE_KEY` (**secret**), `SYNC_CRON_SECRET` (**secret**), `SYNC_TAB_NAMES`, `SYNC_TIMEZONE`, `GOOGLE_SA_KEY_CREATED` | Client-name compliance and its Google Sheets sync (all optional; off by default). See [docs/COMPLIANCE.md](docs/COMPLIANCE.md) |
 
 **Redirects behind a reverse proxy.** The Node process only sees its own address (`localhost:3000`), so
@@ -226,7 +237,7 @@ server. Copy `.env.example` to `.env.local` for development; a production build 
 `X-Forwarded-Host` / `X-Forwarded-Proto`, then `Host`, then the request origin. Odd hosts are rejected. Set `SITE_URL`
 in production.
 
-**Protected routes** (`proxy.ts`): `/login`, `/internal`, `/external`, `/profiles/*`, `/manage/*`, `/admin/*`, `/api/extract`,
+**Protected routes** (`proxy.ts`): `/login`, `/internal`, `/external`, `/profiles/*`, `/profile/*`, `/manage/*`, `/admin/*`, `/api/extract`,
 `/api/profiles`, `/api/pdf`, `/api/compliance/check`, `/api/admin/*`: signed-out pages go to `/login`, signed-out API calls get 401. `/instructions` and
 `/style-guide` are public. Deploy bundles are kept in `../deploy/`; the production env file there holds the Groq key
 and must never be zipped into a bundle or committed.
@@ -237,6 +248,33 @@ An **internal** profile must not name a client, company or project from the busi
 database on the 5th and 20th and on demand). The server refuses such a profile at Preview, PDF and Submit when `COMPLIANCE_ENFORCE=on`;
 the Edit step marks the text. External profiles are not checked (confirmed by Paarth/HR, 4 Nov 2026). Administrators get `/admin/compliance` (status, run history, names to review, "Synchronise now"). It is **off by
 default**. Everything about it, including how to deploy it safely, is in [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
+
+## Teams data: IB codes, team list, profile links
+
+Employee facts (IB code, email, name, role, delivery unit, department, manager) come **live** from the Teams app's SQL
+Server through `ops/teams_db.py`, run by the Next.js server only (`lib/teamsClient.ts`, 10-minute in-memory cache). Nothing
+from it is stored. Locally and for the demo `TEAMS_DB_MODE=mock` gives fictional employees. Details:
+[docs/TEAMS-DB.md](docs/TEAMS-DB.md).
+
+- **PDF file name:** `IBCode_FullName_Role.pdf` with the profile owner's IB code (else `FullName_Role_InfoBeans.pdf`).
+- **`/profile/<ib_code>`** (the link the Teams app uses): that person's primary profile, read-only, with Download PDF, or
+  "No profile yet". Sign-in required; a signed-out visitor comes back to the link after signing in.
+- **Profile Hub → Team list:** name, IB code, role, delivery unit, department, profile yes / no, View. *My team* (direct and
+  indirect reportees, the default) or *All team members*; filters for delivery unit and department; search by name or IB code.
+  Managers and admins also keep the name search (*Search profiles* tab).
+
+**Access** (decided on the server for every request, `lib/teamAccess.ts`):
+
+| Who | Team list | `/profile/<ib_code>` |
+|---|---|---|
+| Team member (no reportees) | no | their own only |
+| **Lead**: anyone with at least one reportee in the Teams data, whatever their app role | yes | any active employee's |
+| Manager, admin (app role) | yes | any active employee's |
+| Teams data unavailable | managers and admins: "Team list unavailable" | team members: their own (if resolvable); managers and admins as before |
+
+The database cannot know who is a lead, so a lead whose app role is `team_member` reads other people's primary profiles
+through three read-only functions only the service key may run (migration `20261122120000_lead_profile_reads.sql`), and only
+after the server checked the Teams data. Owners, managers and admins read with their own session as everywhere else.
 
 ## Tests
 
@@ -249,6 +287,7 @@ default**. Everything about it, including how to deploy it safely, is in [docs/C
 | `npm run test:sync` | the real registry sync path against the local database with a fake sheet (leaves rows; see docs/COMPLIANCE.md) | local Supabase + seed |
 | `npm run sync:inspect` | reads the real Google Sheet and prints its structure only (no names, no database write) | the Google settings in `.env` |
 | `npm run test:render` | the real Word templates: each optional section present when filled and completely gone when empty, no leftover or split tags, the formatting in the XML (logo crop and size, bullet definition, spacing). Add `-- --pdf` to also convert full / empty / sparse / mixed / long renders as Download PDF does into `/tmp/render-check/` and measure them (the reference format: header, headings, body text, project lines, footer, fonts; bullets, blank lines, sidebar spacing) | nothing (`--pdf`: LibreOffice + poppler) |
+| `npm run test:teams-db` | `ops/teams_db.py` with fake connections and fictional rows (query shape, encryption setting, Exit filter, team walk, no secret in an error) | Python 3 |
 | `npm run test:e2e` | optional browser checks (below) | local Supabase + seed, `npm run dev`, Chrome |
 
 ### End-to-end browser checks (optional)
@@ -386,8 +425,8 @@ link as that account. If that account is not signed in to the browser yet, Googl
 Every signed-in role (`team_member`, `checker`, `manager`, `admin`) can create, save, submit and mark as primary their
 **own** profiles: the write policies check ownership only (migration `20261015120000_every_role_saves_own_profile.sql`).
 Nobody can write someone else's profile; checkers, managers and admins can still read everyone's (managers and admins
-through `/manage`, read-only). Generator, My Profiles and Submit are shown to every role; only Manage is limited to
-managers and admins.
+through `/manage`, read-only). Generator, My Profiles and Submit are shown to every role; Profile Hub to managers, admins
+and leads (see [Teams data](#teams-data-ib-codes-team-list-profile-links)).
 
 ## Primary profile
 

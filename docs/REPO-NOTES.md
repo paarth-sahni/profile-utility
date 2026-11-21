@@ -1,6 +1,6 @@
 # Repo Notes: InfoBeans Profile Generator
 
-Updated 2026-10-22 (HEAD `081f6d5`). The first version of this file (2026-10-05) described the old static, browser-only
+Updated 2026-11-22 (branch `feat/layout-spacing`). The first version of this file (2026-10-05) described the old static, browser-only
 app; that app no longer exists. This is the current map. The [README](../README.md) has the how-to detail (PDF,
 Google Docs, tests, manual checks); this file is the orientation.
 
@@ -49,7 +49,8 @@ managers and admins can read everyone's (managers/admins through Profile Hub onl
 | UI | `components/` (`ProfileWorkflow`, `InternalForm`, `ExternalForm`, `PreviewStep`, `InternalPreviewEditor`, `PlainTextField`, `PdfPreview`, `SavedProfileDocument`, `SiteNav`, ...) |
 | Drafts | `lib/draft.ts`, `lib/draftStorage.ts` (unsaved work kept in `sessionStorage`, restore prompt after a 401) |
 | Compliance | `lib/compliance/*` (matching, gate, cache), `lib/sync/*` (Sheets client, parser, runner, scheduler), `app/api/{compliance,admin,internal}`, `app/admin/compliance`, `ops/*`, `docs/COMPLIANCE.md` |
-| Database | `supabase/migrations/*` (init, RLS, search, audit detail, primary profile, every-role-saves-own), `supabase/seed.sql`, `supabase/tests/*` |
+| Database | `supabase/migrations/*` (init, RLS, search, audit detail, primary profile, every-role-saves-own, lead profile reads), `supabase/seed.sql`, `supabase/tests/*` |
+| Teams employee data | `ops/teams_db.py` (live read, nothing stored; COLUMN MAPPING at its top), `lib/teamsClient.ts`, `lib/teamAccess.ts`, `lib/db/teamProfiles.ts`, `lib/teamList.ts`, `components/TeamList.tsx`, `app/profile/[ibCode]`, `docs/TEAMS-DB.md` |
 
 Database: `app_users`, `profiles` (with `is_primary`), `profile_versions` plus normalised `version_*` tables,
 `audit_log` (append-only), `checker_reviews` / `review_items` (tables exist, screens come later). Writes go through the
@@ -57,6 +58,17 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
 (typo-tolerant, internal profiles only).
 
 ## 4. Recent changes (newest first)
+
+- **2026-11-22** Batch 1 for the demo (branch `feat/layout-spacing`):
+  - **Teams data:** `ops/teams_db.py` reads InfoBeansMD..TeamMemberList live (mapped columns only, Exit excluded, encrypted,
+    read-only); `lib/teamsClient.ts` runs it (execFile, 5 s, 10-minute cache, failures 1 minute). Nothing is stored. Mock mode
+    (`TEAMS_DB_MODE=mock`) until the SQL Server is reachable; the real column names are still guesses (`columns` command).
+  - **PDF name:** `IBCode_FullName_Role.pdf` from the owner's IB code (server-side, `lib/pdfOwner.ts`).
+  - **`/profile/<ib_code>`** and the **Profile Hub team list**, with leads (anyone with a reportee in the Teams data) treated
+    like managers there (`lib/teamAccess.ts`). Leads read other people's primary profiles through service-key-only
+    functions (migration `20261122120000_lead_profile_reads.sql`). Seed user `lead@example.test`.
+  - **Edit details:** collapsible project / employer cards (Add project at the top), internal skills as a table.
+  - **Client-name check:** the Project Link also catches multi-word names written as one word of an address.
 
 - **2026-11-05** Preview & Submit, internal profiles (phase 1 of "edit text on Preview"):
   - **Editable view:** text is edited in a view laid out like the PDF (`components/InternalPreviewEditor.tsx`,
@@ -124,3 +136,6 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
   holds 12 old `.docx` files and a `.textClipping` besides `internal.docx` / `external.docx`, which ship with the
   build and are worth removing before go-live.
 - `docs/tasks/TASK-01-auto-extract.md` and `TASK-02-database-roles.md` are the original briefs; both are implemented.
+- **Teams data in production** needs Python 3.10+ with pymssql on the server, `ops/teams_db.py` deployed next to the
+  standalone server (the build does not copy `ops/`), the `TEAMS_SQL_*` settings, and the service-role key for leads to open
+  other people's profiles. Everything falls back when it is missing (PDF names without the IB code, "Team list unavailable").
