@@ -445,10 +445,10 @@ await t.scenario("Edit details: fields needing attention are marked from the sta
   // 2. the marks go away as the fields are filled
   await t.fillRequired("E2E Marks Person");
   await sleep(300);
-  const left = await ev("document.querySelectorAll('[data-needs-attention=true], label[data-invalid=true]').length");
+  const left = await ev("document.querySelectorAll('[data-needs-attention=true], [data-invalid=true]').length"); // fields and skills-table cells
   check("filling the required fields clears every mark", left === 0, String(left));
   // 3. rating: above 0, at most 5, one decimal
-  const ratingBox = `[...document.querySelectorAll('label')].find(l=>l.querySelector('span')?.innerText.startsWith('Rating out of 5'))?.querySelector('input')`;
+  const ratingBox = `document.querySelector('input[aria-label="Skill 1 rating"]')`;
   const typeRating = async (v) => { await ev(`(()=>{const el=${ratingBox}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(v)}); el.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(80); return ev(`${ratingBox}.value`); };
   await typeRating("");
   check("a rating above 5 cannot be typed (6 is ignored)", (await typeRating("6")) === "");
@@ -493,8 +493,11 @@ await t.scenario("optional sections: 'left out of the document' notes, and only 
   await fill("Name", "E2E Required Only");
   await fill("Job title", "Engineer");
   // a missing field must stop the test here, naming the field, not show up later as a Preview that never opens
-  for (const [label, value] of [["Years of Industry Experience", "4"], ["Overview", "Only the overview."], ["Year", "2014"], ["Qualification", "B.E."], ["Skill", "Java"], ["Rating out of 5 (e.g. 4.5)", "4"]]) {
+  for (const [label, value] of [["Years of Industry Experience", "4"], ["Overview", "Only the overview."], ["Year", "2014"], ["Qualification", "B.E."]]) {
     if (!(await fill(label, value))) throw new Error(`no field labelled "${label}" on the form`);
+  }
+  for (const [name, value] of [["Skill 1 name", "Java"], ["Skill 1 rating", "4"]]) {
+    if (!(await t.fillNamed(name, value))) throw new Error(`no field named "${name}" on the form`);
   }
   await sleep(300);
   await click("Preview & Submit →");
@@ -1105,6 +1108,33 @@ await t.scenario("Edit details: project cards collapse, Add project puts a new o
   await click("Expand all", 'button[aria-label="Expand all projects"]');
   await sleep(200);
   check("Expand all opens every card", (await cards()).every((c) => c.open && c.body));
+});
+
+await t.scenario("Edit details: skills are a table, one row per skill, named inputs, move / remove / Add skill", async () => {
+  await signIn("member");
+  await goto("/internal");
+  await ev("sessionStorage.clear()");
+  await goto("/internal");
+  await click("Get started");
+  await waitFor("!!document.querySelector('label input')", "edit form");
+  await click("Skills", "section button[aria-expanded]");
+  await waitFor("!!document.querySelector('[data-skill-row]')", "skills table");
+  check("one row per skill with a named name and rating box", await ev(`!!document.querySelector('table input[aria-label="Skill 1 name"]') && !!document.querySelector('table input[aria-label="Skill 1 rating"]')`));
+  await t.fillNamed("Skill 1 name", "Fictional Skill A");
+  await click("Add skill");
+  await sleep(300);
+  check("Add skill adds row 2 below and puts the focus in its name box", await ev(`document.activeElement?.getAttribute('aria-label') === 'Skill 2 name'`));
+  await t.fillNamed("Skill 2 name", "Fictional Skill B");
+  await t.fillNamed("Skill 2 rating", "4.5");
+  await sleep(200);
+  await ev(`document.querySelector('button[aria-label="Move skill 2 up"]').click()`);
+  await sleep(200);
+  const order = await ev(`[...document.querySelectorAll('input[aria-label$=" name"][aria-label^="Skill "]')].map(i=>i.value).join('|')`);
+  check("Move up reorders the rows", order === "Fictional Skill B|Fictional Skill A", order);
+  check("the rating moved with its skill", (await ev(`document.querySelector('input[aria-label="Skill 1 rating"]').value`)) === "4.5");
+  await ev(`document.querySelector('button[aria-label="Remove skill 2"]').click()`);
+  await sleep(200);
+  check("Remove deletes the row; the last row cannot be removed", (await ev("document.querySelectorAll('[data-skill-row]').length")) === 1 && (await ev(`document.querySelector('button[aria-label="Remove skill 1"]').disabled`)));
 });
 
 await t.scenario("Teams data (mock): /profile/<ib_code> and the Profile Hub team list follow the access rules", async () => {

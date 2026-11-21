@@ -460,33 +460,6 @@ export function StringListEditor({
   );
 }
 
-/** Card wrapper for an item of an object array (project, experience entry, ...). */
-export function ItemCard({
-  title,
-  index,
-  length,
-  onMove,
-  onRemove,
-  children,
-}: {
-  title: string;
-  index: number;
-  length: number;
-  onMove: (from: number, to: number) => void;
-  onRemove: (index: number) => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border border-gray-200 bg-gray-50 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500">{title}</span>
-        <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
-      </div>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
-}
-
 /** Expand all / Collapse all for one list of cards (projects, employers). */
 export function ListExpandControls({ onAll, what }: { onAll: (open: boolean) => void; what: string }) {
   return (

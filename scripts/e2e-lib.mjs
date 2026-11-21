@@ -186,6 +186,9 @@ export async function startHarness(title) {
     /** Types into the field whose label text is exactly `label` (ignoring "(optional)"), input or textarea. */
     fill: (label, value) =>
       ev(`(()=>{const l=[...document.querySelectorAll('label')].find(l=>(l.querySelector('span')?.textContent??'').replace('(optional)','').trim()===${JSON.stringify(label)}); const i=l?.querySelector('input,textarea'); if(!i) return false; const proto=i.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement; Object.getOwnPropertyDescriptor(proto.prototype,'value').set.call(i,${JSON.stringify(value)}); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`),
+    /** Types into the input whose accessible name (aria-label) is exactly `name`, e.g. "Skill 1 rating". */
+    fillNamed: (name, value) =>
+      ev(`(()=>{const i=document.querySelector('input[aria-label=${JSON.stringify(name)}]'); if(!i) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(value)}); i.dispatchEvent(new Event('input',{bubbles:true})); return true})()`),
     /** Fills the internal blank form with only the required fields (name, job title, years of experience, overview, education, one skill). */
     async fillRequired(name) {
       await h.setName(name);
@@ -197,10 +200,12 @@ export async function startHarness(title) {
         ["Overview", "Only the overview."],
         ["Year", "2014"],
         ["Qualification", "B.E."],
-        ["Skill", "Java"],
-        ["Rating out of 5 (e.g. 4.5)", "4"],
       ]) {
         if (!(await h.fill(label, value))) throw new Error(`fillRequired: no field labelled "${label}" on the form`);
+      }
+      // the skills table: one named box per cell ("Skill 1 name", "Skill 1 rating")
+      for (const [label, value] of [["Skill 1 name", "Java"], ["Skill 1 rating", "4"]]) {
+        if (!(await h.fillNamed(label, value))) throw new Error(`fillRequired: no field named "${label}" on the form`);
       }
       await sleep(300);
     },

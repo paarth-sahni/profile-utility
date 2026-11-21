@@ -5,7 +5,8 @@ import { cleanList, hasContent } from "@/lib/previewModel";
 import { formatYearsExperience, wordCount, type InternalResume } from "@/lib/schemas";
 import { hasErrorUnder } from "@/lib/fieldErrors";
 import { itemTitle } from "@/lib/collapsibleList";
-import { Accordion, AddButton, AreaField, CollapsibleItemCard, Field, ItemCard, ListExpandControls, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import { Accordion, AddButton, AreaField, CollapsibleItemCard, Field, ListExpandControls, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import SkillsTable from "./SkillsTable";
 import { useCollapsibleList } from "./useCollapsibleList";
 
 const BLANK_PROJECT: InternalResume["projects"][number] = {
@@ -175,27 +176,9 @@ export default function InternalForm({
         </Section>
       )}
 
-      <Section
-        title="Skills (with rating out of 5)"
-        invalid={hasErrorUnder(fe, "skills")}
-        actions={<AddButton label="Add skill" onClick={() => set("skills", [...data.skills, { name: "", rating: "" }])} />}
-      >
+      <Section title="Skills (with rating out of 5)" invalid={hasErrorUnder(fe, "skills")}>
         {fe["skills"] && <p className="text-xs font-medium text-brand-600">{fe["skills"]}</p>}
-        {data.skills.map((s, i) => (
-          <ItemCard
-            key={i}
-            title={`Skill ${i + 1}`}
-            index={i}
-            length={data.skills.length}
-            onMove={(from, to) => set("skills", moveItem(data.skills, from, to))}
-            onRemove={(idx) => set("skills", data.skills.filter((_, j) => j !== idx))}
-          >
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <Field label="Skill" {...mk(`skills.${i}.name`)} value={s.name} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
-              <Field label="Rating out of 5 (e.g. 4.5)" rating {...mk(`skills.${i}.rating`)} value={s.rating} onChange={(v) => set("skills", data.skills.map((x, j) => (j === i ? { ...x, rating: v } : x)))} />
-            </div>
-          </ItemCard>
-        ))}
+        <SkillsTable skills={data.skills} onChange={(v) => set("skills", v)} marks={mk} />
       </Section>
 
       <Section title="Certifications" invalid={hasErrorUnder(fe, "certifications")} empty={cleanList(data.certifications).length === 0}>
