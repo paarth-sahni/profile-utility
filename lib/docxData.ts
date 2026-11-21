@@ -10,10 +10,11 @@
  *   both   hasExperienceSummary, hasSpecialization, hasTools, hasCertifications, hasProjects
  *   internal  hasDomains, hasLanguages, hasManagerialExperience; per project: hasDuration, hasTech, hasTeamSize,
  *             hasRole, hasProjectLink, hasDescription, hasResponsibilities, hasNext
- *   internal page breaks (units that never split, see section 5 of the patcher): per project isFirst and
+ *   internal page breaks (units that never split, see section 5 of the patcher): educationGapAfter; per project isFirst and
  *             firstX / restX for X = Tech, TeamSize, Role, ProjectLink; skillsHead / skillsRest and the same for
  *             certifications, managerial, domains, languages; per project descriptionWhole / descriptionLong with
- *             descriptionHead / Body / Tail (a description of more than 6 lines)
+ *             descriptionHead / Body / Tail / descriptionHasBody (a project description of more than 3 lines; a custom
+ *             section's, more than 6: DESCRIPTION_MAX_WHOLE)
  *   external  hasExperience; per project: hasDuration, hasTeamSize, hasRole, hasDescription,
  *             hasResponsibilities, hasNext; per employer: hasPosition, hasDuration, hasHighlights
  *   external page breaks: per project isFirst, firstX / restX for X = TeamSize, Role and the description pieces (as
@@ -68,7 +69,7 @@ function prepareExternal(d: ExternalResume): Record<string, unknown> {
         hasRole: real(p.role),
         description: text(p.description),
         hasDescription: real(p.description),
-        ...descriptionUnits("external", p.description),
+        ...descriptionUnits("external", p.description, DESCRIPTION_MAX_WHOLE.project),
         responsibilities: clean(p.responsibilities),
         hasResponsibilities: clean(p.responsibilities).length > 0,
         // as internal: the gap after a project only separates it from the next one (none before the Experience heading)
@@ -163,7 +164,7 @@ function prepareCustomSections(list: ExternalResume["customSections"] | undefine
       restFields: fields.slice(1),
       hasDescription,
       description: s.description,
-      ...descriptionUnits("external", s.description),
+      ...descriptionUnits("external", s.description, DESCRIPTION_MAX_WHOLE.custom),
       sectionGap: next,
     };
   });
@@ -179,16 +180,24 @@ export const DESCRIPTION_COLUMN_PT: Record<TemplateId, number> = { internal: 329
 const DESCRIPTION_SIZE_PT = 11;
 
 /**
- * Page breaks: a description of up to 6 lines is one unit that never splits (descriptionWhole); a longer one is printed as
- * its first 2 lines, the middle and its last 2 lines (descriptionHead / Body / Tail: the first and last are units), so a
- * page break inside it leaves at least 2 lines on each side. LibreOffice ignores widow / orphan control in table cells.
+ * Page breaks: the longest description that is never split. A project's description (both templates) is kept whole up to 3
+ * lines, and its first lines go with the project's heading, name and fields (one unit): a longer one may continue on the next
+ * page. A custom section's description (external) is kept whole up to 6 lines.
  */
-function descriptionUnits(template: TemplateId, description: string | undefined): Record<string, unknown> {
+export const DESCRIPTION_MAX_WHOLE = { project: 3, custom: 6 } as const;
+
+/**
+ * Page breaks: a description of up to `maxWhole` lines is never split (descriptionWhole); a longer one is printed as its first
+ * 2 lines, the middle (descriptionHasBody: none for a description of 4 lines) and its last 2 lines (descriptionHead / Body /
+ * Tail: the first and last in units), so a page break inside it leaves at least 2 lines on each side. LibreOffice ignores
+ * widow / orphan control in table cells.
+ */
+function descriptionUnits(template: TemplateId, description: string | undefined, maxWhole: number): Record<string, unknown> {
   const value = text(description);
-  const split = value ? splitDescription(value, DESCRIPTION_COLUMN_PT[template], DESCRIPTION_SIZE_PT) : { whole: true as const };
+  const split = value ? splitDescription(value, DESCRIPTION_COLUMN_PT[template], DESCRIPTION_SIZE_PT, maxWhole) : { whole: true as const };
   return split.whole
     ? { descriptionWhole: real(value), descriptionLong: false }
-    : { descriptionWhole: false, descriptionLong: true, descriptionHead: split.head, descriptionBody: split.body, descriptionTail: split.tail };
+    : { descriptionWhole: false, descriptionLong: true, descriptionHead: split.head, descriptionBody: split.body, descriptionHasBody: split.body !== "", descriptionTail: split.tail };
 }
 
 /** Internal page breaks: a list's first item goes with its section heading (one unit), the rest one unit each. */
@@ -231,7 +240,8 @@ function laterSections(sections: [string, boolean][]): Record<string, boolean> {
 
 
 /**
- * Page breaks: the first field a project has goes with its heading and name (firstX), the others follow (restX). `has` lists
+ * Page breaks: every field is in the project's first unit with its heading, name and the start of its description; the first
+ * one a project has (firstX) has the space after the name before it, the others (restX) the space between fields. `has` lists
  * the template's fields in their order (internal: Tech, TeamSize, Role, ProjectLink; external: TeamSize, Role).
  */
 function fieldFlags(has: Record<string, boolean>): Record<string, boolean> {
@@ -273,7 +283,7 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
         hasProjectLink: real(p.projectLink),
         description: text(p.description),
         hasDescription: real(p.description),
-        ...descriptionUnits("internal", p.description),
+        ...descriptionUnits("internal", p.description, DESCRIPTION_MAX_WHOLE.project),
         responsibilities: clean(p.responsibilities),
         hasResponsibilities: clean(p.responsibilities).length > 0,
         // the blank line after a project only separates it from the next one (none after the last: no extra empty page)
@@ -288,6 +298,8 @@ function prepareInternal(d: InternalResume): Record<string, unknown> {
   return {
     // page breaks: a sidebar section's closing gap (its spacer and the next heading's space) only when another follows
     ...laterSections([["skills", true], ["certifications", certifications.length > 0], ["tools", tools.length > 0], ["managerial", managerial.length > 0], ["domains", domains.length > 0], ["languages", languages.length > 0]]),
+    // main column: Education & Training ends with the space before the "Projects" heading when projects follow
+    educationGapAfter: projects.length > 0,
     name: d.name,
     jobTitle: d.jobTitle,
     experienceSummary: text(d.experienceSummary),

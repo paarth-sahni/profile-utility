@@ -12,10 +12,10 @@
 import fs from "node:fs";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
-import { DESCRIPTION_COLUMN_PT, prepareData } from "./lib/docxData.ts";
+import { DESCRIPTION_COLUMN_PT, DESCRIPTION_MAX_WHOLE, prepareData } from "./lib/docxData.ts";
 import { convertDocxToPdf, withoutEmbeddedFonts } from "./lib/pdfRender.ts";
 import { measurePdf } from "./scripts/pdf-measure.mjs";
-import { descriptionLineCounts, pageBreakProblems } from "./scripts/pdf-pages.mjs";
+import { descriptionLineCounts, MAX_WHOLE, pageBreakProblems } from "./scripts/pdf-pages.mjs";
 import { wrapLines } from "./lib/textMetrics.ts";
 
 const assert = (cond, msg) => {
@@ -268,7 +268,7 @@ const longSidebar = {
 
 // Descriptions of every length (fictional): built from these sentences, so a description of about n lines is easy to make.
 // With --pdf, *-desc-<k> shift everything down by k overview lines, so each description meets the foot of a page at
-// every line: a description of up to 6 lines must never split, a longer one keeps at least 2 lines on each side.
+// every line: a project description of up to 3 lines must never split, a longer one keeps at least 2 lines on each side.
 const SENTENCES = [
   "The platform collects orders from a fictional chain of garden centres and plans next-day deliveries by van.",
   "Store staff see stock levels per aisle and can reserve plants for customers who order by phone.",
@@ -356,6 +356,9 @@ const externalSections = (k) => {
   return { ...base, ...SECTIONS_PROFILE, experience: base.experience.map((x, i, all) => (i === all.length - 1 ? { ...x, highlights: [...x.highlights, ...extra] } : x)) };
 };
 const externalAchievements = (k) => ({ ...externalLong(k), ...SECTIONS_PROFILE, name: "Tomas Lindqvist", experience: [] });
+
+// the page-break check (scripts/pdf-pages.mjs) and the data (lib/docxData.ts) agree on the descriptions never split
+assert(JSON.stringify(MAX_WHOLE) === JSON.stringify(DESCRIPTION_MAX_WHOLE), `pdf-pages MAX_WHOLE ${JSON.stringify(MAX_WHOLE)} differs from docxData DESCRIPTION_MAX_WHOLE ${JSON.stringify(DESCRIPTION_MAX_WHOLE)}`);
 
 // ------------------------------------------------------------------------------------------------- rendering
 const templateXml = {};

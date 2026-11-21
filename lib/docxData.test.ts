@@ -166,3 +166,27 @@ test("page breaks: a description of up to 6 lines is one unit; a longer one come
   const none = (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], description: "N/A" }] }) as P).projects[0];
   assert.deepEqual([none.descriptionWhole, none.descriptionLong], [false, false]);
 });
+
+// Page breaks: a project description stays whole up to 3 lines (and goes with the project's start); a longer one is cut into
+// its first 2 lines, the middle (none for 4 lines) and its last 2. A custom section's description stays whole up to 6 lines.
+test("page breaks: project descriptions whole up to 3 lines, cut 2 / middle / 2 above; custom sections up to 6", () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `Line ${i + 1} of a fictional description.`).join("\n");
+  const project = (n: number) => (prepareData("internal", { ...FULL_INTERNAL, projects: [{ ...FULL_INTERNAL.projects[0], description: lines(n) }] }).projects as Record<string, unknown>[])[0];
+  assert.equal(project(3).descriptionWhole, true);
+  assert.equal(project(3).descriptionLong, false);
+  const four = project(4);
+  assert.equal(four.descriptionLong, true);
+  assert.equal(four.descriptionHasBody, false, "4 lines: 2 + 2, no middle paragraph");
+  assert.equal(four.descriptionHead, "Line 1 of a fictional description.\nLine 2 of a fictional description.");
+  assert.equal(four.descriptionTail, "Line 3 of a fictional description.\nLine 4 of a fictional description.");
+  const five = project(5);
+  assert.equal(five.descriptionHasBody, true);
+  assert.equal(five.descriptionBody, "Line 3 of a fictional description.");
+  const external = prepareData("external", {
+    ...FULL_EXTERNAL,
+    projects: [{ ...FULL_EXTERNAL.projects[0], description: lines(4) }],
+    customSections: [{ title: "Talks", fields: [], description: lines(4) }],
+  });
+  assert.equal((external.projects as Record<string, unknown>[])[0].descriptionLong, true, "external projects follow the same 3-line rule");
+  assert.equal((external.customSections as Record<string, unknown>[])[0].descriptionWhole, true, "a custom section's 4 lines stay whole");
+});

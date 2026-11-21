@@ -448,11 +448,13 @@ AFTER_CLOSE = {"internal": [], "external": []}  # (the external one, END_OF_PROJ
 # table row marked "can't split" (w:cantSplit) on one page. So each unit that must not be cut is a one-row table of its
 # own inside its column: borderless, no cell margins, as wide as the column's text, so its text sits exactly where the
 # paragraphs did. The units:
-#   - a project's start: ("Projects" before the first one,) "Project N - <dates>", the name and the project's first
-#     field (firstX, set in lib/docxData.ts); each further field (restX) on its own;
+#   - a project's start: ("Projects" before the first one,) "Project N - <dates>", the name, EVERY field (firstX / restX,
+#     set in lib/docxData.ts) and the description (whole up to 3 lines, else its first 2 lines): one unit (project_units),
+#     so a project never breaks before its description has started; the bullets may continue on the next page;
 #   - each bullet;
-#   - a description of up to 6 lines (descriptionWhole); a longer one as its first 2 lines (a unit), the middle (free to run
-#     across a page break) and its last 2 lines (a unit), so a break leaves at least 2 lines on each side: lib/docxData.ts
+#   - a project description of up to 3 lines (descriptionWhole, in the project's start; a custom section's: up to 6, in its own
+#     unit); a longer one as its first 2 lines (in the project's start), the middle (free to run across a page break) and its
+#     last 2 lines (a unit), so a break leaves at least 2 lines on each side: lib/docxData.ts
 #     estimates the lines from Lexend Light's widths (lib/textMetrics.ts), as LibreOffice ignores widow control in cells;
 #   - in the sidebar: a section heading with its first item, then each further item (a skill: its name and rating);
 #     the tool line with its heading.
@@ -504,18 +506,27 @@ def description_units(para: str, col: str, after: str = "") -> str:
     )
 
 
+def project_units(start: str, fields: list, p: dict, description: str, col: str, gaps: dict) -> str:
+    """A project up to its bullets: `start` (its heading lines), its fields (template field list, label / value paragraph
+    numbers of p) and the description paragraph. All of it up to the description (whole up to 3 lines, else its first 2 lines)
+    is ONE unit; a longer description's middle (none for 4 lines: descriptionHasBody) and its last 2 lines (a unit) follow, so
+    it may continue on the next page with 2+ lines on each side. Every gap stays where it was (closing)."""
+    piece = lambda tag: description.replace("{description}", "{" + tag + "}")
+    first = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in fields) + closing("first", gaps)
+    rest = "".join(cond(f"rest{k}", p[label] + p[value] + closing(f"rest{k}", gaps)) for k, label, value in fields)
+    opening = cond("hasDescription", cond("descriptionWhole", description + closing("description", gaps)) + cond("descriptionLong", piece("descriptionHead")))
+    long_rest = cond("hasDescription", cond("descriptionLong", cond("descriptionHasBody", piece("descriptionBody")) + unit(piece("descriptionTail") + closing("description", gaps), col)))
+    return unit(start + first + rest + opening, col) + long_rest
+
+
 def internal_units(p: dict) -> dict:
     """The projects (replacing paragraphs 12-39) and the sidebar (40-68) as units; p: paragraph -> formatted xml."""
     # the gaps inside a project: before a field label, the description, the bullets; between projects (none after the last:
     # no extra empty page)
     gaps = {"Label": blank_xml(LABEL_GAP), "Description": blank_xml(DESCRIPTION_GAP), "Bullets": PROJECT_SPACER, "Next": p[38]}
-    first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in PROJECT_FIELDS)
-    rest_fields = "".join(cond(f"rest{k}", unit(p[label] + p[value] + closing(f"rest{k}", gaps), "main")) for k, label, value in PROJECT_FIELDS)
     projects = cond(
         "projects",
-        unit(cond("isFirst", p[13]) + p[16] + p[17] + first_field + closing("first", gaps), "main")
-        + rest_fields
-        + cond("hasDescription", description_units(p[34], "main", closing("description", gaps)))
+        project_units(cond("isFirst", no_before(p[13])) + p[16] + p[17], PROJECT_FIELDS, p, p[34], "main", gaps)
         + cond("hasResponsibilities", cond("bulletUnits", unit(p[36].replace("{.}", "{text}") + cond("last", closing("bullets", gaps)), "main"))),
     ) + END_OF_CELL
 
@@ -536,7 +547,11 @@ def internal_units(p: dict) -> dict:
         + cond("hasLanguages", listed("languages", no_before(p[65]), item(67), ""))
         + END_OF_CELL
     )
-    return {12: projects, **{i: "" for i in range(13, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
+    # Education & Training (heading and the {#education} loop) is one unit that ends with the space that was before the
+    # "Projects" heading, when projects follow (educationGapAfter): with the first project's start now a large unit, it often
+    # moves to the next page, and that space must not go with it to the top of the page
+    education = unit(p[7] + p[8] + p[9] + p[10] + p[11] + cond("educationGapAfter", blank_xml(section_before(below(BODY_LINE)))), "main")
+    return {7: education + projects, **{i: "" for i in range(8, 40)}, 40: sidebar, **{i: "" for i in range(41, 69)}}
 
 
 EXTERNAL_FIELDS = [("TeamSize", 31, 32), ("Role", 35, 36)]  # label, value
@@ -557,13 +572,9 @@ def external_units(p: dict) -> dict:
     # the gaps inside a project as internal; after the last project, the gap before the Experience heading (END_OF_PROJECTS
     # and, with employers, that heading's space)
     gaps = {"Label": blank_xml(LABEL_GAP), "Description": p[37], "Bullets": p[39], "Next": p[43], "End": END_OF_PROJECTS + cond("projectsGapAfter", heading_gap)}
-    first_field = "".join(cond(f"first{k}", blank_xml(FIRST_LABEL_GAP) + p[label] + p[value]) for k, label, value in EXTERNAL_FIELDS)
-    rest_fields = "".join(cond(f"rest{k}", body(p[label] + p[value] + closing(f"rest{k}", gaps))) for k, label, value in EXTERNAL_FIELDS)
     projects = cond(
         "projects",
-        body(cond("isFirst", no_before(p[25])) + p[27] + p[28] + first_field + closing("first", gaps))  # ("Projects/Experience",) heading, name, first field
-        + rest_fields
-        + cond("hasDescription", description_units(p[38], "body", closing("description", gaps)))
+        project_units(cond("isFirst", no_before(p[25])) + p[27] + p[28], EXTERNAL_FIELDS, p, p[38], "body", gaps)  # ("Projects/Experience",) heading, name, ...
         + cond("hasResponsibilities", cond("bulletUnits", body(p[41].replace("{.}", "{text}") + cond("last", closing("bullets", gaps))))),
     )
     # what ends a section that is followed by another: after bullets the bullets end where a section's spacer ends (as after the

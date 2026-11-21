@@ -3,8 +3,10 @@
  *   - no section heading, "Project N" heading, project name or field label is the last line of its column on a page
  *     (a project starts with its heading, name and at least its first field on one page);
  *   - no bullet runs across a page break;
- *   - a project description, or an external custom section's description, of up to 6 lines never runs across a page
- *     break; a longer one keeps at least 2 lines on each side of it;
+ *   - a project's start stays on one page: its heading, name, every field and its description (all of it up to 3 lines,
+ *     else its first 2 lines; without a description, up to the first bullet); its bullets may continue on the next page;
+ *   - a project description of up to 3 lines, or an external custom section's description of up to 6 lines, never runs
+ *     across a page break; a longer one keeps at least 2 lines on each side of it (MAX_WHOLE);
  *   - internal: no sidebar item runs across a page break: a skill name with its rating, a certification, the tool line,
  *     a managerial item, a domain, a language;
  *   - external: an employer's company, position and dates are never the last line of a page (they stay with the first
@@ -95,20 +97,23 @@ function descriptionLines(lines, text) {
   return null;
 }
 
+/** The longest description never split: a project's, a custom section's (lib/docxData.ts DESCRIPTION_MAX_WHOLE; test-render compares). */
+export const MAX_WHOLE = { project: 3, custom: 6 };
+
 /**
- * The descriptions printed with the page-break rule for descriptions (texts): every project's, and an external profile's custom
- * sections' (a section is printed when it has a title and a field or a description: lib/docxData.ts).
+ * The descriptions printed with the page-break rule for descriptions ({ text, maxWhole }): every project's, and an external
+ * profile's custom sections' (a section is printed when it has a title and a field or a description: lib/docxData.ts).
  */
 function ruledDescriptions(data, template) {
-  const projects = (data?.projects ?? []).map((p) => p.description);
-  const custom = template === "external" ? (data?.customSections ?? []).filter((s) => real(s.title)).map((s) => s.description) : [];
-  return [...projects, ...custom].filter(real);
+  const projects = (data?.projects ?? []).map((p) => ({ text: p.description, maxWhole: MAX_WHOLE.project }));
+  const custom = template === "external" ? (data?.customSections ?? []).filter((s) => real(s.title)).map((s) => ({ text: s.description, maxWhole: MAX_WHOLE.custom })) : [];
+  return [...projects, ...custom].filter((d) => real(d.text));
 }
 
 /** How many lines each description (ruledDescriptions) takes in the PDF ({ text, lines }), for the ones found in it. */
 export function descriptionLineCounts(pages, data, template = "internal") {
   const main = columnLines(pages, template).flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
-  return ruledDescriptions(data, template).flatMap((text) => {
+  return ruledDescriptions(data, template).flatMap(({ text }) => {
     const lines = descriptionLines(main, text);
     return lines ? [{ text, lines: lines.length }] : [];
   });
@@ -170,10 +175,10 @@ export function pageBreakProblems(pages, data, template = "internal") {
       if (indent !== undefined && Math.abs(main[0].x - indent) < 1) problems.push(`${page}: "${main[0].text}" continues a bullet from page ${n}`);
     }
   });
-  // descriptions: up to 6 lines never split; longer ones keep at least 2 lines on each side of a page break
+  // descriptions: up to MAX_WHOLE lines never split; longer ones keep at least 2 lines on each side of a page break
   if (data) {
     const main = cols.flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
-    for (const description of ruledDescriptions(data, template)) {
+    for (const { text: description, maxWhole } of ruledDescriptions(data, template)) {
       const lines = descriptionLines(main, description);
       if (!lines) {
         problems.push(`description "${description.slice(0, 40)}..." not found in the PDF`);
@@ -184,9 +189,30 @@ export function pageBreakProblems(pages, data, template = "internal") {
       const before = lines.filter((l) => l.page === pagesOf[0]).length;
       const after = lines.filter((l) => l.page === pagesOf.at(-1)).length;
       const where = `description "${description.slice(0, 40)}..." (${lines.length} lines)`;
-      if (lines.length <= 6) problems.push(`${where} is split across pages ${pagesOf[0] + 1} and ${pagesOf.at(-1) + 1} (${before} + ${after} lines)`);
+      if (lines.length <= maxWhole) problems.push(`${where} is split across pages ${pagesOf[0] + 1} and ${pagesOf.at(-1) + 1} (${before} + ${after} lines)`);
       else if (before < 2 || after < 2) problems.push(`${where} leaves ${before < 2 ? `${before} line on page ${pagesOf[0] + 1}` : `${after} line on page ${pagesOf.at(-1) + 1}`}`);
     }
+  }
+  // a project's start: from its heading to the end of its description's first lines (all up to 3, else 2) on one page; with no
+  // description, to the line before its first bullet / the next heading
+  if (data) {
+    const main = cols.flatMap((c, page) => c.main.map((l) => ({ ...l, page })));
+    const printed = (data.projects ?? []).filter((p) => Object.values(p).some((v) => (Array.isArray(v) ? v.some(real) : real(v))));
+    main.forEach((l, i) => {
+      if (!isProjectHeading(l)) return;
+      const project = printed[Number(l.text.match(/^Project (\d+)/)[1]) - 1];
+      if (!project) return;
+      let end = i;
+      const description = real(project.description) ? descriptionLines(main.slice(i), project.description) : null;
+      if (description) {
+        const keep = description.length <= MAX_WHOLE.project ? description.length : 2;
+        end = main.indexOf(description[keep - 1], i); // (descriptionLines returns these same line objects)
+      } else {
+        while (end + 1 < main.length && !isBullet(main[end + 1]) && !isProjectHeading(main[end + 1]) && !isHeading(main[end + 1])) end++;
+      }
+      const away = main.slice(i, end + 1).find((m) => m.page !== l.page);
+      if (away) problems.push(`page ${l.page + 1}: "${l.text}" starts here but "${away.text.slice(0, 40)}" (up to its description's first lines) is on page ${away.page + 1}`);
+    });
   }
   // sidebar items: group the sidebar lines (all pages, in order) into the expected items; every item on one page
   if (data && template === "internal") {
