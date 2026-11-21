@@ -6,6 +6,8 @@
  * the earlier one wins and, from the same start, the longer one, so "Acme Bank Limited" is reported once, not as "Acme Bank"
  * plus "Acme". Fuzzy similarity is
  * deliberately not used: a near-miss is never treated as the same company.
+ * scanLink (the Project Link field) also finds a name of several words written as ONE word of a link, as web addresses do
+ * ("northwindtraders.example", "/NorthwindTraders" for "Northwind Traders"): only when it is the whole word, never a part of one.
  */
 import { tokenize } from "./normalize";
 
@@ -33,10 +35,28 @@ export type Matcher = {
   /** Number of registry names that could be compiled (names with no letters or digits are skipped). */
   size: number;
   scan: (text: string) => TextMatch[];
+  /** As scan, plus multi-word names written as one whole word, as in a web address (for the Project Link field). */
+  scanLink: (text: string) => TextMatch[];
 };
+
+/** Earliest first, and at the same start the longest first; anything overlapping an already kept match is dropped. */
+function keepFirst(found: TextMatch[]): TextMatch[] {
+  found.sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
+  const kept: TextMatch[] = [];
+  let lastEnd = -1;
+  for (const m of found) {
+    if (m.start >= lastEnd) {
+      kept.push(m);
+      lastEnd = m.end;
+    }
+  }
+  return kept;
+}
 
 export function buildMatcher(names: readonly RegistryName[]): Matcher {
   const byFirst = new Map<string, Compiled[]>();
+  // names of two or more words by their words written together ("northwind traders" -> "northwindtraders"), for links
+  const byJoined = new Map<string, Compiled[]>();
   let size = 0;
   for (const n of names) {
     const tokens = tokenize(n.name).map((t) => t.value);
@@ -44,10 +64,14 @@ export function buildMatcher(names: readonly RegistryName[]): Matcher {
     const list = byFirst.get(tokens[0]) ?? [];
     list.push({ id: n.id, types: n.types, tokens });
     byFirst.set(tokens[0], list);
+    if (tokens.length > 1) {
+      const joined = tokens.join("");
+      byJoined.set(joined, [...(byJoined.get(joined) ?? []), { id: n.id, types: n.types, tokens }]);
+    }
     size++;
   }
 
-  const scan = (text: string): TextMatch[] => {
+  const scanAll = (text: string): TextMatch[] => {
     if (!text || size === 0) return [];
     const toks = tokenize(text);
     const found: TextMatch[] = [];
@@ -69,18 +93,19 @@ export function buildMatcher(names: readonly RegistryName[]): Matcher {
         found.push({ nameId: c.id, types: c.types, start, end, matchedText: text.slice(start, end) });
       }
     }
-    // earliest first, and at the same start the longest first; drop anything overlapping an already kept match
-    found.sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
-    const kept: TextMatch[] = [];
-    let lastEnd = -1;
-    for (const m of found) {
-      if (m.start >= lastEnd) {
-        kept.push(m);
-        lastEnd = m.end;
-      }
-    }
-    return kept;
+    return found;
   };
 
-  return { size, scan };
+  const scan = (text: string): TextMatch[] => keepFirst(scanAll(text));
+
+  const scanLink = (text: string): TextMatch[] => {
+    if (!text || size === 0) return [];
+    const found = scanAll(text);
+    for (const t of tokenize(text)) {
+      for (const c of byJoined.get(t.value) ?? []) found.push({ nameId: c.id, types: c.types, start: t.start, end: t.end, matchedText: text.slice(t.start, t.end) });
+    }
+    return keepFirst(found);
+  };
+
+  return { size, scan, scanLink };
 }

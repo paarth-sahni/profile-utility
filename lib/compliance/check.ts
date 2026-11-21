@@ -1,6 +1,7 @@
 /**
  * Purpose: scans a profile for registered names, but only where a client can actually be identified: the candidate's name,
- * the job title, and EVERY field of every project (title, duration, tools, team size, role, link, description, bullets).
+ * the job title, and EVERY field of every project (title, duration, tools, team size, role, link, description, bullets). The
+ * Project Link is also checked for a name written as one word of a web address (Matcher.scanLink: "northwindtraders.example").
  * The rest of the profile (overview, skills, tools, certifications, education, ...) is not scanned. A string with real
  * content (not blank, not "N/A") is checked, which is what the Word templates print (see lib/docxData.ts).
  * To change what is covered, change SCANNED_PATH below (one place); every consumer works from the returned paths.
@@ -17,6 +18,8 @@ export const COMPLIANCE_MESSAGE =
 
 /** The field paths that are scanned: the candidate's name, the job title, and anything inside a project. */
 export const SCANNED_PATH = /^(name|jobTitle|projects\.\d+\..+)$/;
+/** The Project Link field: checked as a web address too (see Matcher.scanLink). */
+const LINK_PATH = /^projects\.\d+\.projectLink$/;
 
 function* stringLeaves(value: unknown, path: string): Generator<{ path: string; text: string }> {
   if (typeof value === "string") {
@@ -34,7 +37,8 @@ export function findViolations(matcher: Matcher, data: ResumeData): Violation[] 
   if (matcher.size === 0) return out;
   for (const leaf of stringLeaves(data, "")) {
     if (!SCANNED_PATH.test(leaf.path)) continue;
-    for (const m of matcher.scan(leaf.text)) out.push({ ...m, path: leaf.path });
+    const scan = LINK_PATH.test(leaf.path) ? matcher.scanLink : matcher.scan;
+    for (const m of scan(leaf.text)) out.push({ ...m, path: leaf.path });
   }
   return out;
 }

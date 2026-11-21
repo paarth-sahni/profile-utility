@@ -23,6 +23,11 @@ when the registry is unavailable. In code, `complianceApplies(template)` in `lib
 duration, tools, team size, role, link, description, bullets). The Overview, Skills, Tools, Certifications, Education and the other
 sections are not scanned. The one place that decides this is `SCANNED_PATH` in `lib/compliance/check.ts`.
 
+**The Project Link (22 Nov 2026):** besides the usual whole-word match, a name of several words written as ONE word of a web
+address is caught there too (`northwindtraders.example` or `/NorthwindTraders` for "Northwind Traders"; `Matcher.scanLink` in
+`lib/compliance/match.ts`). It must be the whole word: `contosoportal.example` does not match "Contoso". Other fields keep the
+plain whole-word rule.
+
 Not covered, by decision: names that are not on the list (no unknown-company detection), and project names (the new sheet has none).
 
 ```

@@ -215,3 +215,20 @@ test("cache: an empty registry is a valid registry (nothing to enforce yet) and 
   assert.equal(h.matcher.size, 0);
   assert.deepEqual(h.matcher.scan("Example Client One"), []);
 });
+
+test("the Project Link: a registered name written as one word of the address is refused; the same word elsewhere is not", async () => {
+  // "Example Client One" is a fictional registered name (NAMES above); a link often writes it as one word
+  const withLink = (projectLink: string, description = "") => {
+    const d = internal();
+    d.projects = [{ ...d.projects[0], title: "Orders Platform", projectLink, description }];
+    return d;
+  };
+  for (const link of ["https://exampleclientone.example/orders", "https://portal.example/ExampleClientOne", "https://example-client-one.example"]) {
+    const out = await checkProfile("internal", withLink(link), { mode: "on", getMatcher });
+    assert.ok(out.violations.some((v) => v.path === "projects.0.projectLink"), `${link} must be refused`);
+  }
+  const fine = await checkProfile("internal", withLink("NDA", "Built on exampleclientone tooling"), { mode: "on", getMatcher });
+  assert.equal(fine.violations.length, 0, "outside the link a joined word is not a name (whole-word phrase rule)");
+  const res = await gateResponse("internal", withLink("https://exampleclientone.example"), { mode: "on", getMatcher });
+  assert.equal(res?.status, 422, "the gate refuses the PDF / save");
+});

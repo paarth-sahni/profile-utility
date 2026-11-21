@@ -144,3 +144,17 @@ test("toDto exposes only path, offsets, typed text and name types", () => {
   const dto = toDto(findViolations(matcher, d)[0]);
   assert.deepEqual(Object.keys(dto).sort(), ["end", "matchedText", "path", "start", "types"]);
 });
+
+test("scanLink: a multi-word name written as one word of a web address, whole words only", () => {
+  // fictional registered names
+  const m = buildMatcher([{ id: "n1", name: "Northwind Traders", types: ["client"] }, { id: "n2", name: "Contoso", types: ["client"] }]);
+  const hits = (t: string) => m.scanLink(t).map((x) => x.matchedText);
+  assert.deepEqual(hits("https://northwindtraders.example/app"), ["northwindtraders"]);
+  assert.deepEqual(hits("https://example.com/NorthwindTraders/orders"), ["NorthwindTraders"]);
+  assert.deepEqual(hits("https://northwind-traders.example"), ["northwind-traders"], "what scan finds is still found");
+  assert.deepEqual(hits("https://www.contoso.example/portal"), ["contoso"]);
+  assert.deepEqual(hits("https://contosoportal.example"), [], "never a part of a word");
+  assert.deepEqual(hits("https://northwindtradersonline.example"), []);
+  assert.deepEqual(hits("NDA"), []);
+  assert.deepEqual(m.scan("https://northwindtraders.example"), [], "plain scan (other fields) is unchanged");
+});
