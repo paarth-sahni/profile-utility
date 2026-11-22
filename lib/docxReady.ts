@@ -30,29 +30,38 @@ export function checkReadyForDocx(template: TemplateId, data: ResumeData): DocxR
 }
 
 
-/** One part of a file name: spaces become "_", anything but letters, digits, "_" and "-" is removed. */
-const fileNamePart = (value: string | undefined): string =>
+/**
+ * One word of the name: split at spaces and punctuation, each word's first letter upper-cased (the rest kept as typed), then
+ * everything but letters and digits removed: "AI Intern" -> "AIIntern", "saumya jain" -> "SaumyaJain",
+ * "Sr. Software-Engineer" -> "SrSoftwareEngineer", "O'Brien" -> "OBrien".
+ */
+export const nameWord = (value: string | undefined): string =>
   (value ?? "")
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/[^\p{L}\p{N}_-]/gu, "")
-    .replace(/_{2,}/g, "_")
-    .replace(/^[_-]+|[_-]+$/g, "");
+    .replace(/['\u2019]/g, "")
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((w) => {
+      const [first = "", ...rest] = [...w];
+      return first.toUpperCase() + rest.join("");
+    })
+    .join("");
+
+/** An IB code as it comes from TeamMemberCode (trimmed), or "" when there is none or it holds unsafe characters. */
+const safeIbCode = (ibCode: string | null | undefined): string => {
+  const code = (ibCode ?? "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(code) ? code : "";
+};
 
 /**
- * The file name of every PDF download (Preview, My Profiles, Manage; both templates): "FullName_Role_InfoBeans.pdf" with
- * underscores between all parts and inside them, e.g. "Asha_Rao_AI_Intern_InfoBeans.pdf". The one place the format is
- * decided: the IB employee code can be added to `parts` here once it syncs from the Team app.
+ * The name of a profile, the one place the format is decided: "<IBCode>_<NameSurname>_<Role>_InfoBeans", e.g.
+ * "7224_SaumyaJain_AIIntern_InfoBeans"; without an IB code "SaumyaJain_AIIntern_InfoBeans". Used for the PDF download
+ * (pdfFileName) and the saved-profile name in My Profiles and Profile Hub. The IB code is the profile OWNER's, from the
+ * Teams data (looked up on the server: lib/pdfOwner.ts, lib/ownerCodes.ts). No name -> "Profile"; no role -> left out.
  */
-export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }, ibCode?: string | null): string {
-  // with the owner's IB code (from the Teams data, looked up on the server): IBCode_FullName_Role.pdf, else FullName_Role_InfoBeans.pdf
-  const code = ibCode && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(ibCode.trim()) ? ibCode.trim().toUpperCase() : "";
-  if (code) return `${[code, fileNamePart(name) || "Profile", fileNamePart(jobTitle)].filter(Boolean).join("_")}.pdf`;
-  return `${profileDisplayName(name ?? "", jobTitle ?? "")}.pdf`;
+export function profileDisplayName(name: string, jobTitle: string, ibCode?: string | null): string {
+  return [safeIbCode(ibCode), nameWord(name) || "Profile", nameWord(jobTitle), "InfoBeans"].filter(Boolean).join("_");
 }
 
-/** How a saved profile is named in the My Profiles and Manage lists: the PDF's name without ".pdf", e.g. "Abdul_Technology_Delivery_Manager_InfoBeans". */
-export function profileDisplayName(name: string, jobTitle: string): string {
-  const parts = [fileNamePart(name) || "Profile", fileNamePart(jobTitle), "InfoBeans"].filter(Boolean);
-  return parts.join("_");
+/** The file name of every PDF download (Preview, My Profiles, Profile Hub; both templates): the profile name + ".pdf". */
+export function pdfFileName({ name, jobTitle }: { name?: string; jobTitle?: string }, ibCode?: string | null): string {
+  return `${profileDisplayName(name ?? "", jobTitle ?? "", ibCode)}.pdf`;
 }

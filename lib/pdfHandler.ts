@@ -8,8 +8,8 @@
  *   4. the PDF is made (503 when LibreOffice is missing, 500 when it fails)
  *   5. a download (body `consent: { action: "download", accepted: true }`): the consent row is written, only now, after
  *      every check passed and the file exists; if that fails the PDF is not sent (500 CONSENT_FAILED)
- *   6. the file name: IBCode_FullName_Role.pdf with the profile OWNER's IB code (the signed-in user, or the owner of the
- *      saved version named by `versionId`), looked up on the server; FullName_Role_InfoBeans.pdf without one or on any failure
+ *   6. the file name: IBCode_NameSurname_Role_InfoBeans.pdf with the profile OWNER's IB code (the signed-in user, or the owner of the
+ *      saved version named by `versionId`), looked up on the server; NameSurname_Role_InfoBeans.pdf without one or on any failure
  * A preview (no `consent`) records nothing. Nothing is stored and no profile content is logged.
  */
 import { checkReadyForDocx, pdfFileName } from "./docxReady";

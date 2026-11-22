@@ -16,6 +16,8 @@ import SavedProfileDocument from "@/components/SavedProfileDocument";
 import { canUseGoogleDocs, getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, getProfileForManager, getVersionForManager } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
+import { ibCodeOf } from "@/lib/ownerCodes";
+import { teams } from "@/lib/teamsClient";
 
 export const metadata: Metadata = { title: "Profile (read-only) — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -35,12 +37,12 @@ export default async function ManageProfilePage({ params }: { params: Promise<{ 
   }
   if (!found) notFound(); // missing, or not the member's primary profile
   const { profile, latestVersionId } = found;
-  const shown = latestVersionId ? await getVersionForManager(latestVersionId) : null;
+  const [shown, ibCode] = await Promise.all([latestVersionId ? getVersionForManager(latestVersionId) : null, ibCodeOf(teams, profile.ownerEmail)]);
 
   return (
     <div className="w-full text-ink">
       <PageHero
-        title={profileDisplayName(profile.candidateName, profile.jobTitle)}
+        title={profileDisplayName(profile.candidateName, profile.jobTitle, ibCode)}
         subtitle={`Primary profile · owner ${profile.ownerName || profile.ownerEmail || "unknown"} · read-only`}
         compact
       />

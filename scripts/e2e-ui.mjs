@@ -46,9 +46,9 @@ async function saveProfile(data, label = "Base", reviewFlags = []) {
 /**
  * The PDF file name for a profile owned by a seeded user: with the Teams data in mock mode (TEAMS_DB_MODE=mock in .env.local,
  * read by the dev server too) the owner's fictional IB code comes first (docs/TEAMS-DB.md: admin IB9007, member IB9003);
- * without it the name ends in _InfoBeans.
+ * without it the name starts with the name. <IBCode>_<NameSurname>_<Role>_InfoBeans.pdf, name and role one word each.
  */
-const pdfName = (ibCode, nameRole) => (process.env.TEAMS_DB_MODE === "mock" ? `${ibCode}_${nameRole}.pdf` : `${nameRole}_InfoBeans.pdf`);
+const pdfName = (ibCode, nameRole) => (process.env.TEAMS_DB_MODE === "mock" ? `${ibCode}_${nameRole}_InfoBeans.pdf` : `${nameRole}_InfoBeans.pdf`);
 
 function asPrimary(profileId) {
   sql(`update profiles set is_primary = false where owner_id = (select owner_id from profiles where id = '${profileId}') and is_primary`);
@@ -192,7 +192,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   await waitFor(`window.__blobs.length > ${blobsBefore}`, "manager PDF download");
   check("the manager's consent was recorded before the download", managerConsents() === consentsBefore + 1);
   const managerPdf = await t.lastPdf();
-  check("Download PDF on /manage/[id] saves a PDF named after the OWNER (IBCode_FullName_Role.pdf, or FullName_Role_InfoBeans.pdf)", managerPdf.isPdf && managerPdf.name === pdfName("IB9007", "E2E_Docs_Person_Senior_Engineer") && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
+  check("Download PDF on /manage/[id] saves a PDF named after the OWNER (IBCode_NameSurname_Role_InfoBeans.pdf, or without the code)", managerPdf.isPdf && managerPdf.name === pdfName("IB9007", "E2EDocsPerson_SeniorEngineer") && managerPdf.text.includes("E2E Docs Person"), JSON.stringify({ name: managerPdf.name, isPdf: managerPdf.isPdf }));
   check("/manage/[id] stays read-only (no editing or saving controls)", !manage.includes("Save") && !manage.includes("Open in editor"));
   await clickGoogle();
   await waitFor("document.querySelector('[data-google-docs]')?.innerText.includes('Created in your Google Drive')", "manager created");
@@ -226,7 +226,7 @@ await t.scenario("Open in Google Docs (only on the /manage profile pages, manage
   await t.downloadWithConsent();
   await waitFor(`window.__blobs.length > ${memberBlobs}`, "member PDF download");
   const memberPdf = await t.lastPdf();
-  check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === pdfName("IB9003", "E2E_Member_Docs_Person_Senior_Engineer") && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);
+  check("Download PDF on My Profiles saves the version as a PDF with the agreed file name", memberPdf.isPdf && memberPdf.name === pdfName("IB9003", "E2EMemberDocsPerson_SeniorEngineer") && memberPdf.text.includes("E2E Member Docs Person"), memberPdf.name);
   await goto("/internal");
   await ev("sessionStorage.clear()");
   await goto("/internal");
@@ -638,7 +638,7 @@ await t.scenario("Preview & Submit (internal): edit the text, View PDF, consent 
   check("the consent was recorded in audit_log (metadata only) with the download", consents("download") === 1 && sql(`select detail::text from audit_log where action='consent_download' and at >= '${since}' order by id desc limit 1`).includes('"template": "internal"'));
   check("exactly one PDF was handed to the browser", (await ev("window.__blobs.length")) === 1);
   const dl = await t.lastPdf();
-  check("the download is a PDF named IBCode_FullName_Role.pdf (or FullName_Role_InfoBeans.pdf)", dl.isPdf && dl.name === pdfName("IB9003", "E2E_Preview_Person_Engineer"), JSON.stringify({ name: dl.name, isPdf: dl.isPdf }));
+  check("the download is a PDF named IBCode_NameSurname_Role_InfoBeans.pdf (or without the code)", dl.isPdf && dl.name === pdfName("IB9003", "E2EPreviewPerson_Engineer"), JSON.stringify({ name: dl.name, isPdf: dl.isPdf }));
   check("the downloaded file has the text as edited on Preview", ["E2E Preview Person", "Edited on Preview, final.", "Java Script", "4.5/5"].every((x) => dl.text.includes(x)), dl.text.slice(0, 160));
   const after = await viewPdf();
   check("View PDF afterwards shows the downloaded file itself (same SHA-256)", !!after.sha && after.sha === dl.sha256, `${after.sha} vs ${dl.sha256}`);
@@ -852,7 +852,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   await waitFor("document.body.innerText.includes('PDF downloaded')", "external downloaded");
   check("the external consent is recorded (metadata only) and a PDF was handed to the browser", Number(sql(`select count(*) from audit_log where action='consent_download' and at >= '${since}' and detail->>'template'='external'`)) === 1 && (await ev("window.__blobs.length")) === 1);
   const externalPdf = await t.lastPdf();
-  check("the external PDF is named after the candidate and is the previewed file", externalPdf.isPdf && externalPdf.name === pdfName("IB9003", "E2E_External_Person_Engineer") && externalPdf.sha256 === externalSha && externalPdf.text.includes("E2E External Person"), externalPdf.name);
+  check("the external PDF is named after the candidate and is the previewed file", externalPdf.isPdf && externalPdf.name === pdfName("IB9003", "E2EExternalPerson_Engineer") && externalPdf.sha256 === externalSha && externalPdf.text.includes("E2E External Person"), externalPdf.name);
   check("nothing was written to the database for the external profile", Number(sql("select count(*) from profiles where candidate_name='E2E External Person'")) === 0);
 
   // the API refuses external saves, signed in, with a clear 400; an internal save still works
@@ -866,9 +866,9 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   sql(`insert into profiles (owner_id, template, candidate_name) values ('${owner}', 'external', 'E2E Legacy External')`);
   const acc = await post("internal");
   await goto("/profiles");
-  await waitFor("document.body.innerText.includes('E2E_Api_External_a_InfoBeans')", "My Profiles lists the internal profile as <Name>_<Role>_InfoBeans");
+  await waitFor("document.body.innerText.includes('E2EApiExternal_A_InfoBeans')", "My Profiles lists the internal profile as [IBCode_]<NameSurname>_<Role>_InfoBeans");
   const cards = JSON.parse(await ev("JSON.stringify([...document.querySelectorAll('main ul li a')].map(a=>a.innerText.replace(/\\s+/g,' ').trim()))"));
-  check("My Profiles lists internal profiles only, with no Internal / External tag on the cards", cards.length > 0 && !cards.some((c) => c.includes("E2E_Legacy_External") || /^(Internal|External)\b/.test(c)), JSON.stringify(cards));
+  check("My Profiles lists internal profiles only, with no Internal / External tag on the cards", cards.length > 0 && !cards.some((c) => c.includes("E2ELegacyExternal") || /^(Internal|External)\b/.test(c)), JSON.stringify(cards));
   await signIn("manager");
   await goto("/manage?q=E2E");
   await waitFor("document.body.innerText.includes('E2E')", "manage results");
@@ -876,7 +876,7 @@ await t.scenario("External profiles are never saved: no save UI, Preview offers 
   // one row per team member (their primary profile), so the member appears once
   const memberOwner = sql("select coalesce(nullif(full_name,''), email) from app_users where email='member@example.test'");
   const memberRows = Number(await ev(`[...document.querySelectorAll('main ul li')].filter(li=>li.innerText.includes(${JSON.stringify("owner " + memberOwner)})).length`));
-  check("Manage lists internal profiles only, one row per team member, named <Name>_<Role>_InfoBeans", memberRows === 1 && /E2E_[A-Za-z_]+_InfoBeans/.test(found) && !found.includes("E2E_Legacy_External"), String(memberRows));
+  check("Manage lists internal profiles only, one row per team member, named [IBCode_]<NameSurname>_<Role>_InfoBeans", memberRows === 1 && /E2E[A-Za-z0-9]*_[A-Za-z0-9]+_InfoBeans/.test(found) && !found.includes("E2ELegacyExternal"), String(memberRows));
   void acc;
   await goto("/profiles");
   await ev("sessionStorage.clear()");
@@ -939,18 +939,18 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   await goto("/profiles");
   await waitFor("!!document.querySelector('[data-primary-badge]')", "primary badge");
   const cardOf = (name) => `[...document.querySelectorAll('[data-profile-card]')].find(c=>c.innerText.includes(${JSON.stringify(name)}))`;
-  check("My Profiles shows the Primary badge on the primary profile only", await ev(`(()=>{const two=${cardOf("E2E_Primary_Two")}, one=${cardOf("E2E_Primary_One")}; return !!two?.querySelector('[data-primary-badge]') && !two.querySelector('[data-mark-primary]') && !one?.querySelector('[data-primary-badge]') && !!one?.querySelector('[data-mark-primary]')})()`));
-  await ev(`${cardOf("E2E_Primary_One")}.querySelector('[data-mark-primary] button').click()`);
+  check("My Profiles shows the Primary badge on the primary profile only", await ev(`(()=>{const two=${cardOf("E2EPrimaryTwo")}, one=${cardOf("E2EPrimaryOne")}; return !!two?.querySelector('[data-primary-badge]') && !two.querySelector('[data-mark-primary]') && !one?.querySelector('[data-primary-badge]') && !!one?.querySelector('[data-mark-primary]')})()`));
+  await ev(`${cardOf("E2EPrimaryOne")}.querySelector('[data-mark-primary] button').click()`);
   await waitFor("!!document.querySelector('dialog[open]')", "confirm dialog");
   const dialog = await ev("document.querySelector('dialog[open]').innerText");
   check("the confirmation asks with the agreed wording", dialog.includes("Your primary profile is the one managers will see and use. Make this your primary profile?"), dialog);
   await click("Cancel", "dialog[open] button");
   await sleep(300);
   check("Cancel changes nothing", primaryName() === "E2E Primary Two");
-  await ev(`${cardOf("E2E_Primary_One")}.querySelector('[data-mark-primary] button').click()`);
+  await ev(`${cardOf("E2EPrimaryOne")}.querySelector('[data-mark-primary] button').click()`);
   await waitFor("!!document.querySelector('dialog[open]')", "confirm dialog");
   await click("Make primary", "dialog[open] button");
-  await waitFor(`!!(${cardOf("E2E_Primary_One")})?.querySelector('[data-primary-badge]')`, "badge moved");
+  await waitFor(`!!(${cardOf("E2EPrimaryOne")})?.querySelector('[data-primary-badge]')`, "badge moved");
   check("Mark as primary switches it", primaryName() === "E2E Primary One");
 
   // 4. a new version of the non-primary profile does not move the primary
@@ -971,13 +971,13 @@ await t.scenario("primary profile: first one automatic, the Submit checkbox, Mar
   // 5. Manage: the team member once, showing the primary profile only; no other profiles, no version history
   await signIn("manager");
   await goto("/manage?q=E2E Primary");
-  await waitFor("document.body.innerText.includes('E2E_Primary')", "manage results");
+  await waitFor("document.body.innerText.includes('E2EPrimary')", "manage results");
   const list = await bodyText();
-  check("Manage shows the team member once, as their primary profile, with the Primary badge", list.includes("E2E_Primary_One") && !list.includes("E2E_Primary_Two") && (await ev("!!document.querySelector('main ul li [data-primary-badge]')")));
-  await click("E2E_Primary_One", "main ul li a");
+  check("Manage shows the team member once, as their primary profile, with the Primary badge", list.includes("E2EPrimaryOne") && !list.includes("E2EPrimaryTwo") && (await ev("!!document.querySelector('main ul li [data-primary-badge]')")));
+  await click("E2EPrimaryOne", "main ul li a");
   await waitFor("location.pathname.startsWith('/manage/') && document.body.innerText.includes('Primary profile')", "primary profile page");
   const page = await bodyText();
-  check("the primary profile's page shows no other profiles and no version history", !(await ev("!!document.querySelector('[data-other-profiles]')")) && !page.includes("Other profiles") && !page.includes("Version history") && !page.includes("E2E_Primary_Two"));
+  check("the primary profile's page shows no other profiles and no version history", !(await ev("!!document.querySelector('[data-other-profiles]')")) && !page.includes("Other profiles") && !page.includes("Version history") && !page.includes("E2EPrimaryTwo"));
   const nonPrimaryId = sql("select id from profiles where candidate_name='E2E Primary Two' and owner_id=(select id from auth.users where email='member@example.test')");
   await goto(`/manage/${nonPrimaryId}`);
   await waitFor("!!document.querySelector('[data-profile-not-found]') || document.body.innerText.includes('could not be found')", "non-primary page");
@@ -1072,7 +1072,7 @@ await t.scenario("checkers and managers create and submit their own profile like
     check(`${who} can Submit their own profile`, text.startsWith("Submitted · saved to My Profiles · v1"), text);
     check(`the profile is owned by the ${who}`, sql(`select u.email from profiles p join auth.users u on u.id=p.owner_id where p.candidate_name='${name}'`) === `${who}@example.test`);
     await goto("/profiles");
-    await waitFor(`document.body.innerText.includes('E2E_Own_${who}')`, `My Profiles (${who})`);
+    await waitFor(`document.body.innerText.includes('E2EOwn${who[0].toUpperCase()}${who.slice(1)}')`, `My Profiles (${who})`);
     check(`${who}'s My Profiles lists it`, true);
   }
 });

@@ -50,11 +50,12 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 
    Buttons:
    - **← Back to edit** — keeps every edit.
-   - **Download PDF** — all users. File name `IBCode_FullName_Role.pdf` with the profile owner's IB code from the Teams
-     data (e.g. `IB1234_Saumya_Jain_AI_Intern.pdf`; looked up on the server, docs/TEAMS-DB.md), or
-     `FullName_Role_InfoBeans.pdf` when there is none or the Teams data is unavailable, e.g.
-     `Abdul_Technology_Delivery_Manager_InfoBeans.pdf` (spaces become `_`, other unsafe characters are removed; the
-     format is `pdfFileName` in `lib/docxReady.ts`, the same for every download and both templates).
+   - **Download PDF** — all users. File name `<IBCode>_<NameSurname>_<Role>_InfoBeans.pdf` with the profile
+     owner's IB code from the Teams data (e.g. `7224_SaumyaJain_AIIntern_InfoBeans.pdf`; looked up on the server,
+     docs/TEAMS-DB.md), or without the code when there is none or the Teams data is unavailable, e.g.
+     `Abdul_TechnologyDeliveryManager_InfoBeans.pdf` (name and role one word each, each word's first letter upper-cased,
+     anything but letters and digits removed; the format is `profileDisplayName` / `pdfFileName` in `lib/docxReady.ts`,
+     the same for every download, both templates and the My Profiles / Profile Hub lists).
      For an internal profile it always builds the PDF of the current text with the server, so the file matches the
      text and has passed the checks. That file is then what View PDF shows.
    - **Submit** — internal profiles only (see below).
@@ -256,7 +257,7 @@ Server through `ops/teams_db.py`, run by the Next.js server only (`lib/teamsClie
 from it is stored. Locally and for the demo `TEAMS_DB_MODE=mock` gives fictional employees. Details:
 [docs/TEAMS-DB.md](docs/TEAMS-DB.md).
 
-- **PDF file name:** `IBCode_FullName_Role.pdf` with the profile owner's IB code (else `FullName_Role_InfoBeans.pdf`).
+- **PDF file name:** `<IBCode>_<NameSurname>_<Role>_InfoBeans.pdf` with the profile owner's IB code (left out when unavailable).
 - **`/profile/<ib_code>`** (the link the Teams app uses): that person's primary profile, read-only, with Download PDF, or
   "No profile yet". Sign-in required; a signed-out visitor comes back to the link after signing in.
 - **Profile Hub → Team list:** name, IB code, role, delivery unit, department, profile yes / no, View. *My team* (direct and
@@ -311,7 +312,7 @@ E2E_ONLY='preview' npm run test:e2e      # only the scenarios whose title matche
 - **Editing:** the editable view (fields and their names, read-only header and headings, plain text, ratings, dates).
 - **View PDF:** required before Download / Submit (blocked before, enabled after, blocked again after an edit); shows the
   edited text, and afterwards the downloaded file itself (same SHA-256).
-- **Download:** named `IBCode_FullName_Role.pdf` (or `FullName_Role_InfoBeans.pdf` without an IB code), with the edited text; no DOCX anywhere.
+- **Download:** named `<IBCode>_<NameSurname>_<Role>_InfoBeans.pdf` (no code part without an IB code), with the edited text; no DOCX anywhere.
 - **Blocking:** an emptied required field or list item blocks Download and Submit, with focus on it.
 - **Consent:** required before Download / Submit, recorded in `audit_log`; cleared when the text changes.
 - **Refusals with no consent row:** `/api/pdf` and `/api/profiles` refuse incomplete data with field paths, and a
@@ -470,7 +471,7 @@ hand after a visual change. Seeded users: `member@`, `manager@`, `admin@example.
 3. **Consent**: on Preview press *Download PDF* and *Submit* without the box → a message, nothing happens. Tick it →
    Download works; check `select action, detail from audit_log order by id desc limit 3;` shows `consent_download`
    with `{"template": "internal", "consentVersion": "1"}`.
-4. **Same file**: the downloaded file is named like `IB1234_Jane_Doe_Senior_Engineer.pdf` (`Jane_Doe_Senior_Engineer_InfoBeans.pdf` without an IB code) and looks exactly like the
+4. **Same file**: the downloaded file is named like `IB1234_JaneDoe_SeniorEngineer_InfoBeans.pdf` (`JaneDoe_SeniorEngineer_InfoBeans.pdf` without an IB code) and looks exactly like the
    preview. There is no *Download DOCX* anywhere (Preview, My Profiles, Manage).
 5. **Formatting** (open the PDF at 100-200 %): the internal PDF looks like the reference format
    (`eval/reference/format.pdf`) side by side; the logo sits under "A PROUD MEMBER OF", top right; the footer logo and

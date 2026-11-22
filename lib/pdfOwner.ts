@@ -2,7 +2,7 @@
  * Purpose: the IB code for a PDF's file name (lib/pdfHandler.ts, ownerIbCode): the profile OWNER's, looked up by email in the
  * Teams data (lib/teamsClient.ts). The owner is the signed-in user, or, for a saved version (Profile Hub, My Profiles), the
  * owner of that version's profile, read with the user's own session (RLS: only someone who may read the profile finds its
- * owner). Null whenever anything is missing or fails: the name then falls back to FullName_Role_InfoBeans.pdf. Server-only.
+ * owner). Null whenever anything is missing or fails: the name then falls back to NameSurname_Role_InfoBeans.pdf. Server-only.
  */
 import "server-only";
 import type { TeamsClient } from "./teamsClient";

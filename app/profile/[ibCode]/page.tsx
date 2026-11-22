@@ -71,7 +71,7 @@ export default async function ProfileLinkPage({ params }: { params: Promise<{ ib
   const data = shown.data as { name?: string; jobTitle?: string };
   return (
     <div className="w-full text-ink">
-      <PageHero title={profileDisplayName(data.name ?? employee.name, data.jobTitle ?? "")} subtitle={`${employee.name}${facts ? ` · ${facts}` : ""} · primary profile · read-only`} compact />
+      <PageHero title={profileDisplayName(data.name ?? employee.name, data.jobTitle ?? "", employee.ibCode)} subtitle={`${employee.name}${facts ? ` · ${facts}` : ""} · primary profile · read-only`} compact />
       <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5" data-profile-link-state="ok">
         <div className="mb-4 flex flex-wrap items-center gap-4">
           <PrimaryBadge />

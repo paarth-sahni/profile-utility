@@ -61,12 +61,14 @@ test("an incomplete draft is not ready and the message points to Review", () => 
 });
 
 
-test("pdfFileName is FullName_Role_InfoBeans.pdf with underscores everywhere and no unsafe characters", () => {
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }), "Asha_Rao_AI_Intern_InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Abdul", jobTitle: "Technology Delivery Manager" }), "Abdul_Technology_Delivery_Manager_InfoBeans.pdf");
-  assert.equal(pdfFileName(COMPLETE), "Testy_McSample_Senior_Engineer_InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: " José  O'Brien ", jobTitle: "QA / Test Lead: Cloud*" }), "José_OBrien_QA_Test_Lead_Cloud_InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "../../etc/passwd", jobTitle: "a\\b" }), "etcpasswd_ab_InfoBeans.pdf");
+test("pdfFileName is NameSurname_Role_InfoBeans.pdf: each part one word, first letters upper-cased, only letters and digits", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Saumya Jain", jobTitle: "AI Intern" }), "SaumyaJain_AIIntern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "saumya jain", jobTitle: "ai intern" }), "SaumyaJain_AiIntern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Abdul", jobTitle: "Technology Delivery Manager" }), "Abdul_TechnologyDeliveryManager_InfoBeans.pdf");
+  assert.equal(pdfFileName(COMPLETE), "TestyMcSample_SeniorEngineer_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "Sr. Software-Engineer" }), "AshaRao_SrSoftwareEngineer_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: " José  O'Brien ", jobTitle: "QA / Test Lead: Cloud*" }), "JoséOBrien_QATestLeadCloud_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "../../etc/passwd", jobTitle: "a\\b" }), "EtcPasswd_AB_InfoBeans.pdf");
 });
 
 test("pdfFileName falls back to Profile and drops an empty job title", () => {
@@ -74,19 +76,21 @@ test("pdfFileName falls back to Profile and drops an empty job title", () => {
   assert.equal(pdfFileName({ ...COMPLETE, name: "???", jobTitle: "Lead" }), "Profile_Lead_InfoBeans.pdf");
 });
 
-test("profileDisplayName is the PDF name without .pdf (My Profiles and Manage)", () => {
-  assert.equal(profileDisplayName("Abdul", "Technology Delivery Manager"), "Abdul_Technology_Delivery_Manager_InfoBeans");
+test("profileDisplayName is the PDF name without .pdf (My Profiles and Profile Hub)", () => {
+  assert.equal(profileDisplayName("Abdul", "Technology Delivery Manager"), "Abdul_TechnologyDeliveryManager_InfoBeans");
+  assert.equal(profileDisplayName("Saumya Jain", "AI Intern", "7224"), "7224_SaumyaJain_AIIntern_InfoBeans");
   assert.equal(profileDisplayName("", ""), "Profile_InfoBeans");
   assert.equal(profileDisplayName("Ana", ""), "Ana_InfoBeans");
   // the list name and the download name can never differ
   const person = { name: "José O'Brien", jobTitle: "QA / Test Lead" };
   assert.equal(`${profileDisplayName(person.name, person.jobTitle)}.pdf`, pdfFileName(person));
+  assert.equal(`${profileDisplayName(person.name, person.jobTitle, "IB12")}.pdf`, pdfFileName(person, "IB12"));
 });
 
-test("pdfFileName with the owner's IB code: IBCode_FullName_Role.pdf; an empty or unsafe code falls back", () => {
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Saumya Jain", jobTitle: "AI Intern" }, "IB1234"), "IB1234_Saumya_Jain_AI_Intern.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "" }, " ib77 "), "IB77_Asha_Rao.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, null), "Asha_Rao_AI_Intern_InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, ""), "Asha_Rao_AI_Intern_InfoBeans.pdf");
-  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, "../IB1"), "Asha_Rao_AI_Intern_InfoBeans.pdf");
+test("pdfFileName with the owner's IB code: IBCode_NameSurname_Role_InfoBeans.pdf, the code as given; an empty or unsafe code is left out", () => {
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Saumya Jain", jobTitle: "AI Intern" }, "7224"), "7224_SaumyaJain_AIIntern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "" }, " ib77 "), "ib77_AshaRao_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, null), "AshaRao_AIIntern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, ""), "AshaRao_AIIntern_InfoBeans.pdf");
+  assert.equal(pdfFileName({ ...COMPLETE, name: "Asha Rao", jobTitle: "AI Intern" }, "../IB1"), "AshaRao_AIIntern_InfoBeans.pdf");
 });

@@ -63,7 +63,9 @@ RPCs `save_profile_version`, `submit_profile_version`, `set_primary_profile`; se
   - **Teams data:** `ops/teams_db.py` reads InfoBeansMD..TeamMemberList live (mapped columns only, Exit excluded, encrypted,
     read-only); `lib/teamsClient.ts` runs it (execFile, 5 s, 10-minute cache, failures 1 minute). Nothing is stored. Mock mode
     (`TEAMS_DB_MODE=mock`) until the SQL Server is reachable; the real column names are still guesses (`columns` command).
-  - **PDF name:** `IBCode_FullName_Role.pdf` from the owner's IB code (server-side, `lib/pdfOwner.ts`).
+  - **Profile name** (PDF download and My Profiles / Profile Hub lists): `<IBCode>_<NameSurname>_<Role>_InfoBeans`, e.g.
+    `7224_SaumyaJain_AIIntern_InfoBeans.pdf`; the owner's IB code from the Teams data (`lib/pdfOwner.ts`, `lib/ownerCodes.ts`), left out
+    when unavailable (`lib/docxReady.ts`).
   - **`/profile/<ib_code>`** and the **Profile Hub team list**, with leads (anyone with a reportee in the Teams data) treated
     like managers there (`lib/teamAccess.ts`). Leads read other people's primary profiles through service-key-only
     functions (migration `20261122120000_lead_profile_reads.sql`). Seed user `lead@example.test`.

@@ -4,6 +4,9 @@ import MarkPrimaryButton, { PrimaryBadge } from "@/components/MarkPrimaryButton"
 import PageHero from "@/components/PageHero";
 import { listMyProfiles } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
+import { getCurrentUser } from "@/lib/auth";
+import { ibCodeOf } from "@/lib/ownerCodes";
+import { teams } from "@/lib/teamsClient";
 
 export const metadata: Metadata = { title: "My Profiles — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -12,7 +15,8 @@ const fmt = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
 export default async function ProfilesPage() {
-  const profiles = await listMyProfiles();
+  const [profiles, user] = await Promise.all([listMyProfiles(), getCurrentUser()]);
+  const ibCode = await ibCodeOf(teams, user?.email); // My Profiles: the owner is the signed-in user
 
   return (
     <div className="w-full text-ink">
@@ -54,9 +58,9 @@ export default async function ProfilesPage() {
                   </div>
                   <p
                     className="line-clamp-2 break-words text-base font-medium leading-snug text-ink-dark"
-                    title={profileDisplayName(p.candidateName, p.jobTitle)}
+                    title={profileDisplayName(p.candidateName, p.jobTitle, ibCode)}
                   >
-                    {profileDisplayName(p.candidateName, p.jobTitle)}
+                    {profileDisplayName(p.candidateName, p.jobTitle, ibCode)}
                   </p>
                   <p className="mt-1 text-sm text-ink-light">
                     {p.versionCount} {p.versionCount === 1 ? "version" : "versions"}

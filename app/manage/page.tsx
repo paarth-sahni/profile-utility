@@ -16,6 +16,7 @@ import TeamList from "@/components/TeamList";
 import { getCurrentUser } from "@/lib/auth";
 import { ForbiddenError, searchProfilesByName, type ManagedProfileSummary } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
+import { ibCodesByEmail } from "@/lib/ownerCodes";
 import { accessFor, canSeeTeamList, isStaffRole } from "@/lib/teamAccess";
 import { parseTeamFilters } from "@/lib/teamList";
 import { teams } from "@/lib/teamsClient";
@@ -71,8 +72,10 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
 
   let results: ManagedProfileSummary[] = [];
   let failed = false;
+  let codes = new Map<string, string>();
   try {
     results = await searchProfilesByName(q);
+    codes = await ibCodesByEmail(teams, results.map((p) => p.ownerEmail));
   } catch (e) {
     if (e instanceof ForbiddenError) return <ManageAccessDenied />;
     console.error("[manage] search failed");
@@ -125,7 +128,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
                     <Link href={`/manage/${p.id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50">
                       <div className="min-w-0">
                         <p className="flex items-center gap-2 font-medium text-ink-dark">
-                          <span className="truncate">{profileDisplayName(p.candidateName, p.jobTitle)}</span>
+                          <span className="truncate">{profileDisplayName(p.candidateName, p.jobTitle, p.ownerEmail ? codes.get(p.ownerEmail.toLowerCase()) : null)}</span>
                           {p.isPrimary && <PrimaryBadge />}
                         </p>
                         <p className="truncate text-xs text-ink-light">

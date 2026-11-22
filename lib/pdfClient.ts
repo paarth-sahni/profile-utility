@@ -41,7 +41,7 @@ function serverFileName(res: Response): string | null {
 }
 
 /**
- * The profile as a PDF, made by the server: a File named as the server named it (IBCode_FullName_Role.pdf when the owner has
+ * The profile as a PDF, made by the server: a File named as the server named it (IBCode_NameSurname_Role_InfoBeans.pdf when the owner has
  * an IB code; savePdf uses that name), or a plain Blob when it sent none. With `consent: "download"` the server also records
  * the download consent. `versionId`: a saved version, so the server names the file after that profile's owner.
  */

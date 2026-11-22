@@ -7,6 +7,9 @@ import PageHero from "@/components/PageHero";
 import SavedProfileDocument from "@/components/SavedProfileDocument";
 import { getMyProfile, getVersion } from "@/lib/db/profiles";
 import { profileDisplayName } from "@/lib/docxReady";
+import { getCurrentUser } from "@/lib/auth";
+import { ibCodeOf } from "@/lib/ownerCodes";
+import { teams } from "@/lib/teamsClient";
 
 export const metadata: Metadata = { title: "Profile — Profile Generator" };
 export const dynamic = "force-dynamic";
@@ -23,12 +26,13 @@ export default async function ProfileDetailPage({ params }: { params: Promise<{ 
   const loaded = await Promise.all(versions.map((v) => getVersion(v.id)));
   const byId = new Map(versions.map((v, i) => [v.id, loaded[i]]));
   const latest = latestVersionId ? byId.get(latestVersionId) ?? loaded[0] : loaded[0];
+  const ibCode = await ibCodeOf(teams, (await getCurrentUser())?.email); // the owner is the signed-in user
   const home = profile.template === "internal" ? "/internal" : "/external";
 
   return (
     <div className="w-full text-ink">
       <PageHero
-        title={profileDisplayName(profile.candidateName, profile.jobTitle)}
+        title={profileDisplayName(profile.candidateName, profile.jobTitle, ibCode)}
         subtitle={`${profile.template === "internal" ? "Internal" : "External"} profile · ${profile.versionCount} ${profile.versionCount === 1 ? "version" : "versions"}`}
       />
 
