@@ -16,9 +16,10 @@ from teams_db import COLUMNS, TeamsDB, TeamsDBError, run, select_sql  # noqa: E4
 ENV = {"TEAMS_SQL_HOST": "sql.invalid", "TEAMS_SQL_USER": "reader", "TEAMS_SQL_PASSWORD": "not-a-real-password"}
 
 
-def row(code, email, name, manager="", status="Active", unit="Unit A", dept="Dept A", role="Engineer"):
+def row(code, email, name, manager="", status="Active", unit="Unit A", dept="Dept A", role="Engineer", lead=""):
     """A fictional row as the query returns it (keyed by our field names: the SELECT aliases them)."""
-    return {"ib_code": code, "email": email, "name": name, "role": role, "delivery_unit": unit, "department": dept, "manager": manager, "status": status}
+    return {"ib_code": code, "email": email, "full_name": name, "role": role, "delivery_unit": unit, "department": dept,
+            "status": status, "lead": lead, "manager": manager}
 
 
 class FakeConnection:
@@ -57,7 +58,7 @@ def fake_db(rows, env=ENV):
 ROWS = [
     row("IB1", "Boss@Example.test ", "Fictional Boss"),
     row("IB2", "lead@example.test", "Fictional Lead", manager="boss@example.test", unit="Unit B"),
-    row("IB3", "dev@example.test", "Fictional Dev", manager="lead@example.test", dept="Dept B"),
+    row("IB3", "dev@example.test", "Fictional Dev", lead="LEAD@example.test", manager="boss@example.test", dept="Dept B"),
     row("", "nocode@example.test", "Fictional Nocode", manager="lead@example.test"),
     row("IB4", "gone@example.test", "Fictional Gone", manager="lead@example.test", status=" EXIT "),
     row("IB5", "lead@example.test", "Duplicate Email"),
@@ -72,6 +73,12 @@ class Query(unittest.TestCase):
         for ours, theirs in COLUMNS.items():
             self.assertIn(f"[{theirs}] as [{ours}]", sql)
         self.assertIn("from [InfoBeansMD]..[TeamMemberList]", sql)
+        self.assertEqual(COLUMNS, {
+            "ib_code": "TeamMemberCode", "email": "Email", "full_name": "FullName", "role": "Designation",
+            "delivery_unit": "DeliveryUnit", "department": "Department", "status": "EmploymentStatus",
+            "lead": "LeadEmail", "manager": "ManagerEmail",
+        })
+        self.assertEqual(sql.count(" as ["), len(COLUMNS), "only the mapped columns")
         self.assertIn("not in ('exit')", sql)
 
     def test_a_column_name_that_is_not_a_plain_name_is_refused(self):
@@ -122,7 +129,8 @@ class Data(unittest.TestCase):
         emails = [e["email"] for e in self.db.employees()]
         self.assertEqual(emails, ["boss@example.test", "lead@example.test", "dev@example.test", "nocode@example.test"])
         self.assertNotIn("gone@example.test", emails, "employment status Exit is excluded (any case, trimmed)")
-        self.assertEqual(set(self.db.employees()[0]), {"ib_code", "email", "name", "role", "delivery_unit", "department", "manager_email"})
+        self.assertEqual(set(self.db.employees()[0]), {"ib_code", "email", "name", "role", "delivery_unit", "department", "lead_email", "manager_email"})
+        self.assertEqual(self.db.by_email("dev@example.test")["lead_email"], "lead@example.test")
         self.assertIsNone(self.db.by_email("nocode@example.test")["ib_code"])
 
     def test_lookups(self):
@@ -143,14 +151,33 @@ class Data(unittest.TestCase):
         db, _ = fake_db([row("IB1", "a@example.test", "A", manager="b@example.test"), row("IB2", "b@example.test", "B", manager="a@example.test")])
         self.assertEqual([e["email"] for e in db.team("a@example.test")], ["b@example.test"])
 
-    def test_manager_by_ib_code(self):
-        old = teams_db.MANAGER_COLUMN_HOLDS
-        teams_db.MANAGER_COLUMN_HOLDS = "ib_code"
-        try:
-            db, _ = fake_db([row("IB1", "boss@example.test", "Boss"), row("IB2", "dev@example.test", "Dev", manager="ib1")])
-            self.assertEqual(db.by_email("dev@example.test")["manager_email"], "boss@example.test")
-        finally:
-            teams_db.MANAGER_COLUMN_HOLDS = old
+    def test_team_through_lead_or_manager(self):
+        db, _ = fake_db([
+            row("IB1", "boss@example.test", "Boss"),
+            row("IB2", "lead@example.test", "Lead", manager="boss@example.test"),
+            row("IB3", "a@example.test", "A", lead="lead@example.test", manager="boss@example.test"),
+            row("IB4", "b@example.test", "B", lead="a@example.test"),
+            row("IB5", "self@example.test", "Self", lead="self@example.test", manager="self@example.test"),
+        ])
+        self.assertEqual([e["email"] for e in db.team("lead@example.test")], ["a@example.test", "b@example.test"], "through LeadEmail")
+        self.assertEqual([e["email"] for e in db.team("boss@example.test")], ["lead@example.test", "a@example.test", "b@example.test"], "no duplicates")
+        self.assertTrue(db.has_reportees("a@example.test"), "a lead through LeadEmail only")
+        self.assertFalse(db.has_reportees("self@example.test"), "reporting to oneself does not make a lead")
+        self.assertEqual(db.team("self@example.test"), [])
+
+    def test_statuses_reads_values_and_counts_only(self):
+        conns = []
+
+        def connect(**k):
+            conns.append(FakeConnection([[{"status": "Active", "n": 5}, {"status": None, "n": 1}]]))
+            return conns[-1]
+
+        out = TeamsDB(env=ENV, connect=connect).statuses()
+        self.assertEqual(out, [{"status": "Active", "count": 5}, {"status": None, "count": 1}])
+        sql = conns[0].executed[0][0]
+        self.assertIn("group by [EmploymentStatus]", sql)
+        for col in ("FullName", "Email]", "TeamMemberCode"):
+            self.assertNotIn(col, sql)
 
     def test_columns_reads_names_and_count_only(self):
         results =[[{"name": "EmployeeCode"}, {"name": "EmailId"}], [{"n": 42}]]
@@ -187,6 +214,9 @@ class Mock(unittest.TestCase):
             with self.assertRaises(TeamsDBError):
                 run(argv, self.db)
         self.assertEqual(run(["by-code", "IB9002"], self.db)["email"], "lead@example.test")
+        self.assertEqual(run(["statuses"], self.db), [{"status": "Active", "count": 9}, {"status": "Exit", "count": 1}])
+        with self.assertRaises(TeamsDBError):
+            run(["statuses", "extra"], self.db)
 
 
 if __name__ == "__main__":

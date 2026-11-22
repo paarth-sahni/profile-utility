@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Purpose: reads the Teams app's team-member list LIVE from its Microsoft SQL Server and returns only the fields the profile app
-needs (IB code, email, name, role, delivery unit, department, manager's email), as JSON on stdout. Nothing is stored: no
+needs (IB code, email, name, role, delivery unit, department, lead's and manager's email), as JSON on stdout. Nothing is stored: no
 table, no file, no log. Used by the Next.js server through lib/teamsClient.ts; see docs/TEAMS-DB.md.
 
 Commands (each prints one JSON value to stdout; on failure {"error": "<code>"} and exit status 1, never a message from the
@@ -12,6 +12,7 @@ driver, which could name the server):
     python3 ops/teams_db.py has-reportees <email>    {"email": ..., "has_reportees": true|false}
     python3 ops/teams_db.py all                      every active employee (the "All team members" list)
     python3 ops/teams_db.py units                    {"delivery_units": [...], "departments": [...]}
+    python3 ops/teams_db.py statuses                 distinct EmploymentStatus values with counts (no names)
     python3 ops/teams_db.py columns                  the table's column names and row count only (first real run)
 
 Settings (environment only; read from the process environment, or for a manual run from the repo's .env.local, TEAMS_* keys
@@ -26,29 +27,29 @@ import sys
 from pathlib import Path
 
 # ======================================================================================================================
-# COLUMN MAPPING: the one place that knows the Teams table. Fix these names once the real ones are known (`columns` prints
-# them). Left: our field. Right: the column in InfoBeansMD..TeamMemberList. Only these columns are ever selected.
+# COLUMN MAPPING: the one place that knows the Teams table (real names, confirmed with `columns`). Left: our field. Right:
+# the column in InfoBeansMD..TeamMemberList. Only these columns are ever selected.
 # ======================================================================================================================
 TABLE_DATABASE = "InfoBeansMD"
 TABLE_NAME = "TeamMemberList"
 COLUMNS = {
-    "ib_code": "EmployeeCode",
-    "email": "EmailId",
-    "name": "EmployeeName",
+    "ib_code": "TeamMemberCode",
+    "email": "Email",
+    "full_name": "FullName",
     "role": "Designation",
     "delivery_unit": "DeliveryUnit",
     "department": "Department",
-    "manager": "ReportingManagerEmail",
     "status": "EmploymentStatus",
+    "lead": "LeadEmail",
+    "manager": "ManagerEmail",
 }
-# What the "manager" column holds: "email" (the manager's email) or "ib_code" (the manager's IB code, turned into the
-# manager's email here).
-MANAGER_COLUMN_HOLDS = "email"
+# Team rule: someone's team is everyone whose LeadEmail OR ManagerEmail is them, recursively (direct and indirect). A lead
+# is anyone with at least one such person.
 # Employment status values that mean the person has left (compared case-insensitively, trimmed): excluded everywhere.
 EXIT_STATUSES = {"exit"}
 # ======================================================================================================================
 
-FIELDS = ("ib_code", "email", "name", "role", "delivery_unit", "department", "manager_email")
+FIELDS = ("ib_code", "email", "name", "role", "delivery_unit", "department", "lead_email", "manager_email")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,127}$")
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}$")
 IB_CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
@@ -89,25 +90,23 @@ def text(value) -> str:
 
 def clean(rows: list[dict]) -> list[dict]:
     """Raw rows (keyed by our field names) -> employees: trimmed, emails lower case, the people who have left dropped (again,
-    in case the server compares differently), rows without an email dropped, the manager as an email."""
+    in case the server compares differently), rows without an email dropped, lead and manager emails lower case."""
     active = [r for r in rows if text(r.get("status")).lower() not in EXIT_STATUSES]
-    by_code = {text(r.get("ib_code")).upper(): text(r.get("email")).lower() for r in active if text(r.get("ib_code"))}
     out, seen = [], set()
     for r in active:
         email = text(r.get("email")).lower()
         if not EMAIL.match(email) or email in seen:
             continue
         seen.add(email)
-        manager = text(r.get("manager"))
-        manager_email = by_code.get(manager.upper(), "") if MANAGER_COLUMN_HOLDS == "ib_code" else manager.lower()
         out.append({
             "ib_code": text(r.get("ib_code")) or None,
             "email": email,
-            "name": text(r.get("name")),
+            "name": text(r.get("full_name")),
             "role": text(r.get("role")) or None,
             "delivery_unit": text(r.get("delivery_unit")) or None,
             "department": text(r.get("department")) or None,
-            "manager_email": manager_email or None,
+            "lead_email": text(r.get("lead")).lower() or None,
+            "manager_email": text(r.get("manager")).lower() or None,
         })
     return out
 
@@ -131,15 +130,15 @@ MOCK_ROWS = [
     ("IB9007", "admin@example.test", "Test Admin", "Operations Head", "Delivery Unit Alpha", "Engineering", "director@example.test", "Active"),
     ("IB9008", "checker@example.test", "Test Checker", "Quality Checker", "Delivery Unit Beta", "Quality Assurance", "director@example.test", "Active"),
 ]
+# each tuple: code, email, full name, role, unit, department, ManagerEmail, status (LeadEmail empty in the mock)
 MOCK_COLUMNS = list(COLUMNS.values())
+MOCK_ROW_COLUMNS = [COLUMNS[k] for k in ("ib_code", "email", "full_name", "role", "delivery_unit", "department", "manager", "status")]
 
 
 def mock_raw_rows() -> list[dict]:
-    rows = [dict(zip(MOCK_COLUMNS, r)) for r in MOCK_ROWS]
-    if MANAGER_COLUMN_HOLDS == "ib_code":  # the mock follows the mapping: managers by code
-        code = {r[COLUMNS["email"]]: r[COLUMNS["ib_code"]] for r in rows}
-        for r in rows:
-            r[COLUMNS["manager"]] = code.get(r[COLUMNS["manager"]], "")
+    rows = [dict(zip(MOCK_ROW_COLUMNS, r)) for r in MOCK_ROWS]
+    for r in rows:
+        r[COLUMNS["lead"]] = ""
     # as the query returns them: keyed by our field names, the people who have left filtered out by the query
     return [{k: r[c] for k, c in COLUMNS.items()} for r in rows if text(r[COLUMNS["status"]]).lower() not in EXIT_STATUSES]
 
@@ -224,11 +223,11 @@ class TeamsDB:
         return next((e for e in self.employees() if e["ib_code"] and e["ib_code"].upper() == code), None) if code else None
 
     def team(self, manager_email: str) -> list[dict]:
-        """Everyone under the manager, direct and indirect (breadth first; a cycle in the data cannot loop)."""
+        """Everyone whose lead OR manager is this person, direct and indirect (breadth first; a cycle cannot loop)."""
         reports: dict[str, list[dict]] = {}
         for e in self.employees():
-            if e["manager_email"]:
-                reports.setdefault(e["manager_email"], []).append(e)
+            for boss in {e["lead_email"], e["manager_email"]} - {None, e["email"]}:
+                reports.setdefault(boss, []).append(e)
         start = text(manager_email).lower()
         out, seen, queue = [], {start}, [start]
         while queue:
@@ -241,7 +240,7 @@ class TeamsDB:
 
     def has_reportees(self, email: str) -> bool:
         email = text(email).lower()
-        return bool(email) and any(e["manager_email"] == email for e in self.employees())
+        return bool(email) and any(email in (e["lead_email"], e["manager_email"]) and e["email"] != email for e in self.employees())
 
     def all(self) -> list[dict]:
         return list(self.employees())
@@ -252,6 +251,17 @@ class TeamsDB:
             "delivery_units": sorted({e["delivery_unit"] for e in es if e["delivery_unit"]}, key=str.lower),
             "departments": sorted({e["department"] for e in es if e["department"]}, key=str.lower),
         }
+
+    def statuses(self) -> list[dict]:
+        """The distinct EmploymentStatus values with their counts, nothing else (no names), to set EXIT_STATUSES."""
+        if self.mock:
+            counts: dict[str, int] = {}
+            for r in MOCK_ROWS:
+                counts[r[-1]] = counts.get(r[-1], 0) + 1
+            return [{"status": k, "count": v} for k, v in sorted(counts.items())]
+        status = quoted(COLUMNS["status"])
+        rows = self.query(f"select {status} as status, count(*) as n from {table()} group by {status} order by {status}")
+        return [{"status": None if r["status"] is None else str(r["status"]), "count": int(r["n"])} for r in rows]
 
     def columns(self) -> dict:
         """The table's column names and its row count, nothing else (for the first real run, to fix COLUMN MAPPING)."""
@@ -285,6 +295,8 @@ def run(argv: list[str], db: TeamsDB | None = None):
         return db.all()
     if command == "units" and not args:
         return db.units()
+    if command == "statuses" and not args:
+        return db.statuses()
     if command == "columns" and not args:
         return db.columns()
     raise TeamsDBError("bad_arguments")
