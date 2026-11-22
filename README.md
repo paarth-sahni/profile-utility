@@ -5,6 +5,14 @@ templates. Sign-in is with an InfoBeans Google account; the resume is read by an
 and **internal** profiles can be saved per user in Supabase (My Profiles). **External** (client-facing) profiles are
 never stored. Managers and admins also get **Profile Hub** (`/manage`): each team member's primary profile, read-only.
 
+Saved-profile pages (a profile on My Profiles, on the Profile Hub, and the `/profile/<IB code>` link) share one layout
+(`components/ProfileViewLayout.tsx`): no title band, so the document starts at the top; *← Back* at the top left; the person's
+name, role and details in a rail on the left that stays in view while scrolling (on My Profiles it also holds *Open latest in
+editor* and the version history); and the actions in a column on the RIGHT of the document, never over it (*Download PDF* and, for
+managers and admins on the Profile Hub, *Open in Google Docs*; `components/ProfileDock.tsx`): held to the bottom of the window
+while the document is in view, resting above the footer at the end. From 768px up they are that column (the name card moves
+above the document below 1024px); on a phone they are a full-width bar along the bottom edge.
+
 Header: *Generator | Instructions | My Profiles* for everyone; managers and admins see
 *Profile Hub | Generator | My Profiles | Instructions*. The avatar menu holds Sign out only.
 
@@ -15,10 +23,10 @@ The generator (`/internal`, `/external`) is one workflow with these steps:
 1. **Start** — upload a resume / existing profile, or start from a blank form.
 2. **Upload profile** — the file is read and pre-fills the form; a single note above the form asks you to review every
    section (`ExtractionSummary`).
-3. **Edit details** — every field is editable (tags for tools, add / remove / reorder items). Project and employer
+3. **Edit details** — every field is editable (tags for tools, add / remove items; reorder by dragging an item's three-line handle, or focus it and use the arrow keys). Project and employer
    cards collapse to "Project N – name – dates" with a *Needs attention* badge when a field in them has a problem
    (Expand all / Collapse all; after upload only Project 1 and any card with a problem are open; *Add project* puts a new
-   open Project 1 at the top). Internal skills are a compact table (Skill | Rating | move | remove). Required fields
+   open Project 1 at the top). Internal skills are a compact table (Skill | Rating | drag handle | remove). Required fields
    (name, job title, experience summary / years of experience, overview, one education entry, one skill) are marked in red when missing. There is **no save
    control here**: an internal profile is saved only by **Submit** on Preview & Submit (below).
 4. **Preview & Submit** (internal; **Preview** for external, which has no Submit) — pressing *Preview & Submit →*

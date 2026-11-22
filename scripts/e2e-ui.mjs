@@ -413,7 +413,7 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
       return JSON.stringify({ heads:heads.length, heavy,
         italic: all.filter(e=>getComputedStyle(e).fontStyle==='italic').length,
         gradients: all.filter(e=>getComputedStyle(e).backgroundImage.includes('gradient')).length,
-        hero: !!document.querySelector('section.bg-cream h1'),
+        hero: !!document.querySelector('section.bg-cream h1'), h1: document.querySelector('main h1')?.textContent ?? null,
         font: getComputedStyle(document.querySelector('main')).fontFamily.toLowerCase().includes('lexend') });})()`);
   const pages = [["member", "/profiles"], ["member", `/profiles/${saved.profileId}`], ["manager", "/manage"], ["manager", `/manage/${saved.profileId}`]];
   for (const [who, path] of pages) {
@@ -425,7 +425,8 @@ await t.scenario("brand rules on My Profiles, Manage and the previews (computed 
     const name = path.replace(saved.profileId, "[id]");
     check(`${name}: headings are Lexend Medium, never bold`, r.heads > 0 && r.heavy.length === 0, JSON.stringify(r.heavy));
     check(`${name}: no italics, no gradients, Lexend font`, r.italic === 0 && r.gradients === 0 && r.font, JSON.stringify(r));
-    check(`${name}: uses the same cream hero band as the generator`, r.hero);
+    if (path.includes(saved.profileId)) check(`${name}: no title band: the document starts at the top and the person's name is in the rail`, !r.hero && r.h1 === "E2E Brand Person", JSON.stringify(r));
+    else check(`${name}: uses the same cream hero band as the generator`, r.hero);
   }
 });
 
@@ -1101,10 +1102,11 @@ await t.scenario("Edit details: project cards collapse, Add project puts a new o
   check("Collapse all: every card collapsed (aria-expanded false, body hidden)", now.every((c) => !c.open && !c.body), JSON.stringify(now));
   await ev("document.querySelector(\"[data-item-card='1'] button[aria-expanded]\").click()");
   await sleep(200);
-  await ev("document.querySelector(\"[data-item-card='1'] button[title='Move up']\").click()");
+  // the drag handle also takes the arrow keys (a mouse drag is checked in the browser)
+  await ev("document.querySelector(\"[data-item-card='1'] [data-drag-handle]\").dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))");
   await sleep(200);
   now = await cards();
-  check("the move arrows keep each card's open state with it", now[0].title.startsWith("Project 1 – First Fictional Project") && now[0].open && !now[1].open, JSON.stringify(now));
+  check("moving a card (drag handle, arrow keys) keeps its open state with it", now[0].title.startsWith("Project 1 – First Fictional Project") && now[0].open && !now[1].open, JSON.stringify(now));
   await click("Expand all", 'button[aria-label="Expand all projects"]');
   await sleep(200);
   check("Expand all opens every card", (await cards()).every((c) => c.open && c.body));
@@ -1127,10 +1129,11 @@ await t.scenario("Edit details: skills are a table, one row per skill, named inp
   await t.fillNamed("Skill 2 name", "Fictional Skill B");
   await t.fillNamed("Skill 2 rating", "4.5");
   await sleep(200);
-  await ev(`document.querySelector('button[aria-label="Move skill 2 up"]').click()`);
+  check("the rows have drag handles and no arrow buttons", (await ev(`document.querySelectorAll('[data-skill-row] [data-drag-handle]').length`)) === 2 && (await ev(`[...document.querySelectorAll('button')].filter(b=>b.title==='Move up'||b.title==='Move down').length`)) === 0);
+  await ev(`document.querySelector('button[aria-label^="Reorder skill 2"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))`);
   await sleep(200);
   const order = await ev(`[...document.querySelectorAll('input[aria-label$=" name"][aria-label^="Skill "]')].map(i=>i.value).join('|')`);
-  check("Move up reorders the rows", order === "Fictional Skill B|Fictional Skill A", order);
+  check("the arrow keys on the drag handle reorder the rows", order === "Fictional Skill B|Fictional Skill A", order);
   check("the rating moved with its skill", (await ev(`document.querySelector('input[aria-label="Skill 1 rating"]').value`)) === "4.5");
   await ev(`document.querySelector('button[aria-label="Remove skill 2"]').click()`);
   await sleep(200);

@@ -11,16 +11,19 @@ import type { ResumeData, TemplateId } from "@/lib/schemas";
 /**
  * Downloads a saved version as PDF (made by the server, POST /api/pdf). Like Preview & Submit, it first asks for the
  * consent tick, which is recorded (POST /api/consent) before anything is downloaded. Incomplete drafts are sent back
- * to the editor to be finished.
+ * to the editor to be finished. `dock` is the large red button of the profile pages' fixed action bar (components/ProfileDock.tsx):
+ * a download icon, and a message opens above the button instead of below it.
  */
 export default function DownloadPdfButton({
   template,
   data,
   versionId,
+  dock = false,
 }: {
   template: TemplateId;
   data: ResumeData;
   versionId: string;
+  dock?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -66,13 +69,24 @@ export default function DownloadPdfButton({
   }
 
   return (
-    <span className="inline-flex flex-col items-start" data-version={versionId}>
+    <span className={`inline-flex ${dock ? "flex-col-reverse items-end" : "flex-col items-start"}`} data-version={versionId}>
       <button
         type="button"
         onClick={onClick}
         disabled={busy}
-        className="border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
+        className={
+          dock
+            ? "inline-flex items-center gap-2 bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-50"
+            : "border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
+        }
       >
+        {dock && (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 3v12" />
+            <path d="m7 11 5 5 5-5" />
+            <path d="M5 21h14" />
+          </svg>
+        )}
         {busy ? "Preparing…" : "Download PDF"}
       </button>
       {asking && (
@@ -95,7 +109,7 @@ export default function DownloadPdfButton({
         </ConfirmDialog>
       )}
       {message && (
-        <span role="alert" className="mt-1 max-w-xs text-xs text-brand-700">
+        <span role="alert" className={`max-w-xs text-xs text-brand-700 ${dock ? "mb-2 text-right" : "mt-1"}`}>
           {message}
         </span>
       )}

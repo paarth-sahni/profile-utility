@@ -1,21 +1,21 @@
 /**
  * Purpose: /profile/<ib_code>: the link the Teams app uses. Resolves the IB code to an employee through the live Teams data
- * (lib/teamsClient.ts) and shows that person's PRIMARY profile, read-only, with Download PDF. Sign-in required (proxy.ts sends
- * a signed-out visitor to /login and back here). Who may open whose profile is decided on the server (lib/teamAccess.ts): your
- * own always; anyone's for managers, admins and leads. To a team member, someone else's link and an unknown code look the
- * same ("not available"), so codes cannot be probed. "No profile yet" when the person has no primary profile.
+ * (lib/teamsClient.ts) and shows that person's PRIMARY profile, read-only, with Download PDF in the fixed action bar. Sign-in
+ * required (proxy.ts sends a signed-out visitor to /login and back here). Who may open whose profile is decided on the server
+ * (lib/teamAccess.ts): your own always; anyone's for managers, admins and leads. To a team member, someone else's link and an
+ * unknown code look the same ("not available"), so codes cannot be probed. "No profile yet" when the person has no primary
+ * profile. Laid out like every profile page (components/ProfileViewLayout.tsx).
  */
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import DownloadPdfButton from "@/components/DownloadPdfButton";
 import { PrimaryBadge } from "@/components/MarkPrimaryButton";
-import PageHero from "@/components/PageHero";
+import ProfileViewLayout from "@/components/ProfileViewLayout";
 import SavedProfileDocument from "@/components/SavedProfileDocument";
 import { getCurrentUser } from "@/lib/auth";
 import { primaryProfileOf } from "@/lib/db/teamProfiles";
-import { profileDisplayName } from "@/lib/docxReady";
-import { accessFor, canOpenProfileOf } from "@/lib/teamAccess";
+import { accessFor, canOpenProfileOf, canSeeTeamList, isStaffRole } from "@/lib/teamAccess";
 import { teams } from "@/lib/teamsClient";
 
 export const metadata: Metadata = { title: "Profile (read-only) — Profile Generator" };
@@ -51,37 +51,39 @@ export default async function ProfileLinkPage({ params }: { params: Promise<{ ib
   if (!canOpenProfileOf(access, user.email, employee.email)) return NOT_AVAILABLE;
 
   const result = await primaryProfileOf(user, access, employee.email);
-  const facts = [employee.ibCode, employee.role, employee.deliveryUnit, employee.department].filter(Boolean).join(" · ");
+  const facts = [employee.ibCode, employee.deliveryUnit, employee.department].filter(Boolean).join(" · ");
+  // where "back" goes: the Profile Hub for those who have one, otherwise My Profiles
+  const back = isStaffRole(user.role) || canSeeTeamList(access) ? { href: "/manage", label: "Profile Hub" } : { href: "/profiles", label: "My Profiles" };
 
   if (result.status !== "ok") {
     return (
-      <div className="w-full text-ink">
-        <PageHero title={employee.name} subtitle={facts} compact />
-        <main className="mx-auto w-full max-w-3xl px-4 py-12 text-center" data-profile-link-state={result.status}>
+      <ProfileViewLayout backHref={back.href} backLabel={back.label} name={employee.name} role={employee.role ?? undefined} facts={facts ? [facts] : []}>
+        <div className="border border-gray-200 bg-white px-4 py-14 text-center shadow-sm" data-profile-link-state={result.status}>
           <h2 className="text-xl font-medium text-ink-dark">{result.status === "none" ? "No profile yet" : "This profile could not be loaded"}</h2>
           <p className="mt-2 text-sm text-ink-light">
             {result.status === "none" ? `${employee.name} has no primary profile yet.` : "Please try again in a few minutes."}
           </p>
-        </main>
-      </div>
+        </div>
+      </ProfileViewLayout>
     );
   }
 
   const shown = result.version;
   const data = shown.data as { name?: string; jobTitle?: string };
   return (
-    <div className="w-full text-ink">
-      <PageHero title={profileDisplayName(data.name ?? employee.name, data.jobTitle ?? "", employee.ibCode)} subtitle={`${employee.name}${facts ? ` · ${facts}` : ""} · primary profile · read-only`} compact />
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5" data-profile-link-state="ok">
-        <div className="mb-4 flex flex-wrap items-center gap-4">
-          <PrimaryBadge />
-        </div>
-        {/* Read-only: the export is made from the version shown; nothing is changed or saved. */}
-        <div className="mb-4 flex flex-wrap items-start gap-2">
-          <DownloadPdfButton template={shown.template} data={shown.data} versionId={shown.meta.versionId} />
-        </div>
+    <ProfileViewLayout
+      backHref={back.href}
+      backLabel={back.label}
+      name={data.name?.trim() || employee.name}
+      role={data.jobTitle?.trim() || employee.role || undefined}
+      facts={[...(facts ? [facts] : []), "Primary profile · read-only"]}
+      badges={<PrimaryBadge />}
+      // Read-only: the export is made from the version shown; nothing is changed or saved.
+      actions={<DownloadPdfButton dock template={shown.template} data={shown.data} versionId={shown.meta.versionId} />}
+    >
+      <div data-profile-link-state="ok">
         <SavedProfileDocument template={shown.template} data={shown.data} />
-      </main>
-    </div>
+      </div>
+    </ProfileViewLayout>
   );
 }

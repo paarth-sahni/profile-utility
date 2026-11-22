@@ -98,3 +98,36 @@ body {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
+
+/* drag to reorder (components/reorder.tsx): the dragged item follows the pointer, a red line shows where it will land */
+[data-reorder-dragging] {
+  position: relative;
+  z-index: 40;
+  opacity: 0.95;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  cursor: grabbing;
+}
+[data-drop="before"] {
+  box-shadow: 0 -3px 0 0 var(--color-brand-500);
+}
+[data-drop="after"] {
+  box-shadow: 0 3px 0 0 var(--color-brand-500);
+}
+/* a table row cannot carry a shadow of its own, so its cells do */
+tr[data-reorder-dragging] {
+  box-shadow: none;
+}
+tr[data-reorder-dragging] > td {
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+tr[data-drop="before"],
+tr[data-drop="after"] {
+  box-shadow: none;
+}
+tr[data-drop="before"] > td {
+  box-shadow: inset 0 3px 0 0 var(--color-brand-500);
+}
+tr[data-drop="after"] > td {
+  box-shadow: inset 0 -3px 0 0 var(--color-brand-500);
+}

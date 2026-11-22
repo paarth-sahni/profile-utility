@@ -6,6 +6,7 @@ import { CUSTOM_LABEL_MAX, CUSTOM_TITLE_MAX, CUSTOM_VALUE_MAX, wordCount, type E
 import { hasErrorUnder } from "@/lib/fieldErrors";
 import { itemTitle } from "@/lib/collapsibleList";
 import { Accordion, AddButton, AreaField, CollapsibleItemCard, Field, FieldPairsEditor, ListExpandControls, RemovedSection, Section, StringListEditor, TagInput, moveItem, type Range } from "./fields";
+import DragHandle from "./reorder";
 import { useCollapsibleList } from "./useCollapsibleList";
 
 type CustomSection = ExternalResume["customSections"][number];
@@ -233,8 +234,6 @@ export default function ExternalForm({
 
       {customSections.map((s, i) => {
         const setS = (patch: Partial<CustomSection>) => set("customSections", customSections.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-        const move = (to: number) => set("customSections", moveItem(customSections, i, to));
-        const arrow = "p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
         return (
           <Section
             key={i}
@@ -246,12 +245,8 @@ export default function ExternalForm({
               set("customSections", customSections.filter((_, j) => j !== i));
               setOpenCustom(null);
             }}
-            actions={
-              <span className="flex items-center gap-0.5">
-                <button type="button" title="Move section up" className={arrow} disabled={i === 0} onClick={() => move(i - 1)}>↑</button>
-                <button type="button" title="Move section down" className={arrow} disabled={i === customSections.length - 1} onClick={() => move(i + 1)}>↓</button>
-              </span>
-            }
+            reorderable
+            actions={<DragHandle index={i} length={customSections.length} label={`custom section ${i + 1}`} onMove={(from, to) => set("customSections", moveItem(customSections, from, to))} />}
           >
             <p className="text-xs text-ink-light">Printed in the document as this title, then the fields (label and value), then the description.</p>
             <Field

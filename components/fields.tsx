@@ -4,6 +4,7 @@ import { createContext, ReactNode, useContext, useId, useState } from "react";
 import { acceptRatingInput } from "@/lib/rating";
 import { isNAValue } from "@/lib/schemas";
 import { addTags, hasOpenBracket, splitTags } from "@/lib/tags";
+import DragHandle from "./reorder";
 
 /** A comma or a line break ends an item in the tag input. */
 const TAG_SEPARATOR = { test: (v: string) => v.includes(",") || v.includes(String.fromCharCode(10)) || v.includes(String.fromCharCode(13)) };
@@ -56,6 +57,7 @@ export function Section({
   defaultOpen = false,
   empty = false,
   invalid = false,
+  reorderable = false,
 }: {
   title: string;
   children: ReactNode;
@@ -64,6 +66,8 @@ export function Section({
   defaultOpen?: boolean;
   /** True when a required field inside needs attention: the section is highlighted in yellow ("needs attention"). */
   invalid?: boolean;
+  /** One of a list of sections the user can reorder (its handle goes in `actions`): see components/reorder.tsx. */
+  reorderable?: boolean;
   /** True for an OPTIONAL section with nothing real in it: shows that it will be left out of the document. */
   empty?: boolean;
 }) {
@@ -81,7 +85,7 @@ export function Section({
     setOpen(signal.mode === "open");
   }
   return (
-    <section className={`border shadow-sm ${invalid ? "border-amber-300 bg-warm" : "border-gray-200 bg-white"}`} data-needs-attention={invalid ? "true" : undefined}>
+    <section className={`border shadow-sm ${invalid ? "border-amber-300 bg-warm" : "border-gray-200 bg-white"}`} data-reorder-item={reorderable ? "" : undefined} data-needs-attention={invalid ? "true" : undefined}>
       <div className="flex items-center justify-between gap-3 px-5 py-3">
         <button
           type="button"
@@ -317,26 +321,31 @@ export function AddButton({ onClick, label }: { onClick: () => void; label: stri
   );
 }
 
-/** Up / down / remove controls for an array item. The last remaining item cannot be removed unless `allowRemoveLast`. */
+/**
+ * Drag handle (reorder) and remove controls for an array item. The item's root element must carry `data-reorder-item` (the
+ * handle finds the list from it: components/reorder.tsx). The last remaining item cannot be removed unless `allowRemoveLast`.
+ */
 export function ItemControls({
   index,
   length,
   onMove,
   onRemove,
   allowRemoveLast = false,
+  label,
 }: {
   index: number;
   length: number;
   onMove: (from: number, to: number) => void;
   onRemove: (index: number) => void;
   allowRemoveLast?: boolean;
+  /** What the item is, for screen readers ("project 2"). */
+  label?: string;
 }) {
   const btn = "p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <span className="flex shrink-0 items-center gap-0.5">
-      <button type="button" title="Move up" className={btn} disabled={index === 0} onClick={() => onMove(index, index - 1)}>↑</button>
-      <button type="button" title="Move down" className={btn} disabled={index === length - 1} onClick={() => onMove(index, index + 1)}>↓</button>
-      <button type="button" title="Remove" className={`${btn} hover:text-red-600`} disabled={length === 1 && !allowRemoveLast} onClick={() => onRemove(index)}>✕</button>
+      <DragHandle index={index} length={length} onMove={onMove} label={label ?? `item ${index + 1}`} />
+      <button type="button" title="Remove" aria-label={label ? `Remove ${label}` : undefined} className={`${btn} hover:text-red-600`} disabled={length === 1 && !allowRemoveLast} onClick={() => onRemove(index)}>✕</button>
     </span>
   );
 }
@@ -373,7 +382,7 @@ export function FieldPairsEditor({
         {items.map((row, i) => {
           const m = marks?.(i) ?? {};
           return (
-            <div key={i} className="flex items-start gap-2" data-invalid={m.label || m.value ? "true" : undefined}>
+            <div key={i} className="flex items-start gap-2" data-reorder-item data-invalid={m.label || m.value ? "true" : undefined}>
               <div className="grid w-full gap-2 sm:grid-cols-[2fr_3fr]">
                 <div>
                   <input type="text" aria-label={`Field ${i + 1}, label`} placeholder="Label, e.g. Languages" maxLength={maxLabel} value={row.label} onChange={(e) => update(i, { label: e.target.value })} className={box(m.label)} />
@@ -388,6 +397,7 @@ export function FieldPairsEditor({
                 index={i}
                 length={items.length}
                 allowRemoveLast
+                label={`field ${i + 1}`}
                 onMove={(from, to) => onChange(moveItem(items, from, to))}
                 onRemove={(idx) => onChange(items.filter((_, j) => j !== idx))}
               />
@@ -435,7 +445,7 @@ export function StringListEditor({
             mark?.error ? "border-brand-500 bg-brand-50/40" : "border-gray-300"
           }`;
           return (
-          <div key={i} className="flex items-start gap-2" data-invalid={mark?.error ? "true" : undefined}>
+          <div key={i} className="flex items-start gap-2" data-reorder-item data-invalid={mark?.error ? "true" : undefined}>
             <div className="w-full">
             {multiline ? (
               <textarea value={item} rows={2} onChange={(e) => update(i, e.target.value)} className={box} />
@@ -448,6 +458,7 @@ export function StringListEditor({
             <ItemControls
               index={i}
               length={items.length}
+              label={`item ${i + 1}`}
               onMove={(from, to) => onChange(moveItem(items, from, to))}
               onRemove={(idx) => onChange(items.filter((_, j) => j !== idx))}
             />
@@ -505,7 +516,7 @@ export function CollapsibleItemCard({
 }) {
   const bodyId = useId();
   return (
-    <div className={`border ${needsAttention ? "border-amber-300 bg-warm" : "border-gray-200 bg-gray-50"}`} data-item-card={index} data-needs-attention={needsAttention ? "true" : undefined}>
+    <div className={`border ${needsAttention ? "border-amber-300 bg-warm" : "border-gray-200 bg-gray-50"}`} data-reorder-item data-item-card={index} data-needs-attention={needsAttention ? "true" : undefined}>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <button
           type="button"
@@ -522,7 +533,7 @@ export function CollapsibleItemCard({
             <span className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs attention</span>
           )}
         </button>
-        <ItemControls index={index} length={length} onMove={onMove} onRemove={onRemove} />
+        <ItemControls index={index} length={length} label={title.split(" – ")[0]} onMove={onMove} onRemove={onRemove} />
       </div>
       <div id={bodyId} hidden={!open} className="space-y-3 px-4 pb-4">
         {children}

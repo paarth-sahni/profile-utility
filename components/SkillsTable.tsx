@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Purpose: the internal Edit page's skills as a compact table, one row per skill: Skill | Rating | move up / down | remove, with
+ * Purpose: the internal Edit page's skills as a compact table, one row per skill: Skill | Rating | drag handle | remove, with
  * "Add skill" below. The rating follows the same rule as everywhere (above 0, at most 5, one decimal: acceptRatingInput). A
  * row's problems (a required field, a registered client name) show on that row, and the cell is marked data-invalid so "go to
  * the first problem" finds it. Every input has its own name for screen readers ("Skill 3 name", "Skill 3 rating"), and every
@@ -11,6 +11,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { acceptRatingInput } from "@/lib/rating";
 import type { InternalResume } from "@/lib/schemas";
 import { AddButton, MarkedText, moveItem, type Range } from "./fields";
+import DragHandle from "./reorder";
 
 type Skill = InternalResume["skills"][number];
 type Marks = { error?: string; highlights?: Range[] };
@@ -55,8 +56,8 @@ export default function SkillsTable({
               <th scope="col" className="w-28 pb-1 pr-2 font-medium">
                 Rating <span className="font-normal text-gray-400">(out of 5)</span>
               </th>
-              <th scope="col" className="w-24 pb-1 font-medium">
-                <span className="sr-only">Order and remove</span>
+              <th scope="col" className="w-20 pb-1 font-medium">
+                <span className="sr-only">Reorder and remove</span>
               </th>
             </tr>
           </thead>
@@ -68,7 +69,7 @@ export default function SkillsTable({
               const nameErr = name.error ? `${id}-name-${i}` : undefined;
               const ratingErr = rating.error ? `${id}-rating-${i}` : undefined;
               return (
-                <tr key={i} data-skill-row={i} className="align-top">
+                <tr key={i} data-skill-row={i} data-reorder-item className="align-top">
                   <td className="py-1 pr-2 pt-2.5 text-xs text-gray-500">{n}</td>
                   <td className="py-1 pr-2" data-invalid={name.error ? "true" : undefined}>
                     <input
@@ -107,12 +108,7 @@ export default function SkillsTable({
                     )}
                   </td>
                   <td className="whitespace-nowrap py-1 pt-1.5">
-                    <button type="button" className={btn} aria-label={`Move skill ${n} up`} title="Move up" disabled={i === 0} onClick={() => onChange(moveItem(skills, i, i - 1))}>
-                      ↑
-                    </button>
-                    <button type="button" className={btn} aria-label={`Move skill ${n} down`} title="Move down" disabled={i === skills.length - 1} onClick={() => onChange(moveItem(skills, i, i + 1))}>
-                      ↓
-                    </button>
+                    <DragHandle index={i} length={skills.length} label={`skill ${n}`} onMove={(from, to) => onChange(moveItem(skills, from, to))} />
                     <button type="button" className={`${btn} hover:text-red-600`} aria-label={`Remove skill ${n}`} title="Remove" disabled={skills.length === 1} onClick={() => onChange(skills.filter((_, j) => j !== i))}>
                       ✕
                     </button>

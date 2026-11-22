@@ -30,6 +30,8 @@ interface OpenInGoogleDocsButtonProps {
   accountEmail?: string | null;
   /** Button style: "primary" (red), "outline" (full-size outlined, next to other full-size buttons) or "secondary" (small, in lists). */
   variant?: "primary" | "secondary" | "outline";
+  /** The profile pages' fixed action bar: full-size outlined with a document icon, and the messages open above the button. */
+  dock?: boolean;
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "error"; text: string } | { kind: "done"; url: string; notice: string };
@@ -40,7 +42,7 @@ const STYLES = {
   secondary: "border border-gray-300 px-3 py-1.5 text-xs font-medium text-ink hover:bg-gray-50 disabled:opacity-50",
 } as const;
 
-export default function OpenInGoogleDocsButton({ template, title, prepare, blob, beforeUpload, accountEmail, variant = "secondary" }: OpenInGoogleDocsButtonProps) {
+export default function OpenInGoogleDocsButton({ template, title, prepare, blob, beforeUpload, accountEmail, variant = "secondary", dock = false }: OpenInGoogleDocsButtonProps) {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   // Load Google's script ahead of the click: the consent popup must open inside the click itself.
@@ -84,11 +86,18 @@ export default function OpenInGoogleDocsButton({ template, title, prepare, blob,
   }
 
   return (
-    <span className="inline-flex flex-col items-start" data-google-docs>
-      <button type="button" onClick={onClick} disabled={working} className={STYLES[variant]}>
+    <span className={`inline-flex ${dock ? "flex-col-reverse items-end" : "flex-col items-start"}`} data-google-docs>
+      <button type="button" onClick={onClick} disabled={working} className={dock ? `inline-flex items-center gap-2 bg-white ${STYLES.outline}` : STYLES[variant]}>
+        {dock && (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+            <path d="M14 3v5h5" />
+            <path d="M9 13h6M9 17h6" />
+          </svg>
+        )}
         {working ? "Opening…" : "Open in Google Docs"}
       </button>
-      <span aria-live="polite" className="mt-1 max-w-xs text-xs">
+      <span aria-live="polite" className={`max-w-xs text-xs ${dock ? "mb-2 text-right empty:hidden" : "mt-1"}`}>
         {status.kind === "working" && <span className="text-ink-light">{status.text}</span>}
         {status.kind === "error" && <span role="alert" className="text-brand-700">{status.text}</span>}
         {status.kind === "done" && (
