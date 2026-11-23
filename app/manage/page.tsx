@@ -58,7 +58,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
   if (tab === "team") {
     return (
       <div className="w-full text-ink">
-        <PageHero title="Profile Hub" subtitle="Your team from the employee data, with each person's primary profile. Read-only." compact />
+        <PageHero title="Profile Hub" subtitle="View all your team members’ profiles in one place." compact />
         <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-5">
           {tabs}
           <TeamList user={user} access={access} filters={parseTeamFilters(sp)} />

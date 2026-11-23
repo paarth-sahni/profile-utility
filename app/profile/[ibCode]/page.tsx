@@ -44,10 +44,10 @@ export default async function ProfileLinkPage({ params }: { params: Promise<{ ib
   if (!IB_CODE.test(ibCode)) return NOT_AVAILABLE;
 
   const [access, found] = await Promise.all([accessFor(user, teams), teams.byIbCode(ibCode)]);
-  if (!found.ok) return <Message title="Employee data is unavailable" text="We could not look up this IB code right now. Please try again in a few minutes." />;
+  if (!found.ok) return <Message title="Team member data is unavailable" text="We could not look up this IB code right now. Please try again in a few minutes." />;
   const employee = found.data;
   // a team member gets the same answer for an unknown code and for someone else's: codes cannot be probed
-  if (!employee) return access.level === "member" ? NOT_AVAILABLE : <Message title="No such employee" text={`No active employee has the IB code ${ibCode.toUpperCase()}.`} />;
+  if (!employee) return access.level === "member" ? NOT_AVAILABLE : <Message title="No such team member" text={`No active team member has the IB code ${ibCode.toUpperCase()}.`} />;
   if (!canOpenProfileOf(access, user.email, employee.email)) return NOT_AVAILABLE;
 
   const result = await primaryProfileOf(user, access, employee.email);

@@ -3,13 +3,13 @@
  * time (nothing stored): name, IB code, role, delivery unit, department, whether they have a primary profile here (by email),
  * and View (opens /profile/<ib_code>; disabled without a profile or an IB code). "My team" (default) is everyone under the
  * signed-in person, direct and indirect; "All team members" everyone. Filters for delivery unit and department, search by name
- * or IB code: a GET form, so the filters live in the URL. The caller has checked canSeeTeamList.
+ * or IB code (components/TeamFilterBar.tsx): applied as soon as they change, kept in the URL. The caller has checked canSeeTeamList.
  */
-import Form from "next/form";
 import Link from "next/link";
+import TeamFilterBar from "@/components/TeamFilterBar";
 import { primaryEmailsAmong } from "@/lib/db/teamProfiles";
 import type { TeamAccess } from "@/lib/teamAccess";
-import { filterTeam, type TeamFilters } from "@/lib/teamList";
+import { filterTeam, teamHref, type TeamFilters } from "@/lib/teamList";
 import { teams } from "@/lib/teamsClient";
 
 const MAX_ROWS = 500;
@@ -17,7 +17,7 @@ const MAX_ROWS = 500;
 function Unavailable() {
   return (
     <p role="status" className="border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700" data-team-list="unavailable">
-      Team list unavailable. The employee data could not be read right now; please try again in a few minutes.
+      Team list unavailable. The team member data could not be read right now; please try again in a few minutes.
     </p>
   );
 }
@@ -27,65 +27,26 @@ export default async function TeamList({ user, access, filters }: { user: { id: 
   if (!people.ok || !units.ok) return <Unavailable />;
   const shown = filterTeam(people.data, filters);
   const withProfile = await primaryEmailsAmong(user, access, shown.map((e) => e.email));
-  const select = "w-full border border-gray-300 bg-white px-3 py-2 text-sm";
-  const label = "mb-1 block text-xs font-medium text-ink-light";
 
   return (
     <section aria-labelledby="team-list-heading" data-team-list="ready">
       <h2 id="team-list-heading" className="sr-only">
         Team list
       </h2>
-      <Form action="/manage" className="flex flex-wrap items-end gap-3">
-        <input type="hidden" name="tab" value="team" />
-        <fieldset className="flex items-center gap-4">
-          <legend className={label}>Show</legend>
-          {(["mine", "all"] as const).map((scope) => (
-            <label key={scope} className="flex items-center gap-1.5 text-sm text-ink-dark">
-              <input type="radio" name="scope" value={scope} defaultChecked={filters.scope === scope} />
-              {scope === "mine" ? "My team" : "All team members"}
-            </label>
-          ))}
-        </fieldset>
-        <div className="min-w-[10rem]">
-          <label htmlFor="team-du" className={label}>
-            Delivery unit
-          </label>
-          <select id="team-du" name="du" defaultValue={filters.deliveryUnit} className={select}>
-            <option value="">All delivery units</option>
-            {units.data.deliveryUnits.map((u) => (
-              <option key={u}>{u}</option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-[10rem]">
-          <label htmlFor="team-dept" className={label}>
-            Department
-          </label>
-          <select id="team-dept" name="dept" defaultValue={filters.department} className={select}>
-            <option value="">All departments</option>
-            {units.data.departments.map((d) => (
-              <option key={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-[12rem] flex-1">
-          <label htmlFor="team-q" className={label}>
-            Name or IB code
-          </label>
-          <input id="team-q" name="q" type="search" maxLength={100} defaultValue={filters.q} placeholder="e.g. Asha or IB1234" className="w-full border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        <button type="submit" className="bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
-          Apply
-        </button>
-      </Form>
+      <TeamFilterBar
+        key={`${filters.scope}|${filters.deliveryUnit}|${filters.department}`}
+        initial={filters}
+        deliveryUnits={units.data.deliveryUnits}
+        departments={units.data.departments}
+      />
 
       <div className="mt-5" aria-live="polite">
         {shown.length === 0 ? (
           <div className="border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-            <p className="text-lg font-medium text-ink-dark">{people.data.length === 0 && filters.scope === "mine" ? "No one reports to you in the employee data" : "No one matches these filters"}</p>
+            <p className="text-lg font-medium text-ink-dark">{people.data.length === 0 && filters.scope === "mine" ? "No team members report to you yet" : "No one matches these filters"}</p>
             {filters.scope === "mine" && (
               <p className="mt-1 text-sm text-ink-light">
-                <Link href="/manage?tab=team&scope=all" className="font-medium text-brand-600 hover:underline">
+                <Link href={teamHref({ ...filters, scope: "all" })} className="font-medium text-brand-600 hover:underline">
                   Show all team members
                 </Link>
               </p>

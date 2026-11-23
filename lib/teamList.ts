@@ -15,6 +15,16 @@ export function parseTeamFilters(sp: Record<string, string | string[] | undefine
   return { scope: one(sp.scope) === "all" ? "all" : "mine", deliveryUnit: one(sp.du), department: one(sp.dept), q: one(sp.q) };
 }
 
+/** The Profile Hub address for these filters (default values are left out of the address). */
+export function teamHref(f: TeamFilters): string {
+  const p = new URLSearchParams({ tab: "team" });
+  if (f.scope === "all") p.set("scope", "all");
+  if (f.deliveryUnit) p.set("du", f.deliveryUnit);
+  if (f.department) p.set("dept", f.department);
+  if (f.q.trim()) p.set("q", f.q.trim());
+  return `/manage?${p.toString()}`;
+}
+
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
 /** The employees that match the delivery unit, department and search (name contains, or IB code starts with), sorted by name. */

@@ -1,7 +1,7 @@
 /** Purpose: unit tests for lib/teamList.ts (Profile Hub team list filters). Fictional people only. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filterTeam, parseTeamFilters } from "./teamList";
+import { filterTeam, parseTeamFilters, teamHref } from "./teamList";
 import type { Employee } from "./teamsClient";
 
 const e = (name: string, ibCode: string | null, deliveryUnit: string, department: string): Employee => ({ name, ibCode, email: `${name.split(" ")[0].toLowerCase()}@example.test`, role: "Engineer", deliveryUnit, department, managerEmail: null });
@@ -21,4 +21,9 @@ test("filterTeam: unit, department, name or IB code; sorted by name", () => {
   assert.deepEqual(filterTeam(PEOPLE, { deliveryUnit: "", department: "", q: "SAMPLE" }).map((p) => p.name), ["arun Sample"]);
   assert.deepEqual(filterTeam(PEOPLE, { deliveryUnit: "", department: "", q: "ib10" }).map((p) => p.name), ["Zara Fictional"], "IB code prefix, any case");
   assert.deepEqual(filterTeam(PEOPLE, { deliveryUnit: "", department: "", q: "1001" }), [], "an IB code matches from its start only");
+});
+
+test("teamHref: leaves defaults out and keeps what is set", () => {
+  assert.equal(teamHref({ scope: "mine", deliveryUnit: "", department: "", q: "" }), "/manage?tab=team");
+  assert.equal(teamHref({ scope: "all", deliveryUnit: "Unit A", department: "", q: " Asha " }), "/manage?tab=team&scope=all&du=Unit+A&q=Asha");
 });

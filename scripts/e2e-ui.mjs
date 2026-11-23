@@ -1143,7 +1143,7 @@ await t.scenario("Edit details: skills are a table, one row per skill, named inp
 await t.scenario("Teams data (mock): /profile/<ib_code> and the Profile Hub team list follow the access rules", async () => {
   if (process.env.TEAMS_DB_MODE !== "mock") return void console.log("SKIP  needs TEAMS_DB_MODE=mock (docs/TEAMS-DB.md)");
   // fictional mock people (ops/teams_db.py): IB9003 member@ (Alex Sample, primary), IB9004 member2@, IB9005 Riya (no account)
-  const linkState = () => ev("document.querySelector('[data-profile-link-state]')?.dataset.profileLinkState ?? (document.body.innerText.includes(\"isn't available to you\") ? 'denied' : document.body.innerText.includes('No such employee') ? 'unknown' : '?')");
+  const linkState = () => ev("document.querySelector('[data-profile-link-state]')?.dataset.profileLinkState ?? (document.body.innerText.includes(\"isn't available to you\") ? 'denied' : document.body.innerText.includes('No such team member') ? 'unknown' : '?')");
   const open = async (code) => (await goto(`/profile/${code}`), linkState());
   // earlier scenarios make an E2E profile the member's primary (asPrimary): use the seeded one here
   sql(`update profiles set is_primary = false where owner_id = (select id from auth.users where email='member@example.test') and is_primary`);
