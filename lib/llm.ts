@@ -45,6 +45,12 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     });
   });
 
+/**
+ * Claude models behind the gateway: reasoning_effort there becomes extended thinking, and Anthropic then refuses temperature 0
+ * ("temperature may only be set to 1 when thinking is enabled"). So it is sent for every other model (gpt-oss) and left out for these.
+ */
+export const takesReasoningEffort = (model: string): boolean => !model.trim().toLowerCase().startsWith("claude");
+
 type ResponseFormat = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming["response_format"];
 
 async function request(args: CompleteJsonArgs, responseFormat: ResponseFormat, system: string): Promise<string> {
@@ -53,7 +59,7 @@ async function request(args: CompleteJsonArgs, responseFormat: ResponseFormat, s
     {
       model: args.model,
       temperature: args.temperature ?? 0.2,
-      reasoning_effort: args.reasoningEffort ?? cfg.reasoningEffort,
+      ...(takesReasoningEffort(args.model) ? { reasoning_effort: args.reasoningEffort ?? cfg.reasoningEffort } : {}),
       max_completion_tokens: args.maxTokens ?? 8000,
       response_format: responseFormat,
       messages: [

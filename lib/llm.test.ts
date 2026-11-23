@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { z } from "zod";
 
 type Reply = { status: number; body: unknown };
-const requests: { response_format: { type: string } }[] = [];
+const requests: { response_format: { type: string }; model: string; temperature?: number; reasoning_effort?: string }[] = [];
 let replies: Reply[] = [];
 
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -111,4 +111,19 @@ test("a timed-out call says the friendly timeout text, not the bare 'Timed out'"
   assert.equal((thrown as Error).message, EXTRACT_ERROR_MESSAGES.TIMEOUT);
   assert.doesNotMatch((thrown as Error).message, /^Timed out$/);
   assert.match((thrown as Error).message, /longer than usual/);
+});
+
+test("reasoning_effort is sent for gpt-oss models and left out for Claude models; temperature is unchanged", async () => {
+  const { completeJson } = await import("./llm");
+  replies = [ok('{"name":"A"}'), ok('{"name":"B"}'), ok('{"name":"C"}')];
+  await completeJson({ ...base, model: "gpt-oss-120b", reasoningEffort: "high", temperature: 0 });
+  await completeJson({ ...base, model: "claude-sonnet-5-5", reasoningEffort: "high", temperature: 0 });
+  await completeJson({ ...base, model: "claude-opus-5-5" });
+  const [gpt, claude, claudeDefault] = requests;
+  assert.equal(gpt.reasoning_effort, "high", "gpt-oss keeps reasoning_effort");
+  assert.equal(gpt.temperature, 0);
+  assert.ok(!("reasoning_effort" in claude), "no reasoning_effort for a claude model");
+  assert.equal(claude.temperature, 0, "temperature is still sent as asked");
+  assert.ok(!("reasoning_effort" in claudeDefault), "none either when it would come from the config default");
+  assert.equal(claudeDefault.temperature, 0.2, "default temperature unchanged");
 });
